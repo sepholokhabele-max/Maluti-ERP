@@ -1,0 +1,14 @@
+{
+  "id": "samsung-wallet",
+  "name": "Samsung Wallet – digital receipts",
+  "version": "1.0.0",
+  "type": "wallet",
+  "author": "Maluti ERP",
+  "description": "Adds an \"Add to Samsung Wallet\" button to the digital receipt. Samsung requires partner onboarding: register at the Samsung Wallet Partner Portal, create a Generic card template and get its Card ID and Certificate ID. Samsung's 'Data Fetch Link' then asks your public server for the card data, so the receipt link must be publicly reachable (Settings → POS → Public address). Paste the exact link format Samsung gives you; {card_id}, {certificate_id} and {ref} (receipt reference) are filled in automatically.",
+  "config": [
+    { "key": "card_id", "label": "Card ID (Partner Portal)", "type": "text" },
+    { "key": "certificate_id", "label": "Certificate ID (Partner Portal)", "type": "text" },
+    { "key": "link_template", "label": "Add-to-Wallet link format", "type": "text", "default": "https://a.swallet.link/atw/v3/{certificate_id}/{card_id}#Clip?pdata={ref}" },
+    { "key": "button_label", "label": "Button text", "type": "text", "default": "Add to Samsung Wallet" }
+  ]
+}

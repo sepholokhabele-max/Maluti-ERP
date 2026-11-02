@@ -1,0 +1,17 @@
+{
+  "id": "google-wallet",
+  "name": "Google Wallet – digital receipts",
+  "version": "1.0.0",
+  "type": "wallet",
+  "author": "Maluti ERP",
+  "description": "Adds an \"Add to Google Wallet\" button to the digital receipt that customers open by scanning the QR on their receipt. Needs a Google Wallet issuer account (pay.google.com/business/console) and a Google Cloud service account with the Google Wallet API enabled.",
+  "config": [
+    { "key": "issuer_id", "label": "Issuer ID (from Google Pay & Wallet Console)", "type": "text" },
+    { "key": "service_account_email", "label": "Service account email", "type": "text" },
+    { "key": "private_key", "label": "Service account private key (PEM, from the JSON key file)", "type": "json", "secret": true },
+    { "key": "class_suffix", "label": "Pass class suffix", "type": "text", "default": "maluti_receipt" },
+    { "key": "logo_url", "label": "Public HTTPS URL of your logo (optional)", "type": "text" },
+    { "key": "background_color", "label": "Card colour (hex)", "type": "text", "default": "#3f3d9e" },
+    { "key": "button_label", "label": "Button text", "type": "text", "default": "Add to Google Wallet" }
+  ]
+}

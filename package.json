@@ -1,0 +1,85 @@
+{
+  "name": "maluti-erp",
+  "productName": "Maluti ERP",
+  "version": "1.6.1",
+  "description": "ERP + Point of Sale for restaurants, bars and retail stores. MySQL backed, with VAS plugins and end-of-day email reports.",
+  "main": "electron/main.js",
+  "author": "Maluti ERP",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "server": "node server/standalone.js",
+    "dist": "node build/build-all.js",
+    "test": "node server/test/smoke.js",
+    "installer": "node build/make-installer.js",
+    "dist:x64": "node build/build-all.js x64",
+    "dist:ia32": "node build/build-all.js ia32"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.21.2",
+    "mysql2": "^3.11.5",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.9.16",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "resedit": "^2.0.3"
+  },
+  "build": {
+    "appId": "com.maluti.erp",
+    "productName": "Maluti ERP",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "server/**/*",
+      "!server/test/**/*",
+      "public/**/*",
+      "package.json",
+      "build/icon.png",
+      "!vendor/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "plugins",
+        "to": "plugins"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Maluti ERP",
+      "artifactName": "MalutiERP-Setup-${version}.exe",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "license": "build/license.txt"
+    },
+    "afterPack": "build/afterPack.js",
+    "publish": null
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-account/maluti-erp.git"
+  }
+}

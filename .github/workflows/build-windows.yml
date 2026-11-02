@@ -1,0 +1,108 @@
+name: Build & release Maluti ERP
+
+# A new release is published automatically whenever package.json gets a version
+# that has no release yet (push to main), or when a tag vX.Y.Z is pushed.
+# Installed copies of Maluti ERP pick it up from Settings → Updates & backup.
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  MYSQL_VERSION: '8.4.13'   # MySQL 8.4 LTS bundled in the 64-bit edition
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      release: ${{ steps.v.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=$(node -p "require('./package.json').version")
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          if gh release view "v$V" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then echo "release=false" >> "$GITHUB_OUTPUT"; else echo "release=true" >> "$GITHUB_OUTPUT"; fi
+
+  test:
+    needs: check
+    if: needs.check.outputs.release == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -proot" --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci || npm install
+      - run: npm install --no-save smtp-server
+      - name: API smoke test against MySQL 8.4
+        run: node server/test/smoke.js
+        env:
+          DB_HOST: 127.0.0.1
+          DB_USER: root
+          DB_PASSWORD: root
+
+  build:
+    needs: [check, test]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci || npm install
+      - name: Install NSIS
+        run: choco install nsis -y
+      - name: Fetch MySQL ${{ env.MYSQL_VERSION }} and trim it to the server only
+        shell: pwsh
+        run: |
+          $v = $env:MYSQL_VERSION
+          Invoke-WebRequest "https://cdn.mysql.com/Downloads/MySQL-8.4/mysql-$v-winx64.zip" -OutFile mysql.zip
+          Expand-Archive mysql.zip -DestinationPath mysqltmp
+          $src = "mysqltmp/mysql-$v-winx64"
+          $dst = "vendor/mysql-win64"
+          New-Item -ItemType Directory -Force "$dst/bin","$dst/share","$dst/lib" | Out-Null
+          Copy-Item "$src/bin/mysqld.exe","$src/bin/mysql.exe","$src/bin/mysqldump.exe" "$dst/bin/"
+          Get-ChildItem "$src/bin/*.dll" | Where-Object { $_.Name -notmatch '-debug' } | Copy-Item -Destination "$dst/bin/"
+          Copy-Item -Recurse "$src/share/english","$src/share/charsets" "$dst/share/"
+          if (Test-Path "$src/lib/private") { Copy-Item -Recurse "$src/lib/private" "$dst/lib/" }
+          Copy-Item "$src/LICENSE","$src/README" "$dst/"
+          # Visual C++ runtime next to mysqld.exe so it runs on PCs without the redistributable
+          pip download msvc-runtime --only-binary=:all: --platform win_amd64 --python-version 3.12 --no-deps -d vc
+          Expand-Archive (Get-ChildItem vc/*.whl | Select-Object -First 1).FullName -DestinationPath vcx -Force
+          Get-ChildItem -Recurse vcx -Include vcruntime140.dll,vcruntime140_1.dll,msvcp140.dll,msvcp140_1.dll,msvcp140_2.dll,msvcp140_atomic_wait.dll,concrt140.dll |
+            Where-Object { $_.FullName -match 'Scripts' } | Copy-Item -Destination "$dst/bin/" -Force
+          Get-ChildItem $dst -Recurse | Measure-Object -Property Length -Sum
+      - name: Build 64-bit and 32-bit editions
+        run: node build/build-all.js x64 ia32
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MalutiERP-${{ needs.check.outputs.version }}
+          path: dist/release/${{ needs.check.outputs.version }}/*
+      - name: Publish GitHub release
+        if: needs.check.outputs.release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.check.outputs.version }}
+          name: Maluti ERP ${{ needs.check.outputs.version }}
+          body_path: CHANGELOG-latest.md
+          files: dist/release/${{ needs.check.outputs.version }}/*

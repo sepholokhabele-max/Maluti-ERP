@@ -1,0 +1,9 @@
+Maluti ERP
+Copyright (c) 2026. All rights reserved.
+
+This software is provided "as is", without warranty of any kind, express or implied.
+In no event shall the authors be liable for any claim, damages or other liability
+arising from the use of this software.
+
+By installing you agree to use this software in accordance with the laws of your
+country, including tax (VAT) record keeping requirements.

@@ -1,0 +1,11 @@
+{
+  "id": "momo-sandbox",
+  "name": "Mobile Money Push (test mode)",
+  "version": "1.0.0",
+  "type": "payment",
+  "author": "Maluti ERP",
+  "description": "Simulates sending a payment request to the customer's phone (USSD push). Approves after a few seconds. Attach it to a mobile money payment method under Settings → Payment methods.",
+  "config": [
+    { "key": "approve_after_ms", "label": "Auto-approve after (ms)", "type": "number", "default": 4000 }
+  ]
+}

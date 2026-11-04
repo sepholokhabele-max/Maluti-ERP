@@ -73,7 +73,7 @@ async function migrate() {
   const done = new Set((await query('SELECT id FROM schema_migrations')).map(r => r.id));
   for (const m of migrations) {
     if (done.has(m.id)) continue;
-    for (const stmt of m.sql) await query(stmt);
+    for (const stmt of m.sql) { if (typeof stmt === 'function') await stmt({ query, one }); else await query(stmt); }
     await query('INSERT INTO schema_migrations (id, name) VALUES (?, ?)', [m.id, m.name]);
     console.log(`[db] applied migration ${m.id} ${m.name}`);
   }

@@ -1,3 +1,4 @@
+import { filesCard } from './core.js';
 // Projects (task board, hours, invoicing, profit), timesheets and helpdesk / repair job cards
 import { state, GET, POST, PUT, DEL, esc, $, $$, toast, err, can, money, qty, modal, confirmBox, formHtml, readForm, tableHtml, badge, page, d, dt, today, plusDays, query, printHtml } from './core.js';
 
@@ -57,6 +58,7 @@ export async function projectForm(view, [idq]) {
     <div class="cols cols-2" style="margin-top:14px"><div class="card"><h3>Hours by person</h3>${tableHtml([{ key: 'name', label: 'Person' }, { key: 'hours', label: 'Hours', right: 1, fmt: qty }, { key: 'cost', label: 'Cost', right: 1, fmt: money }], p.by_person, { empty: 'No hours logged yet.' })}</div>
       <div class="card"><h3>Invoices</h3>${tableHtml([{ key: 'number', label: 'Invoice', fmt: v => v || 'Draft' }, { key: 'invoice_date', label: 'Date', fmt: d }, { key: 'status', label: 'Status', html: 1, fmt: v => badge(v) }, { key: 'total', label: 'Total', right: 1, fmt: money }], p.invoices, { rowAttr: r => `data-inv="${r.id}"`, empty: 'Not invoiced yet.' })}</div></div>
     ${p.description ? `<div class="card" style="margin-top:14px"><h3>Scope</h3><p style="white-space:pre-wrap">${esc(p.description)}</p></div>` : ''}`, { back: '#/projects' });
+  filesCard('project', p.id, 'Drawings, contracts & photos');
   const reload = () => projectForm(view, [id]);
   $$('[data-mv]').forEach(b => b.onclick = async e => { e.stopPropagation(); const [tid, st] = b.dataset.mv.split(':'); try { await PUT('/tasks/' + tid, { status: st }); reload(); } catch (x) { err(x); } });
   $$('[data-t]').forEach(c => c.onclick = () => taskDialog(p, p.tasks.find(t => String(t.id) === c.dataset.t), reload));
@@ -202,6 +204,7 @@ export async function ticketForm(view, [idq]) {
     <div class="card"><h3>Customer</h3><p style="margin-top:0"><b>${esc(t.partner_name || t.contact_name || '')}</b><br>${esc(t.phone || t.partner_phone || '')}<br>${esc(t.email || t.partner_email || '')}</p>
       ${t.item ? `<h3>Item</h3><p style="margin-top:0">${esc(t.item)}${t.serial_no ? '<br>S/N ' + esc(t.serial_no) : ''}</p>` : ''}
       <p class="muted">Came in by ${esc(String(t.channel).replace('_', '-'))} · ${esc(dt(t.created_at))}<br>Technician: ${esc(t.assigned_name || '–')}${t.project_name ? '<br>Project: ' + esc(t.project_name) : ''}</p></div></div>`, { back: '#/helpdesk' });
+  filesCard('ticket', t.id, 'Photos & files');
   const reload = () => ticketForm(view, [id]);
   if ($('#tp')) {
     const prods = (await GET('/products')).filter(p => p.type !== 'service');

@@ -83,7 +83,9 @@ r.post('/products', requirePerm('catalog'), ah(async (req, res) => {
     const ins = await c.query('INSERT INTO products SET ?', [data]);
     const q = Number(req.body.opening_qty || 0);
     if (q && (data.type || 'stock') === 'stock') {
-      await stock.move(c, { product_id: ins.insertId, qty: q, unit_cost: Number(data.cost || 0), move_type: 'opening', reference: 'Opening stock', user_id: req.user.id });
+      // an imported opening balance may come with its batch number and expiry date (medicines, food)
+      const batch = req.body.opening_batch_no || req.body.opening_expiry ? { batch_no: req.body.opening_batch_no || null, expiry_date: req.body.opening_expiry || null, source: 'opening' } : undefined;
+      await stock.move(c, { product_id: ins.insertId, qty: q, unit_cost: Number(data.cost || 0), move_type: 'opening', reference: 'Opening stock', user_id: req.user.id, batch, location_id: req.body.location_id || undefined });
       const v = round2(q * Number(data.cost || 0));
       await accounting.post(c, { reference: 'OPENING', memo: `Opening stock ${data.name}`, source_type: 'stock_opening', source_id: ins.insertId, user_id: req.user.id,
         lines: [{ code: '1200', debit: v }, { code: '3000', credit: v }] });
@@ -121,17 +123,23 @@ r.post('/inventory/adjust', requirePerm('inventory'), ah(async (req, res) => {
     for (const l of req.body.lines || []) {
       const p = await c.one('SELECT * FROM products WHERE id = ? FOR UPDATE', [l.product_id]);
       if (!p || p.type !== 'stock') continue;
-      if (!isFinite(Number(l.counted_qty)) || l.counted_qty === '' || l.counted_qty === null) continue;
       const before = loc ? await stock.qtyAt(c, p.id, loc) : Number(p.stock_qty);
+      // add_qty: add to what is there (opening stock brought in batch by batch); counted_qty: set it to the count
+      if (l.add_qty !== undefined && l.add_qty !== null && l.add_qty !== '') l.counted_qty = before + Number(l.add_qty);
+      if (!isFinite(Number(l.counted_qty)) || l.counted_qty === '' || l.counted_qty === null) continue;
       const diff = Number(l.counted_qty) - before;
       if (Math.abs(diff) < 1e-9) continue;
-      await stock.move(c, { product_id: p.id, qty: diff, move_type: 'adjustment', reference: req.body.reason || 'Stock count', user_id: req.user.id, location_id: loc });
-      value += diff * Number(p.cost);
+      // opening stock taken over from another system: valued at the given cost and booked against opening balances, not as a loss/gain
+      const opening = !!req.body.opening && diff > 0;
+      const uc = opening && Number(l.unit_cost) > 0 ? Number(l.unit_cost) : undefined;
+      await stock.move(c, { product_id: p.id, qty: diff, unit_cost: uc, move_type: opening ? 'opening' : 'adjustment', reference: req.body.reason || (opening ? 'Opening stock' : 'Stock count'), user_id: req.user.id, location_id: loc,
+        batch: opening && (l.batch_no || l.expiry_date) ? { batch_no: l.batch_no || null, expiry_date: l.expiry_date || null, source: 'opening' } : undefined });
+      value += diff * (uc !== undefined ? uc : Number(p.cost));
       changes.push({ product: p.name, from: before, to: Number(l.counted_qty) });
     }
     value = round2(value);
     if (value) await accounting.post(c, { reference: 'STOCK-ADJ', memo: req.body.reason || 'Stock adjustment', source_type: 'stock_adjust', user_id: req.user.id, location_id: loc,
-      lines: value > 0 ? [{ code: '1200', debit: value }, { code: '5100', credit: value }] : [{ code: '5100', debit: -value }, { code: '1200', credit: -value }] });
+      lines: value > 0 ? [{ code: '1200', debit: value }, { code: req.body.opening ? '3000' : '5100', credit: value }] : [{ code: '5100', debit: -value }, { code: '1200', credit: -value }] });
     return { changes, value };
   });
   res.json(out);

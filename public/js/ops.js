@@ -52,7 +52,7 @@ async function machineDialog(e, done) {
     actions: [{ label: 'Cancel' }, { label: 'Save', cls: 'btn-primary', onClick: async (c, r) => { const v = readForm(r, f); if (e) await PUT('/equipment/' + e.id, v); else await POST('/equipment', v); c(); toast('Saved'); done(); } }] });
 }
 
-async function reportDialog(preset, done) {
+export async function reportDialog(preset, done) {
   const [eq, users] = await Promise.all([GET('/equipment'), can('maintenance') ? GET('/users').catch(() => []) : []]);
   if (!eq.length) return toast('No machines registered yet' + (can('maintenance') ? ' – add one first' : ''), 'err');
   const f = [{ key: 'equipment_id', label: 'Machine', type: 'select', numeric: true, required: true, options: eq.map(e => ({ value: e.id, label: e.name + (e.code ? ` (${e.code})` : '') })) },

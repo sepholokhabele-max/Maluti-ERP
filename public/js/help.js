@@ -264,6 +264,89 @@ export const HELP = {
     max_shift_hours: 'If someone forgets to clock out, the shift is closed after this many hours and flagged for correction.'
   },
   department: { name: 'e.g. Butchery, Front shop, Kitchen, Admin.' },
+  sms: {
+    mode: '"Through my SMS provider" sends real SMS. "Test mode" writes messages to the log only – use it to try reminders without paying.',
+    method: 'Your provider\'s instructions say whether to call the link (GET) or post data (POST).',
+    url: 'Copy the address from your provider\'s API page and put {to} where the phone number goes, {message} where the text goes and {sender} for the sender name. Usually includes your username and API key.',
+    body: 'Only for POST providers: the data to send, with the same {to} {message} {sender} placeholders. Starting with { sends it as JSON.',
+    headers: 'Only if the provider asks for it, e.g. "Authorization: Bearer YOUR-KEY".',
+    sender: 'Name shown instead of a number (max 11 letters) – most providers must approve it first.',
+    success_text: 'A word the provider\'s answer contains when the SMS was accepted (e.g. OK or "status":"success"). Leave blank if unsure.',
+    country_code: 'Added in front of 8-digit local numbers. 266 for Lesotho.'
+  },
+  remtpl: { sms: 'Short and polite. {details} adds the flat or the children\'s names.', email_subject: 'Subject line.', email_body: 'Longer text for email.' },
+  remauto: { enabled: 'Tick to send reminders every day by themselves.', days: 'Days after the due date, separated by commas. A customer gets at most one reminder on each of these days.',
+    channel: 'SMS reaches people fastest; email is free.', min_amount: 'Do not chase very small amounts.' },
+  building: {
+    name: 'e.g. "Mokhele Flats, Ha Thetsane" or "Kingsway Shopping Centre".', address: 'Physical address – printed on tenant statements.',
+    owner_id: 'Choose the landlord when you collect rent on their behalf. Rent then belongs to them (minus your commission) instead of being your income. Add landlords under Contacts as suppliers.',
+    commission_pct: 'Your management fee as a % of rent collected, e.g. 10.', notes: 'Caretaker, municipal account numbers, insurance…'
+  },
+  unit: {
+    name: 'e.g. "Flat 3", "Room 12", "Shop 4".', kind: 'Homes are usually without VAT; shops and offices carry VAT if you are registered.', bedrooms: 'For flats and houses.', size_m2: 'Floor area – useful for shops and offices.',
+    market_rent: 'Asking rent – suggested when you make a lease.', meter_no: 'Prepaid electricity or water meter number of the unit.', notes: 'Condition, furniture, parking bay…', active: 'Untick a unit that is demolished or not let any more.'
+  },
+  lease: {
+    unit_id: 'The flat, room or shop being let.', tenant_id: 'The person or company who pays. Or type a new tenant below.',
+    tenant_name: 'Full name as on their ID or company registration.', tenant_phone: 'For reminders and statements.',
+    start_date: 'First day of the lease. If it is not the rent due day, the first part-month is invoiced pro rata.',
+    end_date: 'Leave blank for month-to-month. Rent stops being invoiced after this date.',
+    rent: 'Monthly rent excluding VAT.', tax_rate: '0 for residential rent. 15 for commercial units if you are VAT-registered.',
+    due_day: 'Day of the month rent is due (1–28). The invoice is made on this day every month.',
+    deposit: 'Deposit agreed in the lease (usually one month\'s rent). Record it as received on the lease once paid.',
+    escalation_pct: 'Yearly rent increase, e.g. 10. Applied automatically on the anniversary.', next_escalation: 'Date of the next increase.', notes: 'Special conditions.'
+  },
+  leasepay: { amount: 'Amount received. It pays the oldest unpaid rent first; any extra stays as credit for next month.', method_id: 'How the money came in.', reference: 'Bank or M-Pesa transaction number – needed for bank recon.', date: 'Date the money was received.' },
+  leasecharge: { description: 'e.g. "Water October 2026", "Late payment fee", "Replace lost key".', amount: 'Amount excl. VAT.', tax_rate: 'Usually 0 for recharged utilities.', pass_to_owner: 'Tick when this money belongs to the landlord (e.g. his municipal charges).' },
+  deposit: { to_arrears: 'Part of the deposit used to pay rent the tenant still owes.', deductions: 'Repairs, cleaning or lost keys – becomes other income.', reason: 'Required when you deduct: what was damaged.', refund: 'Paid back to the tenant.', method_id: 'How the refund is paid.' },
+  sclass: { name: 'e.g. "Grade 1A".', grade: 'Fees are set per grade, so Grade 1A and 1B share "Grade 1".', sort: 'Order in lists.', teacher: 'Class teacher.', capacity: 'Maximum learners.', next_class_id: 'Where learners go at year-end. Blank = they graduate.' },
+  fee: { name: 'e.g. Tuition, Lunch, Transport, Aftercare, Exam fee, Registration.', grade: 'Blank = all grades.', amount: 'Amount per period.', period: 'Which billing runs include it: a term run takes all "per term" fees, a month run all "per month" fees.',
+    optional: 'Only learners ticked for it pay (set on the learner).', sibling_discount: 'Untick for fees that are not discounted for brothers and sisters (e.g. transport).', active: 'Untick to stop charging it.' },
+  schoolset: { sibling_discount_pct: 'Discount for the 2nd and later child of the same parent (eldest pays full).', post_invoices: 'Posted invoices count as owed at once. Untick to check drafts first.' },
+  feerun: { label: 'A unique name – e.g. "Term 1 2027". The same name cannot be billed twice.', period: 'Which fees to bill.', invoice_date: 'Date on the invoices.', due_date: 'Date by which parents must pay – arrears ageing counts from here.' },
+  learner: {
+    first_name: 'As on the birth certificate.', last_name: 'Surname.', class_id: 'Current class.', admission_no: 'Leave blank to number automatically.', gender: 'For class lists.', birth_date: 'Siblings are ordered by age for the sibling discount (eldest pays full).',
+    guardian_id: 'Parent who pays. Brothers and sisters share the same parent so they get one family account.', guardian_name: 'New parent\'s full name.', guardian_phone: 'Phone for fee reminders.',
+    guardian2: 'Other parent or emergency contact with phone.', bursary_pct: 'Scholarship or staff-child discount on compulsory fees, e.g. 50.', enrolled_on: 'First day at the school.', medical: 'Allergies, chronic conditions, medication.', notes: 'Anything else.'
+  },
+  feepay: { amount: 'Amount paid. It clears the oldest fees first; extra is kept as credit.', method_id: 'How it was paid.', reference: 'Bank deposit or M-Pesa number.', date: 'Date paid.', family: 'Spread the payment over all this parent\'s children.' },
+  site: {
+    name: 'e.g. "LNDC Kingsway – main gate" or "Queen II Hospital – ward block".', partner_id: 'The client who pays.', kind: 'Security, cleaning, or both.',
+    address: 'Where staff must report – include directions for relief staff.', contact_name: 'Client\'s person on site.', contact_phone: 'Their phone.',
+    staff_day: 'Guards / cleaners needed by day.', staff_night: 'Needed at night.',
+    billing: 'Contract: a fixed monthly amount (Contracts). Per shift / per hour: invoiced from the shifts actually worked.', rate: 'Price per shift or per hour excl. VAT.',
+    contract_id: 'The contract that invoices this site – its income shows in site profit.', instructions: 'Post orders: keys, alarm codes procedure, patrol times, who may enter…',
+    checklist: 'For cleaning (or guard post) inspections, one item per line: "Toilets cleaned", "Bins emptied"…', active: 'Untick when the contract ends.'
+  },
+  roster: { from: 'First day.', to: 'Last day (up to two months).', start_time: 'Shift start.', end_time: 'Shift end. A time earlier than the start means the shift ends the next morning (night shift).', role: 'Post on this site.' },
+  absent: { reason: 'Sick, no-show, leave, AWOL…', replacement_id: 'Relief guard or cleaner sent instead – a shift is created for them.' },
+  oblog: { kind: 'Patrol, visitor or vehicle in/out, handover between shifts, or any note.', employee_id: 'Who made the entry.', text: 'What was seen or done, e.g. "Patrol 02:00 – all doors locked".' },
+  incident: { occurred_at: 'When it happened.', kind: 'Type of incident.', severity: 'High = injury, loss of property or police involved.', employee_id: 'Guard who reported it.', description: 'Facts: who, what, where, when.',
+    action_taken: 'What the guard / supervisor did.', police_case: 'CR number from the police station.', client_informed: 'Tick once the client has been told.', status: 'Close when handled.' },
+  inspection: { signed_by: 'Name of the client\'s person who checked with you.', notes: 'Anything to follow up.' },
+  siteinv: { from: 'First day of the shifts to invoice.', to: 'Last day.' },
+  lead: {
+    title: 'What they want, e.g. "Uniforms for 120 learners" or "Monthly cleaning – LNDC offices".',
+    partner_id: 'Pick the customer if they are already in Contacts. A new customer is made from the details below when you quote or win.',
+    company: 'Company, school, church or government office.', contact_name: 'The person you deal with.', phone: 'Number to call or WhatsApp.', email: 'For sending the quotation.',
+    source: 'How they found you – the pipeline shows which sources bring the most business.',
+    stage_id: 'How far the deal is. Move the card on the pipeline board as it progresses.',
+    expected_value: 'What the order will be worth if you win it (incl. VAT).',
+    probability: 'Your own estimate. Leave blank to use the stage\'s chance.',
+    expected_close: 'When the customer will decide.', owner_id: 'Salesperson responsible for following up.',
+    priority: 'Hot leads are shown with three stars.', notes: 'Their needs, budget, decision-makers and competitors.'
+  },
+  activity: { type: 'Call, meeting, visit or to-do.', due_at: 'When it should happen – overdue steps show ⚠ on the pipeline.', subject: 'e.g. "Call about sizes", "Deliver samples".', body: 'Details or what was agreed.' },
+  contract: {
+    partner_id: 'Who pays.', name: 'e.g. "Security – Ha Abia clinic", "Rent – Shop 4", "Grade 3 school fees 2027".',
+    period: 'How often an invoice is made.', every: '1 = every period. 2 with "Month" = every second month.',
+    start_date: 'Date of the first invoice. Dates in the past are caught up when you activate the contract.',
+    end_date: 'Last day of the contract. No invoices are made after it; blank = runs until you end it.',
+    next_date: 'Date the next invoice will be made. Change it to skip or move a period.',
+    due_days: 'Days the customer has to pay (sets the due date on each invoice).',
+    auto_post: 'Ticked: invoices are posted at once (customer owes the money). Unticked: they wait as drafts for you to check and post.',
+    project_id: 'Link the invoices to a project so they count in its profit.', notes: 'Anything about the agreement – escalation, notice period…'
+  },
   equipment: {
     name: 'What staff call it, e.g. "Oven 2", "Spiral mixer", "Generator", "Toyota Quantum A 1234".',
     code: 'Your asset number or sticker on the machine.',
@@ -387,6 +470,231 @@ export const HELP = {
   locstock: {
     min_qty: 'Re-order level for this branch: when stock here falls below it, it shows as "low" so a transfer or purchase can be made.',
     bin: 'Shelf, aisle or bin where it is kept at this location, e.g. "A3" – printed on transfer notes to speed up picking.'
+  },
+  roomtype: {
+    name: 'Kind of room, e.g. "Standard double", "Family room", "Rondavel". Rooms of one type share a rate.',
+    rate: 'Price per night including VAT. Change it here and new bookings use the new rate; existing bookings keep theirs.',
+    capacity: 'How many people can sleep in this room type – shown when booking.',
+    breakfast: 'Tick if breakfast is part of the rate (printed on the guest bill).',
+    active: 'Untick to stop offering this room type without losing its history.'
+  },
+  room: {
+    name: 'Room number or name as guests know it, e.g. "12" or "Maloti Suite".',
+    room_type_id: 'Type and rate of this room.',
+    floor: 'Floor, block or wing – helps housekeeping.',
+    housekeeping: 'Clean = ready for the next guest. Rooms become "dirty" automatically at check-out. "Out of order" rooms cannot be booked.',
+    notes: 'Anything the front desk should know, e.g. "no hot water on Monday".',
+    active: 'Untick if the room is no longer let.'
+  },
+  booking: {
+    check_in: 'Day the guest arrives.',
+    check_out: 'Day the guest leaves – nights are counted up to, but not including, this day.',
+    room_id: 'Only rooms free for all the nights are listed. Change the dates to see other rooms.',
+    rate: 'Price per night incl. VAT – taken from the room type, but you can give a discount or a special rate here.',
+    guest_id: 'Returning guest – choose them so the stay is added to their history. For a new guest leave this and type the name below.',
+    guest_name: 'Full name of a new guest – a customer card is made automatically.',
+    guest_phone: 'Mobile number – used for SMS confirmations and reminders.',
+    adults: 'Number of adults staying.',
+    children: 'Number of children staying.',
+    source: 'How the booking came in – shows which channel brings the most guests.',
+    company_id: 'If a company or government department pays for the stay, choose it: the bill is invoiced to them on account at check-out.',
+    notes: 'Arrival time, special requests, car registration…',
+    check_in_now: 'Walk-in guest who is already at the desk – the booking is checked in straight away.'
+  },
+  bookpay: {
+    amount: 'Amount received now. A deposit is kept on the guest\'s account and taken off the bill at check-out.',
+    method_id: 'How the money came in – it goes into that till, bank or M-Pesa account.',
+    reference: 'M-Pesa / EcoCash code, EFT reference or receipt number.'
+  },
+  roomcharge: {
+    description: 'What is being charged to the room: laundry, phone, minibar, extra bed, late check-out…',
+    amount: 'Amount including VAT. Meals and drinks from the POS are charged to the room by choosing "Room / guest account" at the till instead.',
+    date: 'Day of the charge – printed on the guest bill.'
+  },
+  patient: {
+    first_name: 'As on the ID or health passport (bukana).',
+    dob: 'Date of birth – the age is worked out and printed on prescriptions and labels. For a child, the dose often depends on it.',
+    phone: 'Mobile number for follow-up and payment reminders.',
+    id_number: 'National ID or passport – helps find the right file when names are the same.',
+    allergies: 'Medicines or foods the patient reacts to, separated by commas, e.g. "Penicillin, sulpha". Medicines of that group are blocked when prescribing until a practitioner confirms. Type "None known" if asked and there are none.',
+    chronic: 'Long-term conditions and medicines, e.g. "Hypertension – amlodipine 5 mg; HIV on ART". Shown on every visit.',
+    medical_aid_id: 'Medical aid that pays for this patient. Add medical aids under Patients → Medical-aid claims.',
+    medical_aid_no: 'Membership number exactly as on the card – the claim is rejected without it.',
+    main_member: 'Name of the main member if the patient is a dependant (child or spouse).',
+    blood_group: 'If known, e.g. O+.',
+    next_of_kin: 'Person to contact in an emergency.',
+    species: 'Vets: species, breed and the animal\'s name; the owner is the patient\'s contact.',
+    file_no: 'Your existing paper file number, or leave blank for an automatic number (P00001…).',
+    notes: 'Anything reception should know – not for clinical notes.'
+  },
+  arrival: {
+    kind: 'Consultation with a doctor or nurse, a follow-up, a procedure (dressing, injection) or pharmacy only (buying medicine or collecting a repeat).',
+    practitioner_id: 'Who the patient will see. Leave blank and the first practitioner to call them in takes them.',
+    reason: 'Why the patient came, in their words, e.g. "cough for 2 weeks".',
+    temp: 'Temperature in °C, e.g. 36.8. Above 37.5 is a fever.',
+    bp_sys: 'Top number of the blood pressure, e.g. 120.',
+    bp_dia: 'Bottom number, e.g. 80.',
+    pulse: 'Heart beats per minute.',
+    resp: 'Breaths per minute.',
+    spo2: 'Oxygen saturation from the finger probe, %.',
+    weight: 'Weight in kg – needed for children\'s doses.',
+    height: 'Height in cm – BMI is worked out with the weight.',
+    glucose: 'Finger-prick blood sugar in mmol/l.'
+  },
+  visit: {
+    reason: 'Main complaint.',
+    history: 'History of the complaint, other illnesses, medicines taken.',
+    exam: 'What you found on examination.',
+    diagnosis: 'Diagnosis or what was done – required to finish a consultation and printed on the medical-aid claim.',
+    icd10: 'ICD-10 code, e.g. J06.9 (upper respiratory infection), I10 (hypertension). Most medical aids require it.',
+    plan: 'Treatment plan, advice and tests ordered.',
+    sick_note_days: 'Days off work or school – a medical certificate can then be printed.',
+    follow_up: 'Date the patient should come back.'
+  },
+  visititem: {
+    product_id: 'Choose from your products. Medicines are stock items (with batches and expiry); consultations and procedures are service products.',
+    qty: 'How many units are handed over – tablets, capsules, bottles or tubes. Stock goes out when the visit is billed.',
+    dosage: 'Directions printed on the label, in words the patient understands, e.g. "Take 2 tablets 3 times a day after meals".',
+    duration: 'How long to take it, e.g. "5 days" or "until finished".',
+    description: 'A service that is not in the list, e.g. "Wound dressing".',
+    unit_price: 'Leave blank to use the price on the product.'
+  },
+  visitbill: {
+    bill_to: 'The patient, or the medical aid on the patient\'s file. Medical-aid invoices appear under Medical-aid claims until paid.',
+    copay: 'Part the patient pays themselves (levy, shortfall). It is billed to the patient and taken off the medical aid\'s invoice.',
+    amount: 'What the patient pays now.',
+    method_id: 'Cash, card, M-Pesa, EcoCash or bank.',
+    reference: 'Mobile money or bank reference.',
+    due_date: 'If the patient pays later – payment reminders use this date.'
+  },
+  medaid: {
+    name: 'e.g. "LNIG Medical Aid", "Old Mutual", "Metropolitan", "Momentum".',
+    phone: 'Claims department number.',
+    email: 'Address claims and statements are sent to.'
+  },
+  clinicset: {
+    practice_no: 'Practice number or pharmacy licence number – printed on prescriptions, certificates and claims.',
+    practitioner_title: 'Printed under the signature, e.g. "Medical Practitioner" or "Registered Pharmacist".',
+    label_note: 'Short warning on every medicine label, e.g. "Keep out of reach of children".'
+  },
+  hireitem: {
+    name: 'What the customer hires, e.g. "Tent 10 × 20 m (stretch)", "Plastic chair white", "Scaffolding frame 2 m", "Concrete mixer 350 l".',
+    code: 'Your own code or asset tag – handy on the hire agreement.',
+    category: 'Group items for the lists and report, e.g. Tents, Chairs, Tables, Décor, Scaffolding, Plant.',
+    qty_owned: 'How many you own. Bookings can never promise more than this (less any that are broken).',
+    rate_day: 'Price per item per day including VAT. A hire from Friday to Monday is 3 days; same-day returns count as 1 day.',
+    rate_week: 'Cheaper price for 7 days. The bill always uses the cheapest mix of day, week and month prices for the days out.',
+    rate_month: 'Price for 30 days, for long hires like scaffolding on a building site.',
+    deposit: 'Deposit per item. The deposit for an order is added up from its items (you can change it per order).',
+    replacement_cost: 'What it costs you to replace one. Lost items are charged at this price.',
+    qty_out_of_service: 'Damaged items waiting for repair – they cannot be booked until you mark them fixed.',
+    track_maintenance: 'For machines (mixers, generators, compactors): also register it in Maintenance so services and breakdowns are tracked.',
+    service_days: 'Service interval in days for the machine.',
+    active: 'Untick when you no longer hire it out.'
+  },
+  hireorder: {
+    start_date: 'Day the items leave (collected or delivered). If they leave on another day, the hand-over date is used for the bill.',
+    end_date: 'Day the items should be back. Items stay booked until they are really back, even if late.',
+    partner_id: 'Returning customer – choose them so the hire is on their account and history.',
+    customer_name: 'Name of a new customer – a customer card is made automatically.',
+    customer_phone: 'Mobile number – used for reminders and when items are late.',
+    id_number: 'ID or passport number of the person who signs – printed on the hire agreement.',
+    delivery_address: 'Where to deliver and set up; leave blank if the customer collects.',
+    delivery_fee: 'Transport and set-up charged on the bill (incl. VAT).',
+    deposit_required: 'Leave blank to use the deposit of the items, or type another amount (e.g. less for a regular customer).',
+    notes: 'Set-up time, contact on site, colours, special requests.'
+  },
+  hirepay: {
+    date: 'Day the items left your yard.',
+    deposit: 'Deposit taken now. It is kept apart (not income) and set off against the bill when the items are back.',
+    amount: 'Money received now.',
+    method_id: 'How the money came in – cash, card, M-Pesa, EcoCash or bank.',
+    reference: 'M-Pesa / EcoCash code, EFT reference or receipt number.',
+    no_deposit_ok: 'Only for customers you trust – the system normally refuses to hand over without the full deposit.',
+    refund_method_id: 'How the rest of the deposit is paid back.',
+    keep_credit: 'The rest stays as credit on the customer\'s account for the next hire.',
+    due_date: 'If the customer pays later, the invoice is due on this date (payment reminders use it).'
+  },
+  farmgroup: {
+    name: 'e.g. "Layers house 1", "Broilers batch 12", "Merino flock", "Angora goats", "Dairy cows", "Sows".',
+    kind: 'Livestock (cattle, sheep, goats, pigs), poultry, or other (bees, fish, rabbits).',
+    species: 'Animal kind – used in reports and to suggest it for tagged animals.',
+    purpose: 'What you keep them for – eggs, broilers, milk, beef, wool, mohair, breeding.',
+    head_count: 'For flocks you do not tag one by one (chickens, a sheep flock): how many there are. Deaths recorded on the flock take it down. With tagged animals the count comes from them.',
+    started_on: 'Date the flock was placed or the herd started – helps work out age (e.g. weeks in lay).',
+    produce_id: 'The stock product daily production goes into, e.g. "Eggs – tray 30", "Milk (litre)", "Wool (kg)". Make it under Products first.',
+    place: 'House, camp, kraal or cattle post.',
+    notes: 'Supplier of the chicks / animals, vaccination programme…',
+    active: 'Untick when the flock is sold out or the herd closed.'
+  },
+  animal: {
+    tag: 'Ear tag, brand or tattoo number – must be unique. Use the government livestock ID where there is one.',
+    name: 'Optional name, e.g. for a bull or dairy cow.', species: 'cattle, sheep, goat, pig…', breed: 'e.g. Merino, Dorper, Angora, Boer goat, Nguni, Bonsmara, Jersey.',
+    sex: 'Female or male – only females can be given births.', birth_date: 'Exact or estimated birth date – age shows in the lists.',
+    group_id: 'The herd or flock it runs with.', acquired: 'Born on the farm or bought in.', cost: 'Price paid when bought – part of the animal\'s cost.',
+    weight: 'Last known weight. Weighings recorded later update it.', notes: 'Markings, temperament, health history.'
+  },
+  field: { name: 'e.g. "Lower field by the river", "Masimo a Ha Ramabanta".', size_ha: 'Size in hectares (1 ha = 100 m × 100 m).', place: 'Village or area.', irrigated: 'Tick if it can be watered.', notes: 'Soil type, last limed, rotation.', active: 'Untick a field no longer used.' },
+  season: {
+    field_id: 'The field it is planted in.', crop: 'e.g. maize, sorghum, wheat, beans, peas, potatoes, cabbage.', variety: 'Seed variety or supplier.',
+    area_ha: 'Hectares planted (blank = the whole field).', planted_on: 'Date sown or planted.', expected_harvest: 'When you expect to harvest.',
+    produce_id: 'Stock product the harvest goes into, e.g. "Maize 50 kg bag". Make it under Products first.', status: 'Planned, growing, harvested or failed (hail, drought…).', notes: 'Spacing, rainfall, problems.'
+  },
+  farmlog: {
+    kind: 'Production = eggs collected, milk, wool or mohair shorn. Feed / vaccinate / treat / plant / fertilise / spray take the product out of stock. Harvest puts the crop into stock.',
+    date: 'Day it was done – not in the future.', group_id: 'Herd or flock it was for.', animal_id: 'Or a single tagged animal.', season_id: 'Or the crop season.',
+    product_id: 'What was used (feed, vaccine, dip, seed, fertiliser) or produced. Inputs come out of stock at cost – buy them through Purchasing.',
+    qty: 'Amount used, in the product\'s unit (bags, doses, litres). For deaths in a flock: how many died.',
+    produced_qty: 'How much was collected or harvested (trays, litres, kg, bags) – it goes into stock.',
+    weight: 'Weight in kg.', cost: 'Wages, contractor (ploughing, shearing) or other cost paid outside stock.',
+    next_due: 'When the next dose or vaccination is due – it then shows under Health due.', final: 'Tick on the last harvest so the season is closed.', note: 'Anything worth remembering.'
+  },
+  farmexit: { kind: 'Sold (an invoice is made to the buyer), died, or slaughtered.', date: 'Date.', partner_id: 'Buyer – add new buyers under Contacts.', amount: 'Selling price.', weight: 'Weight at sale or slaughter.', note: 'Cause of death, where it was sold…' },
+  vehicle: {
+    reg_no: 'Registration number exactly as on the licence disc, e.g. "A 123 BCD".',
+    name: 'Optional nickname drivers use, e.g. "Blue Quantum".',
+    kind: 'Type of vehicle – taxis and buses usually record daily takings, trucks and bakkies trips.',
+    seats: 'Passenger seats – for buses and taxis charged per seat.',
+    capacity_tons: 'How much it can carry – for trucks charged per ton.',
+    odometer: 'Current kilometre reading. It goes up with every fuel fill, trip and takings entry and can never go back.',
+    driver_id: 'Driver who normally drives it – filled in automatically on fuel, trips and takings. Drivers are added in HR as employees.',
+    licence_expiry: 'Date the licence disc expires – shown in red on the Fleet screen 30 days before.',
+    insurance_expiry: 'Date the insurance must be renewed.',
+    fitness_expiry: 'Certificate of fitness (roadworthy) for public transport and trucks.',
+    permit_expiry: 'Operating permit / route permit for taxis, buses and cross-border trucks.',
+    service_days: 'Service interval in days – the vehicle is also a machine in Maintenance, which reminds you when a service is due.',
+    status: 'In repair and on-trip vehicles cannot be sent on a new trip.',
+    active: 'Untick when the vehicle is sold or written off.'
+  },
+  fuel: {
+    litres: 'Litres put in, from the fuel slip.',
+    amount: 'Rand/Maloti paid, from the slip. Booked as a fuel expense.',
+    odometer: 'Kilometre reading at the pump – needed to work out km per litre.',
+    full_tank: 'Tick when filled to full. km per litre is worked out between two full tanks, so keep it ticked unless it was only topped up.',
+    station: 'Filling station, e.g. "Engen Maseru Mall".',
+    method_id: 'How it was paid now (cash, fuel card on the bank, M-Pesa).',
+    supplier_id: 'If the station gives you credit, choose it here instead – it is added to what you owe them and paid with the supplier bill.'
+  },
+  trip: {
+    vehicle_id: 'Vehicle doing the trip – it must be available when it leaves.',
+    driver_id: 'Leave blank to use the vehicle\'s usual driver.',
+    from_place: 'Loading point or departure town.',
+    to_place: 'Destination, e.g. "Johannesburg City Deep".',
+    partner_id: 'Customer who pays for the trip. Finished trips of one customer can be put on one invoice together.',
+    load_desc: 'What is carried, e.g. "30 bags cement" or "school trip 45 learners".',
+    charge_by: 'How the customer pays: a fixed price per trip, per km driven, per ton, per seat or per day of hire.',
+    qty: 'Number of units charged (tons, seats, days). For per-km trips the km driven are filled in when the vehicle returns.',
+    rate: 'Price per unit excluding VAT – VAT is added on the invoice.',
+    costs: 'Tolls, border fees, permits and driver allowances paid for this trip – shows the real profit per trip.',
+    return_date: 'Day it is expected or came back.'
+  },
+  takings: {
+    amount: 'Cash or M-Pesa the driver handed in for the day. Booked as transport income.',
+    driver_id: 'Driver who worked the vehicle that day – one entry per vehicle, driver and day.',
+    method_id: 'Where the money went – cash box, bank or mobile money.',
+    trips: 'Number of loads or trips done – shows takings per trip over time.',
+    odometer: 'Kilometre reading at the end of the day (optional).',
+    notes: 'Anything short, e.g. "short M50 – breakdown at Mafeteng".'
   },
 };
 

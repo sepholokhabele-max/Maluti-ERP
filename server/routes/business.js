@@ -11,7 +11,9 @@ const r = express.Router();
 
 function calcLines(lines, priceKey) {
   return (lines || []).filter(l => Number(l.qty)).map(l => {
-    const a = lineAmounts({ qty: l.qty, unit_price: l[priceKey], tax_rate: l.tax_rate || 0, price_includes_tax: 0 });
+    // gross_total: the amount incl. VAT is fixed (prices quoted incl. VAT) – VAT is worked out of it so no cent goes astray
+    const a = l.gross_total !== undefined ? lineAmounts({ qty: 1, unit_price: l.gross_total, tax_rate: l.tax_rate || 0, price_includes_tax: 1 })
+      : lineAmounts({ qty: l.qty, unit_price: l[priceKey], tax_rate: l.tax_rate || 0, price_includes_tax: 0 });
     return { ...l, net_amount: a.net, tax_amount: a.tax, line_total: a.total };
   });
 }
@@ -220,47 +222,49 @@ r.put('/invoices/:id', requirePerm('invoicing'), ah(async (req, res) => {
   });
   res.json({ id: Number(req.params.id) });
 }));
-r.post('/invoices/:id/post', requirePerm('invoicing'), ah(async (req, res) => {
-  const out = await db.tx(async c => {
-    const i = await c.one('SELECT * FROM invoices WHERE id = ? FOR UPDATE', [req.params.id]);
-    if (!i) throw notFound();
-    if (i.status !== 'draft') throw bad('Already posted');
-    if (!(Number(i.total) > 0)) throw bad('Invoice total must be greater than zero');
-    const lines = await c.query('SELECT l.*, p.type FROM invoice_lines l LEFT JOIN products p ON p.id = l.product_id WHERE invoice_id = ?', [i.id]);
-    const yr = new Date(i.invoice_date).getFullYear() || new Date().getFullYear();
-    const number = i.kind === 'customer_invoice' ? `INV/${yr}/${pad(i.id, 5)}` : `BILL/${yr}/${pad(i.id, 5)}`;
-    const jl = [];
-    if (i.kind === 'customer_invoice') {
-      jl.push({ code: '1100', debit: i.total, partner_id: i.partner_id });
-      let cogs = 0;
-      for (const l of lines) {
-        jl.push({ code: l.account_code || '4000', credit: l.net_amount, description: l.description });
-        if (l.product_id && l.type === 'stock') {
-          const cost = await stock.move(c, { product_id: l.product_id, qty: -Number(l.qty), move_type: 'invoice', reference: number, user_id: req.user.id, location_id: i.location_id });
-          cogs += Number(l.qty) * cost;
-        }
+/** Post a draft invoice or bill: number, stock moves and journal. Used by the screen and by recurring contracts. */
+async function postInvoice(c, invoiceId, user) {
+  const i = await c.one('SELECT * FROM invoices WHERE id = ? FOR UPDATE', [invoiceId]);
+  if (!i) throw notFound();
+  if (i.status !== 'draft') throw bad('Already posted');
+  if (!(Number(i.total) > 0)) throw bad('Invoice total must be greater than zero');
+  const lines = await c.query('SELECT l.*, p.type FROM invoice_lines l LEFT JOIN products p ON p.id = l.product_id WHERE invoice_id = ?', [i.id]);
+  const yr = new Date(i.invoice_date).getFullYear() || new Date().getFullYear();
+  const number = i.kind === 'customer_invoice' ? `INV/${yr}/${pad(i.id, 5)}` : `BILL/${yr}/${pad(i.id, 5)}`;
+  const jl = [];
+  if (i.kind === 'customer_invoice') {
+    jl.push({ code: '1100', debit: i.total, partner_id: i.partner_id });
+    let cogs = 0;
+    for (const l of lines) {
+      jl.push({ code: l.account_code || '4000', credit: l.net_amount, description: l.description });
+      if (l.product_id && l.type === 'stock') {
+        const cost = await stock.move(c, { product_id: l.product_id, qty: -Number(l.qty), move_type: 'invoice', reference: number, user_id: user.id, location_id: i.location_id });
+        cogs += Number(l.qty) * cost;
       }
-      jl.push({ code: '2100', credit: i.tax_total });
-      cogs = round2(cogs);
-      if (cogs) { jl.push({ code: '5000', debit: cogs }); jl.push({ code: '1200', credit: cogs }); }
-    } else {
-      for (const l of lines) {
-        let code = l.account_code || '6000';
-        if (!i.po_id && l.product_id && l.type === 'stock') {
-          // direct bill for stock without a PO: receive the stock now
-          await stock.move(c, { product_id: l.product_id, qty: Number(l.qty), unit_cost: Number(l.unit_price), move_type: 'purchase', reference: number, user_id: req.user.id, location_id: i.location_id });
-          code = '1200';
-        }
-        jl.push({ code, debit: l.net_amount, description: l.description, partner_id: code === '2050' ? i.partner_id : null });
-      }
-      jl.push({ code: '1400', debit: i.tax_total });
-      jl.push({ code: '2000', credit: i.total, partner_id: i.partner_id });
     }
-    await accounting.post(c, { date: i.invoice_date, reference: number, memo: `${i.kind === 'customer_invoice' ? 'Invoice' : 'Bill'} ${number}`,
-      source_type: 'invoice', source_id: i.id, user_id: req.user.id, location_id: i.location_id, lines: jl });
-    await c.query(`UPDATE invoices SET status = 'posted', number = ? WHERE id = ?`, [number, i.id]);
-    return { number };
-  });
+    jl.push({ code: '2100', credit: i.tax_total });
+    cogs = round2(cogs);
+    if (cogs) { jl.push({ code: '5000', debit: cogs }); jl.push({ code: '1200', credit: cogs }); }
+  } else {
+    for (const l of lines) {
+      let code = l.account_code || '6000';
+      if (!i.po_id && l.product_id && l.type === 'stock') {
+        // direct bill for stock without a PO: receive the stock now
+        await stock.move(c, { product_id: l.product_id, qty: Number(l.qty), unit_cost: Number(l.unit_price), move_type: 'purchase', reference: number, user_id: user.id, location_id: i.location_id });
+        code = '1200';
+      }
+      jl.push({ code, debit: l.net_amount, description: l.description, partner_id: code === '2050' ? i.partner_id : null });
+    }
+    jl.push({ code: '1400', debit: i.tax_total });
+    jl.push({ code: '2000', credit: i.total, partner_id: i.partner_id });
+  }
+  await accounting.post(c, { date: i.invoice_date, reference: number, memo: `${i.kind === 'customer_invoice' ? 'Invoice' : 'Bill'} ${number}`,
+    source_type: 'invoice', source_id: i.id, user_id: user.id, location_id: i.location_id, lines: jl });
+  await c.query(`UPDATE invoices SET status = 'posted', number = ? WHERE id = ?`, [number, i.id]);
+  return { number };
+}
+r.post('/invoices/:id/post', requirePerm('invoicing'), ah(async (req, res) => {
+  const out = await db.tx(c => postInvoice(c, req.params.id, req.user));
   res.json(out);
 }));
 r.post('/invoices/:id/cancel', requirePerm('invoicing'), ah(async (req, res) => {
@@ -410,4 +414,4 @@ r.get('/dashboard', requirePerm('dashboard'), ah(async (req, res) => {
 }));
 
 module.exports = r;
-r.createInvoice = createInvoice; r.calcLines = calcLines;
+r.createInvoice = createInvoice; r.calcLines = calcLines; r.postInvoice = postInvoice;

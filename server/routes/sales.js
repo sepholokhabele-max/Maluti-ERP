@@ -94,7 +94,10 @@ const setStatus = (from, to, extra = '') => ah(async (req, res) => {
   res.json(await getOrder(o.id));
 });
 r.post('/sales/:id/sent', requirePerm('sales'), setStatus(['quote', 'sent'], 'sent'));
-r.post('/sales/:id/decline', requirePerm('sales'), setStatus(['quote', 'sent'], 'declined'));
+r.post('/sales/:id/decline', requirePerm('sales'), (req, res, next) => {
+  db.query(`UPDATE leads SET status = 'lost', closed_at = NOW(), lost_reason = ? WHERE sale_order_id = ? AND status = 'open' AND EXISTS (SELECT 1 FROM sale_orders so WHERE so.id = ? AND so.status IN ('quote','sent'))`, [String(req.body.reason || 'Quotation declined').slice(0, 160), req.params.id, req.params.id])
+    .catch(() => {}).finally(next);
+}, setStatus(['quote', 'sent'], 'declined'));
 r.post('/sales/:id/reopen', requirePerm('sales'), setStatus(['declined', 'cancelled'], 'quote'));
 r.post('/sales/:id/cancel', requirePerm('sales'), setStatus(['quote', 'sent', 'confirmed'], 'cancelled'));
 
@@ -106,6 +109,8 @@ r.post('/sales/:id/confirm', requirePerm('sales'), ah(async (req, res) => {
     if (!['quote', 'sent'].includes(o.status)) throw bad('Only open quotations can be confirmed');
     await c.query(`UPDATE sale_orders SET status = 'confirmed', number = ?, confirmed_at = NOW(), customer_ref = COALESCE(?, customer_ref) WHERE id = ?`,
       [`SO/${new Date().getFullYear()}/${pad(o.id, 5)}`, req.body.customer_ref || null, o.id]);
+    // the opportunity in the CRM pipeline is won, at the value of the order
+    await c.query(`UPDATE leads SET status = 'won', closed_at = NOW(), lost_reason = NULL, expected_value = ? WHERE sale_order_id = ? AND status <> 'won'`, [o.total, o.id]).catch(() => {});
   });
   res.json(await getOrder(req.params.id));
 }));

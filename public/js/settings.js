@@ -115,13 +115,13 @@ export async function settings(view) {
       fields: [{ key: 'name', label: 'Table name', required: true }, { key: 'floor_id', label: 'Floor', type: 'select', numeric: true, options: floors.map(f => ({ value: f.id, label: f.name })) }, { key: 'seats', label: 'Seats', type: 'number', default: 4 }] });
   }
   if (tab === 'users') {
-    const roles = ['admin', 'manager', 'accountant', 'cashier', 'waiter', 'bartender', 'kitchen', 'technician', 'staff'];
+    const roles = ['admin', 'manager', 'accountant', 'cashier', 'waiter', 'bartender', 'kitchen', 'technician', 'staff', 'supervisor', 'receptionist', 'clinician', 'farmworker'];
     const lo = hasMod('locations') ? await locationOptions('Default location') : null;
     const load = async () => {
       const users = await GET('/users');
       sb.innerHTML = `<div class="card"><div class="row" style="margin-bottom:10px"><h3 style="flex:1">Users</h3><button class="btn btn-primary" id="nu">＋ New user</button></div>
         ${tableHtml([{ key: 'name', label: 'Name' }, { key: 'username', label: 'Username' }, { key: 'role', label: 'Role', html: 1, fmt: v => badge(v, 'posted') }, { key: 'has_pin', label: 'PIN', fmt: v => v ? '✓' : '' }, { key: 'active', label: 'Status', html: 1, fmt: v => v ? badge('active', 'ok') : badge('disabled', 'closed') }], users, { rowAttr: u => `data-id="${u.id}"` })}
-        <p class="muted" style="margin-top:10px"><b>Roles:</b> admin = everything · manager = all operations incl. refunds, discounts, voids · accountant = invoicing, purchasing, accounting, reports · cashier = POS & VAS · waiter = POS orders · bartender = POS & VAS · kitchen = kitchen display only · technician = helpdesk, repairs & maintenance · staff = helpdesk, own tasks & hours.</p></div>`;
+        <p class="muted" style="margin-top:10px"><b>Roles:</b> admin = everything · manager = all operations incl. refunds, discounts, voids · accountant = invoicing, purchasing, accounting, reports · cashier = POS & VAS · waiter = POS orders · bartender = POS & VAS · kitchen = kitchen display only · technician = helpdesk, repairs & maintenance · staff = helpdesk, own tasks & hours · supervisor = sites, rosters, duty board, occurrence book & incidents · receptionist = front desk, bookings, guest bills, patient arrivals & POS · clinician = doctors, nurses and pharmacists: queue, patient files, notes, prescribing & dispensing · farmworker = farm diary (feeding, production, health) and clocking in.</p></div>`;
       const edit = u => {
         const f = [{ key: 'name', label: 'Full name', required: true }, { key: 'username', label: 'Username', required: true }, { key: 'email', label: 'Email' },
           { key: 'role', label: 'Role', type: 'select', options: roles.map(r => ({ value: r, label: r })) }, { key: 'password', label: u ? 'New password (leave blank to keep)' : 'Password', type: 'password', required: !u },

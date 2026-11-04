@@ -16,7 +16,7 @@ async function start({ port = 8069, host = '0.0.0.0', dbConfig, configStore, emb
   const app = express();
   app.locals.configStore = configStore || null;
   app.locals.embeddedDb = embeddedDb;
-  app.use(express.json({ limit: '5mb' }));
+  app.use(express.json({ limit: '12mb' }));
 
   // Allow other tills/tablets on the LAN to use the browser UI against this server
   app.use((req, res, next) => {
@@ -53,6 +53,17 @@ async function start({ port = 8069, host = '0.0.0.0', dbConfig, configStore, emb
   app.use('/api', require('./routes/mrp'));
   app.use('/api', require('./routes/operations'));
   app.use('/api', require('./routes/services'));
+  app.use('/api', require('./routes/growth').router);
+  app.use('/api', require('./routes/property').router);
+  app.use('/api', require('./routes/school'));
+  app.use('/api', require('./routes/sites'));
+  app.use('/api', require('./routes/reminders').router);
+  app.use('/api', require('./routes/rooms'));
+  app.use('/api', require('./routes/fleet'));
+  app.use('/api', require('./routes/hire'));
+  app.use('/api', require('./routes/clinic'));
+  app.use('/api', require('./routes/farm'));
+  app.use('/api', require('./routes/importer'));
   app.use('/api', require('./routes/master'));
   app.use('/api', require('./routes/business'));
 
@@ -79,6 +90,10 @@ async function start({ port = 8069, host = '0.0.0.0', dbConfig, configStore, emb
       await db.migrate();
       await require('./services/stock').syncLocations(db).catch(e => console.error('[stock] location sync:', e.message));
       await mailer.schedule();
+      // recurring contract invoices: shortly after start and then every hour
+      const runContracts = () => require('./routes/property').escalate().catch(e => console.error('[rent]', e.message)).then(() => require('./routes/growth').runDue(null)).catch(e => console.error('[contracts]', e.message))
+        .then(() => require('./routes/reminders').runAuto()).catch(e => console.error('[reminders]', e.message));
+      setTimeout(runContracts, 20000); setInterval(runContracts, 3600000).unref();
       console.log(`[db] connected to ${dbConfig.host}/${dbConfig.database}`);
     } catch (e) {
       console.error('[db] connection failed:', e.message);

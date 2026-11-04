@@ -115,7 +115,7 @@ r.post('/maintenance/:id(\\d+)/cancel', requirePerm('maintenance'), ah(async (re
   res.json(await getMr(db, m.id));
 }));
 /**
- * Done: spare parts come out of stock and are booked as repairs & maintenance (Dr 6900 / Cr 1200).
+ * Done: spare parts come out of stock and are booked as repairs & maintenance (Dr 6600 / Cr 1200).
  * Labour and outside-repairer costs are recorded on the request for machine cost reports
  * (wages and the repairer's bill are booked through payroll and supplier bills, so they are not posted twice).
  */
@@ -140,7 +140,7 @@ r.post('/maintenance/:id(\\d+)/done', requirePerm('maintenance'), ah(async (req,
     }
     parts = round2(parts);
     if (parts) await accounting.post(c, { reference: m.number, memo: `Maintenance ${m.number} – ${e.name}`, source_type: 'maintenance', source_id: m.id, user_id: req.user.id, location_id: e.location_id,
-      lines: [{ code: '6900', debit: parts, description: `Spare parts: ${e.name}` }, { code: '1200', credit: parts }] });
+      lines: [{ code: '6600', debit: parts, description: `Spare parts: ${e.name}` }, { code: '1200', credit: parts }] });
     let downtime = b.downtime_hours !== undefined && b.downtime_hours !== '' ? Math.max(0, Number(b.downtime_hours) || 0) : null;
     if (downtime === null && m.machine_down) {
       const t0 = new Date(String(m.created_at).replace(' ', 'T')).getTime();

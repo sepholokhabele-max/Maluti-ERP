@@ -1,5 +1,6 @@
 // Store setup guide – every step to get a shop, restaurant, bar or butchery ready, in order.
 import { GET, PUT, esc, $, $$, toast, err, page, can } from './core.js';
+import { lang } from './i18n.js';
 
 export async function guidePage(view) {
   if (!can('settings')) { view.innerHTML = page('Setup guide', '', '<div class="empty">Only an administrator can run the setup guide.</div>'); return; }
@@ -8,6 +9,9 @@ export async function guidePage(view) {
 }
 
 function draw(view, g) {
+  // Sesotho (or both languages) for the step texts
+  const l = lang();
+  if (l !== 'en') g = { ...g, steps: g.steps.map(x => x.st ? (l === 'st' ? { ...x, group: x.st.group, title: x.st.title, why: x.st.why, how: x.st.how } : { ...x, why_alt: x.st.why, how_alt: x.st.how, title_alt: x.st.title }) : x) };
   const pct = g.total ? Math.round(g.done / g.total * 100) : 0;
   const next = g.steps.find(x => !x.done && !x.optional) || g.steps.find(x => !x.done);
   const groups = [...new Set(g.steps.map(s => s.group))];
@@ -26,9 +30,9 @@ function draw(view, g) {
     ${groups.map(gr => `<h3 class="guide-group">${esc(gr)}</h3>${g.steps.filter(s => s.group === gr).map(s => { n++; const isNext = next && s.key === next.key;
       return `<div class="guide-step ${s.done ? 'done' : ''} ${isNext ? 'next' : ''}" id="step-${s.key}">
         <div class="gs-num">${s.done ? '✓' : n}</div>
-        <div class="gs-body"><div class="row wrap" style="gap:8px;align-items:baseline"><b class="gs-title">${esc(s.title)}</b>${s.optional ? '<span class="badge">optional</span>' : ''}${isNext ? '<span class="badge badge-posted">next step</span>' : ''}${s.manual ? '<span class="badge">tick when done</span>' : ''}</div>
-          <div class="gs-why">${esc(s.why)}</div>
-          <small class="help-note">${esc(s.how)}</small>
+        <div class="gs-body"><div class="row wrap" style="gap:8px;align-items:baseline"><b class="gs-title">${esc(s.title)}</b>${s.title_alt && s.title_alt !== s.title ? ` <i class="muted">${esc(s.title_alt)}</i>` : ''}${s.optional ? '<span class="badge">optional</span>' : ''}${isNext ? '<span class="badge badge-posted">next step</span>' : ''}${s.manual ? '<span class="badge">tick when done</span>' : ''}</div>
+          <div class="gs-why">${esc(s.why)}${s.why_alt ? `<br><i class="muted">${esc(s.why_alt)}</i>` : ''}</div>
+          <small class="help-note">${esc(s.how)}${s.how_alt ? `<span class="help-alt">${esc(s.how_alt)}</span>` : ''}</small>
           ${s.note && !s.done ? `<div class="gs-warn">⚠ ${esc(s.note)}</div>` : ''}</div>
         <div class="gs-act"><a class="btn ${isNext ? 'btn-primary' : ''} btn-sm" href="${s.link}" data-open="${esc(s.title)}">Open →</a>
           ${s.done ? (s.manual ? `<button class="btn btn-sm" data-unmark="${s.key}">Undo</button>` : '') : `<button class="btn btn-sm" data-mark="${s.key}">${s.manual ? 'Mark done' : 'Already done'}</button>`}</div>

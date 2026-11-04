@@ -1307,4 +1307,686 @@ module.exports = [
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
     ]
   }
+  ,{
+    id: 12,
+    name: 'pipeline_contracts_attachments',
+    sql: [
+      // ---- CRM pipeline (leads / opportunities)
+      `CREATE TABLE IF NOT EXISTS crm_stages (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(60) NOT NULL,
+        sort INT NOT NULL DEFAULT 0,
+        probability INT NOT NULL DEFAULT 10,
+        active TINYINT(1) NOT NULL DEFAULT 1
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `INSERT INTO crm_stages (name, sort, probability) SELECT * FROM (SELECT 'New' n, 1 s, 10 p UNION ALL SELECT 'Qualified', 2, 30 UNION ALL SELECT 'Proposal sent', 3, 60 UNION ALL SELECT 'Negotiation', 4, 80) x
+        WHERE NOT EXISTS (SELECT 1 FROM crm_stages)`,
+      `CREATE TABLE IF NOT EXISTS leads (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        title VARCHAR(200) NOT NULL,
+        partner_id INT NULL,
+        company VARCHAR(160) NULL,
+        contact_name VARCHAR(120) NULL,
+        phone VARCHAR(40) NULL,
+        email VARCHAR(120) NULL,
+        source ENUM('walk_in','phone','whatsapp','facebook','referral','website','tender','other') NOT NULL DEFAULT 'other',
+        stage_id INT NULL,
+        status ENUM('open','won','lost') NOT NULL DEFAULT 'open',
+        expected_value DECIMAL(14,2) NOT NULL DEFAULT 0,
+        probability INT NULL,
+        expected_close DATE NULL,
+        owner_id INT NULL,
+        priority TINYINT NOT NULL DEFAULT 1,
+        notes TEXT NULL,
+        lost_reason VARCHAR(160) NULL,
+        sale_order_id BIGINT NULL,
+        closed_at DATETIME NULL,
+        created_by INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (status, stage_id), INDEX (owner_id), INDEX (sale_order_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      // activities can now belong to a lead instead of a customer: partner_id becomes optional (its foreign key name differs per server)
+      async ({ query }) => {
+        const fks = await query(`SELECT CONSTRAINT_NAME n FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'crm_activities' AND COLUMN_NAME = 'partner_id' AND REFERENCED_TABLE_NAME IS NOT NULL`);
+        for (const f of fks) await query(`ALTER TABLE crm_activities DROP FOREIGN KEY \`${f.n}\``);
+        await query(`ALTER TABLE crm_activities MODIFY partner_id INT NULL, ADD COLUMN lead_id INT NULL, ADD INDEX idx_act_lead (lead_id)`);
+        await query(`ALTER TABLE crm_activities ADD CONSTRAINT fk_act_partner FOREIGN KEY (partner_id) REFERENCES partners(id) ON DELETE CASCADE`);
+      },
+
+      // ---- contracts & recurring invoices
+      `CREATE TABLE IF NOT EXISTS contracts (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        number VARCHAR(40) NULL UNIQUE,
+        partner_id INT NOT NULL,
+        name VARCHAR(160) NOT NULL,
+        status ENUM('draft','active','paused','ended') NOT NULL DEFAULT 'draft',
+        period ENUM('weekly','monthly','quarterly','yearly') NOT NULL DEFAULT 'monthly',
+        every INT NOT NULL DEFAULT 1,
+        start_date DATE NOT NULL,
+        next_date DATE NOT NULL,
+        end_date DATE NULL,
+        auto_post TINYINT(1) NOT NULL DEFAULT 0,
+        due_days INT NOT NULL DEFAULT 7,
+        project_id INT NULL,
+        location_id INT NULL,
+        notes VARCHAR(255) NULL,
+        invoices_made INT NOT NULL DEFAULT 0,
+        last_invoice_id BIGINT NULL,
+        user_id INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (status, next_date)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS contract_lines (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        contract_id INT NOT NULL,
+        product_id INT NULL,
+        description VARCHAR(200) NOT NULL,
+        qty DECIMAL(14,3) NOT NULL DEFAULT 1,
+        unit_price DECIMAL(14,4) NOT NULL,
+        tax_rate DECIMAL(6,3) NOT NULL DEFAULT 15,
+        FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `ALTER TABLE invoices ADD COLUMN contract_id INT NULL, ADD INDEX idx_inv_contract (contract_id)`,
+
+      // ---- file attachments (kept in the database so backups include them)
+      `CREATE TABLE IF NOT EXISTS attachments (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        entity VARCHAR(30) NOT NULL,
+        entity_id BIGINT NOT NULL,
+        filename VARCHAR(200) NOT NULL,
+        mime VARCHAR(100) NOT NULL,
+        size INT NOT NULL,
+        data MEDIUMBLOB NOT NULL,
+        note VARCHAR(200) NULL,
+        user_id INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (entity, entity_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+    ]
+  }
+  ,{
+    id: 13,
+    name: 'property_school_sites',
+    sql: [
+      // fix: maintenance parts were booked to 6900 (Cash over/short) – move them to 6600 Repairs & maintenance
+      `UPDATE journal_lines l JOIN journal_entries e ON e.id = l.entry_id JOIN accounts a ON a.id = l.account_id
+         SET l.account_id = (SELECT id FROM (SELECT id FROM accounts WHERE code = '6600') x) WHERE e.source_type = 'maintenance' AND a.code = '6900'`,
+      `INSERT IGNORE INTO accounts (code, name, type) VALUES ('2400', 'Tenant deposits held', 'liability'), ('2410', 'Rent collected for landlords', 'liability'),
+         ('4500', 'Management commission', 'income'), ('4600', 'Rental income', 'income'), ('4700', 'School fees', 'income'), ('5300', 'Consumables used on sites', 'expense')`,
+      `ALTER TABLE contract_lines ADD COLUMN account_code VARCHAR(10) NULL`,
+      `ALTER TABLE users MODIFY role ENUM('admin','manager','accountant','cashier','waiter','bartender','kitchen','technician','staff','supervisor') NOT NULL DEFAULT 'cashier'`,
+
+      // ---- property & rent
+      `CREATE TABLE IF NOT EXISTS properties (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(120) NOT NULL,
+        address VARCHAR(255) NULL,
+        owner_id INT NULL,
+        commission_pct DECIMAL(6,2) NOT NULL DEFAULT 0,
+        notes VARCHAR(255) NULL,
+        active TINYINT(1) NOT NULL DEFAULT 1,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS units (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        property_id INT NOT NULL,
+        name VARCHAR(60) NOT NULL,
+        kind ENUM('flat','house','room','shop','office','warehouse','site','other') NOT NULL DEFAULT 'flat',
+        bedrooms INT NULL,
+        size_m2 DECIMAL(10,2) NULL,
+        market_rent DECIMAL(14,2) NULL,
+        meter_no VARCHAR(60) NULL,
+        notes VARCHAR(255) NULL,
+        active TINYINT(1) NOT NULL DEFAULT 1,
+        FOREIGN KEY (property_id) REFERENCES properties(id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS leases (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        number VARCHAR(40) NULL UNIQUE,
+        unit_id INT NOT NULL,
+        tenant_id INT NOT NULL,
+        start_date DATE NOT NULL,
+        end_date DATE NULL,
+        rent DECIMAL(14,2) NOT NULL,
+        tax_rate DECIMAL(6,3) NOT NULL DEFAULT 0,
+        due_day INT NOT NULL DEFAULT 1,
+        deposit DECIMAL(14,2) NOT NULL DEFAULT 0,
+        deposit_held DECIMAL(14,2) NOT NULL DEFAULT 0,
+        escalation_pct DECIMAL(6,2) NOT NULL DEFAULT 0,
+        next_escalation DATE NULL,
+        status ENUM('draft','active','notice','ended') NOT NULL DEFAULT 'draft',
+        contract_id INT NULL,
+        notice_date DATE NULL,
+        ended_at DATE NULL,
+        notes VARCHAR(255) NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (unit_id, status), INDEX (tenant_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS owner_payouts (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        property_id INT NOT NULL,
+        period_from DATE NOT NULL,
+        period_to DATE NOT NULL,
+        collected DECIMAL(14,2) NOT NULL,
+        commission DECIMAL(14,2) NOT NULL,
+        paid DECIMAL(14,2) NOT NULL,
+        method_id INT NULL,
+        user_id INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+
+      // ---- school fees
+      `CREATE TABLE IF NOT EXISTS school_classes (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(60) NOT NULL,
+        grade VARCHAR(40) NOT NULL,
+        sort INT NOT NULL DEFAULT 0,
+        teacher VARCHAR(120) NULL,
+        capacity INT NULL,
+        next_class_id INT NULL,
+        active TINYINT(1) NOT NULL DEFAULT 1
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS learners (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        admission_no VARCHAR(30) NULL UNIQUE,
+        first_name VARCHAR(80) NOT NULL,
+        last_name VARCHAR(80) NOT NULL,
+        gender ENUM('F','M') NULL,
+        birth_date DATE NULL,
+        class_id INT NULL,
+        guardian_id INT NOT NULL,
+        guardian2 VARCHAR(160) NULL,
+        status ENUM('enrolled','left','graduated') NOT NULL DEFAULT 'enrolled',
+        enrolled_on DATE NULL,
+        left_on DATE NULL,
+        bursary_pct DECIMAL(6,2) NOT NULL DEFAULT 0,
+        medical VARCHAR(255) NULL,
+        notes VARCHAR(255) NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (class_id, status), INDEX (guardian_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS fee_items (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        grade VARCHAR(40) NULL,
+        amount DECIMAL(14,2) NOT NULL,
+        period ENUM('term','year','month','once') NOT NULL DEFAULT 'term',
+        optional TINYINT(1) NOT NULL DEFAULT 0,
+        sibling_discount TINYINT(1) NOT NULL DEFAULT 1,
+        active TINYINT(1) NOT NULL DEFAULT 1
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS learner_fees (
+        learner_id INT NOT NULL,
+        fee_item_id INT NOT NULL,
+        PRIMARY KEY (learner_id, fee_item_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS fee_runs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        label VARCHAR(60) NOT NULL,
+        period ENUM('term','year','month','once') NOT NULL,
+        invoice_date DATE NOT NULL,
+        due_date DATE NULL,
+        invoices INT NOT NULL DEFAULT 0,
+        total DECIMAL(14,2) NOT NULL DEFAULT 0,
+        user_id INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY (label)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS fee_bills (
+        run_id INT NOT NULL,
+        learner_id INT NOT NULL,
+        invoice_id BIGINT NOT NULL,
+        PRIMARY KEY (run_id, learner_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `ALTER TABLE invoices ADD COLUMN learner_id INT NULL, ADD COLUMN lease_id INT NULL, ADD COLUMN site_id INT NULL`,
+
+      // ---- sites, shifts, occurrence book, incidents, inspections (security & cleaning)
+      `CREATE TABLE IF NOT EXISTS sites (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(120) NOT NULL,
+        partner_id INT NOT NULL,
+        kind ENUM('security','cleaning','both') NOT NULL DEFAULT 'security',
+        address VARCHAR(255) NULL,
+        contact_name VARCHAR(120) NULL,
+        contact_phone VARCHAR(40) NULL,
+        staff_day INT NOT NULL DEFAULT 0,
+        staff_night INT NOT NULL DEFAULT 0,
+        billing ENUM('contract','per_shift','per_hour') NOT NULL DEFAULT 'contract',
+        rate DECIMAL(14,2) NOT NULL DEFAULT 0,
+        contract_id INT NULL,
+        checklist TEXT NULL,
+        instructions TEXT NULL,
+        active TINYINT(1) NOT NULL DEFAULT 1,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS shifts (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        site_id INT NOT NULL,
+        employee_id INT NOT NULL,
+        role ENUM('guard','supervisor','cleaner','driver','other') NOT NULL DEFAULT 'guard',
+        start_at DATETIME NOT NULL,
+        end_at DATETIME NOT NULL,
+        status ENUM('planned','on_duty','done','absent','cancelled') NOT NULL DEFAULT 'planned',
+        check_in_at DATETIME NULL,
+        check_out_at DATETIME NULL,
+        replaced_by INT NULL,
+        invoice_id BIGINT NULL,
+        note VARCHAR(255) NULL,
+        INDEX (site_id, start_at), INDEX (employee_id, start_at), INDEX (status),
+        FOREIGN KEY (site_id) REFERENCES sites(id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS site_log (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        site_id INT NOT NULL,
+        kind ENUM('on_duty','off_duty','patrol','visitor','handover','note') NOT NULL DEFAULT 'note',
+        at DATETIME NOT NULL,
+        employee_id INT NULL,
+        text VARCHAR(500) NOT NULL,
+        user_id INT NULL,
+        INDEX (site_id, at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS incidents (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        number VARCHAR(40) NULL UNIQUE,
+        site_id INT NOT NULL,
+        occurred_at DATETIME NOT NULL,
+        kind ENUM('theft','break_in','trespass','fire','injury','damage','alarm','complaint','other') NOT NULL DEFAULT 'other',
+        severity ENUM('low','medium','high') NOT NULL DEFAULT 'medium',
+        employee_id INT NULL,
+        description TEXT NOT NULL,
+        action_taken TEXT NULL,
+        police_case VARCHAR(60) NULL,
+        status ENUM('open','closed') NOT NULL DEFAULT 'open',
+        client_informed TINYINT(1) NOT NULL DEFAULT 0,
+        user_id INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (site_id, occurred_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS inspections (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        site_id INT NOT NULL,
+        at DATETIME NOT NULL,
+        items TEXT NOT NULL,
+        score DECIMAL(5,1) NULL,
+        signed_by VARCHAR(120) NULL,
+        notes VARCHAR(500) NULL,
+        user_id INT NULL,
+        INDEX (site_id, at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+    ]
+  }
+  ,{
+    id: 14,
+    name: 'reminders',
+    sql: [
+      `CREATE TABLE IF NOT EXISTS reminder_log (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        partner_id INT NOT NULL,
+        channel ENUM('sms','email','whatsapp') NOT NULL,
+        source VARCHAR(20) NOT NULL DEFAULT 'all',
+        amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+        sent_to VARCHAR(160) NULL,
+        message TEXT NULL,
+        status ENUM('sent','failed') NOT NULL,
+        error VARCHAR(255) NULL,
+        auto TINYINT(1) NOT NULL DEFAULT 0,
+        user_id INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (partner_id, created_at), INDEX (created_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+    ]
+  }
+  ,{
+    id: 15,
+    name: 'rooms_fleet',
+    sql: [
+      `INSERT IGNORE INTO accounts (code, name, type) VALUES ('4800', 'Transport income', 'income'), ('4850', 'Accommodation income', 'income')`,
+      `ALTER TABLE users MODIFY role ENUM('admin','manager','accountant','cashier','waiter','bartender','kitchen','technician','staff','supervisor','receptionist') NOT NULL DEFAULT 'cashier'`,
+      // ---- rooms & bookings
+      `CREATE TABLE IF NOT EXISTS room_types (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(80) NOT NULL,
+        rate DECIMAL(14,2) NOT NULL,
+        capacity INT NOT NULL DEFAULT 2,
+        breakfast TINYINT(1) NOT NULL DEFAULT 0,
+        active TINYINT(1) NOT NULL DEFAULT 1
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS rooms (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(40) NOT NULL,
+        room_type_id INT NOT NULL,
+        floor VARCHAR(20) NULL,
+        housekeeping ENUM('clean','dirty','out_of_order') NOT NULL DEFAULT 'clean',
+        notes VARCHAR(255) NULL,
+        active TINYINT(1) NOT NULL DEFAULT 1,
+        FOREIGN KEY (room_type_id) REFERENCES room_types(id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS bookings (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        number VARCHAR(40) NULL UNIQUE,
+        room_id INT NOT NULL,
+        guest_id INT NOT NULL,
+        adults INT NOT NULL DEFAULT 1,
+        children INT NOT NULL DEFAULT 0,
+        check_in DATE NOT NULL,
+        check_out DATE NOT NULL,
+        rate DECIMAL(14,2) NOT NULL,
+        status ENUM('reserved','checked_in','checked_out','cancelled','no_show') NOT NULL DEFAULT 'reserved',
+        source ENUM('walk_in','phone','email','whatsapp','booking_site','agent','other') NOT NULL DEFAULT 'phone',
+        company_id INT NULL,
+        notes VARCHAR(255) NULL,
+        checked_in_at DATETIME NULL,
+        checked_out_at DATETIME NULL,
+        invoice_id BIGINT NULL,
+        user_id INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (room_id, check_in, check_out), INDEX (status), INDEX (guest_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS booking_charges (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        booking_id INT NOT NULL,
+        charge_date DATE NOT NULL,
+        description VARCHAR(160) NOT NULL,
+        amount DECIMAL(14,2) NOT NULL,
+        user_id INT NULL,
+        FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      // ---- fleet & trips
+      `CREATE TABLE IF NOT EXISTS vehicles (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        reg_no VARCHAR(20) NOT NULL UNIQUE,
+        name VARCHAR(80) NULL,
+        kind ENUM('car','bakkie','truck','bus','taxi','motorbike','trailer','other') NOT NULL DEFAULT 'bakkie',
+        make VARCHAR(40) NULL, model VARCHAR(40) NULL, year INT NULL,
+        fuel ENUM('diesel','petrol','other') NOT NULL DEFAULT 'diesel',
+        seats INT NULL, capacity_tons DECIMAL(8,2) NULL,
+        odometer INT NOT NULL DEFAULT 0,
+        driver_id INT NULL,
+        licence_expiry DATE NULL, insurance_expiry DATE NULL, fitness_expiry DATE NULL, permit_expiry DATE NULL,
+        equipment_id INT NULL,
+        status ENUM('available','on_trip','in_repair','sold') NOT NULL DEFAULT 'available',
+        notes VARCHAR(255) NULL,
+        active TINYINT(1) NOT NULL DEFAULT 1
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS fuel_logs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        vehicle_id INT NOT NULL,
+        fill_date DATE NOT NULL,
+        litres DECIMAL(10,2) NOT NULL,
+        amount DECIMAL(14,2) NOT NULL,
+        odometer INT NULL,
+        full_tank TINYINT(1) NOT NULL DEFAULT 1,
+        station VARCHAR(80) NULL,
+        driver_id INT NULL,
+        method_id INT NULL,
+        user_id INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (vehicle_id, fill_date)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS trips (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        number VARCHAR(40) NULL UNIQUE,
+        vehicle_id INT NOT NULL,
+        driver_id INT NULL,
+        partner_id INT NULL,
+        trip_date DATE NOT NULL,
+        return_date DATE NULL,
+        from_place VARCHAR(120) NULL,
+        to_place VARCHAR(120) NULL,
+        load_desc VARCHAR(160) NULL,
+        odo_out INT NULL, odo_in INT NULL,
+        charge_by ENUM('trip','km','ton','seat','day') NOT NULL DEFAULT 'trip',
+        qty DECIMAL(12,2) NOT NULL DEFAULT 1,
+        rate DECIMAL(14,2) NOT NULL DEFAULT 0,
+        costs DECIMAL(14,2) NOT NULL DEFAULT 0,
+        status ENUM('planned','on_trip','done','cancelled') NOT NULL DEFAULT 'planned',
+        invoice_id BIGINT NULL,
+        notes VARCHAR(255) NULL,
+        user_id INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (vehicle_id, trip_date), INDEX (status)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS vehicle_takings (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        vehicle_id INT NOT NULL,
+        take_date DATE NOT NULL,
+        driver_id INT NULL,
+        amount DECIMAL(14,2) NOT NULL,
+        method_id INT NOT NULL,
+        trips INT NULL,
+        notes VARCHAR(160) NULL,
+        user_id INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY (vehicle_id, take_date, driver_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `ALTER TABLE invoices ADD COLUMN booking_id INT NULL`
+    ]
+  },
+  {
+    id: 16,
+    name: 'equipment_hire',
+    sql: [
+      `INSERT IGNORE INTO accounts (code, name, type) VALUES ('2420', 'Hire deposits held', 'liability'), ('4900', 'Hire income', 'income')`,
+      `CREATE TABLE IF NOT EXISTS hire_items (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(120) NOT NULL,
+        code VARCHAR(40) NULL,
+        category VARCHAR(60) NULL,
+        qty_owned DECIMAL(12,2) NOT NULL DEFAULT 1,
+        qty_out_of_service DECIMAL(12,2) NOT NULL DEFAULT 0,
+        rate_day DECIMAL(14,2) NOT NULL DEFAULT 0,
+        rate_week DECIMAL(14,2) NULL,
+        rate_month DECIMAL(14,2) NULL,
+        deposit DECIMAL(14,2) NOT NULL DEFAULT 0,
+        replacement_cost DECIMAL(14,2) NOT NULL DEFAULT 0,
+        equipment_id INT NULL,
+        notes VARCHAR(255) NULL,
+        active TINYINT(1) NOT NULL DEFAULT 1
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS hire_orders (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        number VARCHAR(40) NULL UNIQUE,
+        partner_id INT NOT NULL,
+        start_date DATE NOT NULL,
+        end_date DATE NOT NULL,
+        status ENUM('reserved','out','returned','settled','cancelled') NOT NULL DEFAULT 'reserved',
+        delivery_address VARCHAR(255) NULL,
+        delivery_fee DECIMAL(14,2) NOT NULL DEFAULT 0,
+        deposit_required DECIMAL(14,2) NOT NULL DEFAULT 0,
+        deposit_held DECIMAL(14,2) NOT NULL DEFAULT 0,
+        id_number VARCHAR(40) NULL,
+        notes VARCHAR(255) NULL,
+        handed_over_at DATETIME NULL,
+        returned_at DATE NULL,
+        invoice_id BIGINT NULL,
+        user_id INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (status), INDEX (partner_id), INDEX (start_date, end_date)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS hire_lines (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        order_id INT NOT NULL,
+        item_id INT NOT NULL,
+        qty DECIMAL(12,2) NOT NULL,
+        rate_day DECIMAL(14,2) NOT NULL,
+        rate_week DECIMAL(14,2) NULL,
+        rate_month DECIMAL(14,2) NULL,
+        qty_back DECIMAL(12,2) NOT NULL DEFAULT 0,
+        FOREIGN KEY (order_id) REFERENCES hire_orders(id) ON DELETE CASCADE,
+        FOREIGN KEY (item_id) REFERENCES hire_items(id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS hire_returns (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        order_id INT NOT NULL,
+        line_id INT NOT NULL,
+        return_date DATE NOT NULL,
+        qty DECIMAL(12,2) NOT NULL DEFAULT 0,
+        damaged DECIMAL(12,2) NOT NULL DEFAULT 0,
+        lost DECIMAL(12,2) NOT NULL DEFAULT 0,
+        days INT NOT NULL,
+        hire_charge DECIMAL(14,2) NOT NULL DEFAULT 0,
+        damage_charge DECIMAL(14,2) NOT NULL DEFAULT 0,
+        note VARCHAR(160) NULL,
+        user_id INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (order_id) REFERENCES hire_orders(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `ALTER TABLE invoices ADD COLUMN hire_order_id INT NULL`
+    ]
+  },
+  {
+    id: 17,
+    name: 'patients',
+    sql: [
+      `INSERT IGNORE INTO accounts (code, name, type) VALUES ('4950', 'Medical & consultation fees', 'income')`,
+      `ALTER TABLE users MODIFY role ENUM('admin','manager','accountant','cashier','waiter','bartender','kitchen','technician','staff','supervisor','receptionist','clinician') NOT NULL DEFAULT 'cashier'`,
+      `CREATE TABLE IF NOT EXISTS patients (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        file_no VARCHAR(30) NULL UNIQUE,
+        first_name VARCHAR(80) NOT NULL,
+        last_name VARCHAR(80) NULL,
+        dob DATE NULL,
+        sex ENUM('F','M','X') NULL,
+        id_number VARCHAR(40) NULL,
+        phone VARCHAR(40) NULL,
+        email VARCHAR(120) NULL,
+        address VARCHAR(255) NULL,
+        next_of_kin VARCHAR(120) NULL,
+        next_of_kin_phone VARCHAR(40) NULL,
+        allergies VARCHAR(255) NULL,
+        chronic VARCHAR(255) NULL,
+        blood_group VARCHAR(5) NULL,
+        species VARCHAR(40) NULL,
+        partner_id INT NULL,
+        medical_aid_id INT NULL,
+        medical_aid_no VARCHAR(40) NULL,
+        main_member VARCHAR(120) NULL,
+        notes VARCHAR(255) NULL,
+        active TINYINT(1) NOT NULL DEFAULT 1,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (last_name, first_name), INDEX (phone), INDEX (id_number)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS visits (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        number VARCHAR(40) NULL UNIQUE,
+        patient_id INT NOT NULL,
+        visit_date DATE NOT NULL,
+        queue_no INT NULL,
+        status ENUM('waiting','in_consult','done','billed','cancelled') NOT NULL DEFAULT 'waiting',
+        kind ENUM('consultation','pharmacy','follow_up','procedure') NOT NULL DEFAULT 'consultation',
+        practitioner_id INT NULL,
+        reason VARCHAR(255) NULL,
+        bp_sys INT NULL, bp_dia INT NULL, pulse INT NULL, resp INT NULL, spo2 INT NULL,
+        temp DECIMAL(4,1) NULL, weight DECIMAL(6,2) NULL, height DECIMAL(5,1) NULL, glucose DECIMAL(5,1) NULL,
+        history TEXT NULL, exam TEXT NULL,
+        diagnosis VARCHAR(255) NULL, icd10 VARCHAR(20) NULL,
+        plan TEXT NULL,
+        sick_note_days INT NULL,
+        follow_up DATE NULL,
+        bill_to ENUM('patient','medical_aid') NULL,
+        invoice_id BIGINT NULL, copay_invoice_id BIGINT NULL,
+        started_at DATETIME NULL, done_at DATETIME NULL,
+        user_id INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (visit_date, status), INDEX (patient_id),
+        FOREIGN KEY (patient_id) REFERENCES patients(id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS visit_items (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        visit_id INT NOT NULL,
+        kind ENUM('service','medicine') NOT NULL,
+        product_id INT NULL,
+        description VARCHAR(200) NOT NULL,
+        qty DECIMAL(12,3) NOT NULL DEFAULT 1,
+        unit_price DECIMAL(14,2) NOT NULL DEFAULT 0,
+        tax_rate DECIMAL(6,3) NOT NULL DEFAULT 0,
+        dosage VARCHAR(160) NULL,
+        duration VARCHAR(40) NULL,
+        dispensed TINYINT(1) NOT NULL DEFAULT 0,
+        user_id INT NULL,
+        FOREIGN KEY (visit_id) REFERENCES visits(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `ALTER TABLE invoices ADD COLUMN visit_id INT NULL`
+    ]
+  },
+  {
+    id: 18,
+    name: 'farm',
+    sql: [
+      `INSERT IGNORE INTO accounts (code, name, type) VALUES ('4910', 'Farm sales (animals & produce)', 'income'), ('5400', 'Farm inputs used (feed, medicine, seed, fertiliser)', 'expense')`,
+      `ALTER TABLE users MODIFY role ENUM('admin','manager','accountant','cashier','waiter','bartender','kitchen','technician','staff','supervisor','receptionist','clinician','farmworker') NOT NULL DEFAULT 'cashier'`,
+      `CREATE TABLE IF NOT EXISTS farm_groups (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(80) NOT NULL,
+        kind ENUM('livestock','poultry','other') NOT NULL DEFAULT 'livestock',
+        species VARCHAR(40) NULL,
+        purpose VARCHAR(40) NULL,
+        head_count INT NULL,
+        started_on DATE NULL,
+        place VARCHAR(120) NULL,
+        produce_id INT NULL,
+        notes VARCHAR(255) NULL,
+        active TINYINT(1) NOT NULL DEFAULT 1
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS farm_animals (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        tag VARCHAR(40) NOT NULL UNIQUE,
+        name VARCHAR(60) NULL,
+        species VARCHAR(40) NOT NULL,
+        breed VARCHAR(60) NULL,
+        sex ENUM('F','M') NULL,
+        birth_date DATE NULL,
+        group_id INT NULL,
+        mother_id INT NULL,
+        acquired ENUM('born','bought','other') NOT NULL DEFAULT 'bought',
+        cost DECIMAL(14,2) NOT NULL DEFAULT 0,
+        weight DECIMAL(8,2) NULL,
+        status ENUM('alive','sold','died','slaughtered') NOT NULL DEFAULT 'alive',
+        exit_date DATE NULL, exit_note VARCHAR(160) NULL,
+        notes VARCHAR(255) NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (group_id), INDEX (status, species)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS farm_fields (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(80) NOT NULL,
+        size_ha DECIMAL(8,2) NULL,
+        place VARCHAR(120) NULL,
+        irrigated TINYINT(1) NOT NULL DEFAULT 0,
+        notes VARCHAR(255) NULL,
+        active TINYINT(1) NOT NULL DEFAULT 1
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS farm_seasons (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        field_id INT NOT NULL,
+        crop VARCHAR(60) NOT NULL,
+        variety VARCHAR(60) NULL,
+        area_ha DECIMAL(8,2) NULL,
+        planted_on DATE NULL,
+        expected_harvest DATE NULL,
+        produce_id INT NULL,
+        status ENUM('planned','growing','harvested','failed') NOT NULL DEFAULT 'growing',
+        notes VARCHAR(255) NULL,
+        FOREIGN KEY (field_id) REFERENCES farm_fields(id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS farm_logs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        log_date DATE NOT NULL,
+        kind ENUM('feed','vaccinate','treat','weigh','production','plant','fertilise','spray','harvest','labour','expense','birth','death','sale','other') NOT NULL,
+        group_id INT NULL, animal_id INT NULL, season_id INT NULL,
+        product_id INT NULL,
+        qty DECIMAL(14,3) NULL,
+        cost DECIMAL(14,2) NOT NULL DEFAULT 0,
+        produced_qty DECIMAL(14,3) NULL,
+        value DECIMAL(14,2) NOT NULL DEFAULT 0,
+        weight DECIMAL(8,2) NULL,
+        next_due DATE NULL,
+        invoice_id BIGINT NULL,
+        note VARCHAR(255) NULL,
+        user_id INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (log_date), INDEX (group_id), INDEX (season_id), INDEX (animal_id), INDEX (kind, next_due)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+    ]
+  }
 ];

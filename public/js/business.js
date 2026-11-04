@@ -1,3 +1,4 @@
+import { filesCard } from './core.js';
 // Purchasing, invoicing, accounting and reports
 import { attachScale } from './scale.js';
 import { multiLocation, locationOptions } from './core.js';
@@ -78,6 +79,7 @@ export async function purchaseForm(view, [id]) {
       <h3 style="margin:16px 0 8px">Lines</h3><div id="le"></div></div>`, { back: '#/purchases' });
   if (!draft) $$('#hdr input, #hdr select').forEach(i => i.disabled = true);
   lineEditor($('#le'), { products, lines, priceKey: 'unit_cost', defaultTax: dv, readOnly: !draft });
+  if (!isNew) filesCard('purchase', po.id, 'Quotes, delivery notes & files');
   const body = () => ({ ...readForm($('#hdr'), [{ key: 'supplier_id', type: 'select', numeric: true }, { key: 'order_date' }, { key: 'expected_date' }, { key: 'notes' }, ...locF]), lines });
   const on = (sel, fn) => { const el = $(sel); if (el) el.onclick = async () => { el.disabled = true; try { await fn(); } catch (e) { err(e); } el.disabled = false; }; };
   on('#save', async () => { const r = isNew ? await POST('/purchases', body()) : await PUT('/purchases/' + id, body()); toast('Saved'); location.hash = '#/purchase/' + r.id; if (!isNew) purchaseForm(view, [id]); });
@@ -187,6 +189,7 @@ export async function invoiceForm(view, [idq]) {
     </div>`, { back: `#/invoices?kind=${inv.kind}` });
   if (!draft) $$('#hdr input, #hdr select').forEach(i => i.disabled = true);
   lineEditor($('#le'), { products, lines, priceKey: 'unit_price', defaultTax: dv, readOnly: !draft });
+  if (!isNew) filesCard('invoice', inv.id, 'Signed delivery notes, proof of payment & files');
   const body = () => ({ kind: inv.kind, ...readForm($('#hdr'), [{ key: 'partner_id', type: 'select', numeric: true }, { key: 'invoice_date' }, { key: 'due_date' }, { key: 'notes' }, ...locF]), lines });
   const on = (sel, fn) => { const el = $(sel); if (el) el.onclick = async () => { el.disabled = true; try { await fn(); } catch (e) { err(e); } el.disabled = false; }; };
   on('#save', async () => { const r = isNew ? await POST('/invoices', body()) : await PUT('/invoices/' + id, body()); toast('Saved'); if (isNew) location.hash = '#/invoice/' + r.id; else invoiceForm(view, [id]); });

@@ -345,3 +345,24 @@ td.neg, .neg { color: var(--bad); }
 .thread { display: flex; flex-direction: column; gap: 8px; }
 .msg { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: #fff; }
 .msg.internal { background: var(--warn-soft); border-color: #fcd34d; }
+
+/* attachments */
+.att-list { display: flex; flex-direction: column; gap: 4px; }
+.att { display: flex; gap: 10px; align-items: center; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; }
+.att a { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* rooms: front-desk board and booking calendar */
+.room-board { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.room-card { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--ok, #16a34a); border-radius: var(--radius); padding: 10px 12px; box-shadow: var(--shadow); cursor: default; }
+.room-card.occ { border-left-color: #be185d; background: #fdf2f8; }
+.table-wrap table.cal td { padding: 4px 3px; min-width: 38px; height: 34px; font-size: 12px; white-space: nowrap; overflow: hidden; }
+.table-wrap table.cal th.r { font-size: 11px; text-align: center; }
+table.cal td.cal-free { cursor: pointer; } table.cal td.cal-free:hover { background: #ecfdf5; }
+table.cal td.cal-b { cursor: pointer; color: #fff; font-weight: 600; }
+table.cal td.cal-reserved { background: #f59e0b; } table.cal td.cal-checked_in { background: #be185d; } table.cal td.cal-checked_out { background: #94a3b8; }
+@media (prefers-color-scheme: dark) { .room-card.occ { background: rgba(190, 24, 93, .15); } }
+
+/* help notes in two languages, language switch */
+small.help-note .help-alt { display: block; margin-top: 3px; padding-top: 3px; border-top: 1px dashed #e8d48a; font-style: italic; color: #6b5a12; }
+.topbar .lang-sel { background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 6px; padding: 2px 4px; font-size: 12px; margin-right: 8px; width: auto; }
+.topbar .lang-sel option { color: #111; }

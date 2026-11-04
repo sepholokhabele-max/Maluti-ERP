@@ -124,6 +124,8 @@ export function toast(msg, type = 'ok', ms = 3200) {
 export const err = e => toast(e.message || String(e), 'err', 5000);
 
 import { HELP } from './help.js';
+import { HELP_ST } from './help_st.js';
+import { pick } from './i18n.js';
 // ---------- modal ----------
 /**
  * modal({ title, body (html), wide, actions:[{label, cls, onClick(close, root) }], onOpen(root, close) })
@@ -186,11 +188,12 @@ export function promptBox(title, { label = '', value = '', type = 'text' } = {})
  * fields: [{ key, label, type: text|number|email|select|checkbox|textarea|date|color|password, options:[{value,label}], required, step, help, span }]
  */
 export function formHtml(fields, values = {}, { ctx } = {}) {
-  const H = ctx ? HELP[ctx] || {} : {};
+  const H = ctx ? HELP[ctx] || {} : {}, HS = ctx ? HELP_ST[ctx] || {} : {};
   return `<div class="form-grid">${fields.map(f => {
     const v = values[f.key] ?? f.default ?? '';
     const help = f.help ?? H[f.key];
-    const note = help ? `<small class="help-note">${esc(help)}</small>` : '';
+    const hp = help ? pick(help, f.help ? f.help_st : HS[f.key]) : null;
+    const note = hp ? `<small class="help-note">${esc(hp.text)}${hp.alt ? `<span class="help-alt">${esc(hp.alt)}</span>` : ''}</small>` : '';
     const id = `f_${f.key}`;
     const req = f.required ? 'required' : '';
     const span = f.span ? `style="grid-column: span ${f.span}"` : '';
@@ -257,4 +260,45 @@ export function printHtml(html, { silent } = {}) {
 export function query() {
   const q = location.hash.split('?')[1] || '';
   return Object.fromEntries(new URLSearchParams(q));
+}
+
+// ---------- file attachments on any record ----------
+const fmtSize = n => n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+/** renders a small "Files" box into `el` for a record; entity e.g. 'invoice', 'project', 'ticket' */
+export async function attachPanel(el, entity, id, { title = 'Files' } = {}) {
+  if (!el || !id) return;
+  const load = async () => {
+    const files = await GET(`/attachments?entity=${entity}&entity_id=${id}`).catch(() => []);
+    el.innerHTML = `<div class="row" style="margin-bottom:6px"><h3 style="flex:1;margin:0">${esc(title)} <small class="muted" style="font-weight:400">${files.length || ''}</small></h3>
+      <label class="btn btn-sm" style="cursor:pointer">📎 Attach<input type="file" hidden multiple data-att></label></div>
+      ${files.length ? `<div class="att-list">${files.map(f => `<div class="att"><a href="#" data-open="${f.id}" title="${esc(f.mime)}">${/^image\//.test(f.mime) ? '🖼' : /pdf/.test(f.mime) ? '📄' : '📎'} ${esc(f.filename)}</a>
+        <small class="muted">${fmtSize(f.size)} · ${esc(f.user_name || '')} · ${esc(String(f.created_at).slice(0, 10))}</small><button class="icon-btn" data-rm="${f.id}" title="Remove">✕</button></div>`).join('')}</div>`
+        : '<div class="muted" style="font-size:13px">No files yet – attach signed delivery notes, quotes, photos, contracts or ID copies (max 8 MB each).</div>'}`;
+    el.querySelector('[data-att]').onchange = async e => {
+      for (const file of e.target.files) {
+        if (file.size > 8 * 1048576) { toast(`${file.name} is larger than 8 MB`, 'err'); continue; }
+        const data_url = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+        try { await POST('/attachments', { entity, entity_id: id, filename: file.name, data_url }); toast(`${file.name} attached`); } catch (x) { err(x); }
+      }
+      load();
+    };
+    el.querySelectorAll('[data-open]').forEach(a => a.onclick = async ev => {
+      ev.preventDefault();
+      const f = files.find(x => String(x.id) === a.dataset.open);
+      const r = await fetch(`/api/attachments/${f.id}/file`, { headers: { Authorization: 'Bearer ' + state.token } });
+      if (!r.ok) return toast('Could not open the file', 'err');
+      const blob = await r.blob(); const url = URL.createObjectURL(blob);
+      if (/^image\/|pdf|^text\//.test(f.mime)) window.open(url, '_blank');
+      else { const l = document.createElement('a'); l.href = url; l.download = f.filename; document.body.appendChild(l); l.click(); l.remove(); }
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    });
+    el.querySelectorAll('[data-rm]').forEach(b => b.onclick = async () => { if (await confirmBox('Remove this file?', { danger: true, okLabel: 'Remove' })) { try { await DEL('/attachments/' + b.dataset.rm); load(); } catch (x) { err(x); } } });
+  };
+  await load();
+}
+/** adds a "Files" card at the bottom of the current screen */
+export function filesCard(entity, id, title) {
+  const body = document.querySelector('#app .page-body'); if (!body || !id) return;
+  body.insertAdjacentHTML('beforeend', '<div class="card files-card" style="margin-top:14px"></div>');
+  attachPanel(body.lastElementChild, entity, id, title ? { title } : {});
 }

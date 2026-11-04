@@ -17,6 +17,19 @@ import * as locm from './locations.js';
 import * as mrpm from './mrp.js';
 import * as ops from './ops.js';
 import * as svc from './svc.js';
+import * as grow from './growth.js';
+import * as rent from './rent.js';
+import * as schoolui from './schoolui.js';
+import * as sitesui from './sitesui.js';
+import * as remindui from './remindui.js';
+import * as roomsui from './roomsui.js';
+import * as fleetui from './fleetui.js';
+import * as hireui from './hireui.js';
+import * as clinicui from './clinicui.js';
+import * as importer from './importer.js';
+import * as farmui from './farmui.js';
+import { LANGS, lang, setLang } from './i18n.js';
+import { workbook, tablesToSheets, download } from './xlsx.js';
 
 const APPS = [
   { href: '#/pos', label: 'Point of Sale', ico: '🛒', color: '#ea580c', perm: 'pos', mod: 'pos' },
@@ -44,19 +57,31 @@ const APPS = [
   { href: '#/attendance', label: 'Attendance', ico: '🕐', color: '#7c3aed', perm: 'attendance', mod: 'attendance' },
   { href: '#/mrp', label: 'Manufacturing', ico: '🏭', color: '#b45309', perm: 'inventory', mod: 'manufacturing' },
   { href: '#/maintenance', label: 'Maintenance', ico: '⚙️', color: '#57534e', mod: 'maintenance' },
+  { href: '#/property', label: 'Property & rent', ico: '🏢', color: '#0f766e', perm: 'property', mod: 'property' },
+  { href: '#/school', label: 'School fees', ico: '🎓', color: '#1d4ed8', perm: 'school', mod: 'school' },
+  { href: '#/sites', label: 'Sites & shifts', ico: '🛡️', color: '#334155', perm: 'sites', mod: 'sites' },
+  { href: '#/rooms', label: 'Rooms & bookings', ico: '🛏️', color: '#9d174d', perm: 'rooms', mod: 'rooms' },
+  { href: '#/farm', label: 'Farm', ico: '🌾', color: '#4d7c0f', perm: 'farm', mod: 'farm' },
+  { href: '#/clinic', label: 'Patients & dispensing', ico: '🩺', color: '#0e7490', perm: 'patients', mod: 'patients' },
+  { href: '#/hire', label: 'Equipment & party hire', ico: '⛺', color: '#a16207', perm: 'hire', mod: 'hire' },
+  { href: '#/fleet', label: 'Fleet & trips', ico: '🚚', color: '#365314', perm: 'fleet', mod: 'fleet' },
+  { href: '#/reminders', label: 'Payment reminders', ico: '📱', color: '#b91c1c', perm: 'reminders', mod: 'reminders' },
+  { href: '#/pipeline', label: 'Sales pipeline', ico: '🎯', color: '#be185d', perm: 'crm', mod: 'crm' },
+  { href: '#/contracts', label: 'Contracts & repeat invoices', ico: '🔁', color: '#0369a1', perm: 'invoicing', mod: 'contracts' },
   { href: '#/projects', label: 'Projects', ico: '📋', color: '#0f766e', perm: 'projects', mod: 'projects' },
   { href: '#/timesheets', label: 'My tasks & hours', ico: '🕒', color: '#4338ca', mod: 'projects' },
   { href: '#/helpdesk', label: 'Helpdesk & repairs', ico: '🛠️', color: '#c2410c', perm: 'helpdesk', mod: 'helpdesk' },
   { href: '#/rfqs', label: 'Supplier price requests', ico: '📨', color: '#6d28d9', perm: 'purchasing', mod: 'purchasing' },
   { href: '#/locations', label: 'Branches & warehouses', ico: '🏬', color: '#0369a1', perm: 'inventory', mod: 'locations' },
   { href: '#/transfers', label: 'Stock transfers', ico: '🔁', color: '#0891b2', perm: 'inventory', mod: 'locations' },
+  { href: '#/import', label: 'Import data', ico: '⬆️', color: '#0f766e', perm: 'settings' },
   { href: '#/guide', label: 'Setup guide', ico: '🧭', color: '#0d9488', perm: 'settings' },
   { href: '#/settings', label: 'Settings', ico: '⚙️', color: '#475569', perm: 'settings' }
 ];
 
 const NAV = [
   ['#/dashboard', 'Dashboard', 'dashboard'], ['#/pos', 'POS', 'pos', 'pos'], ['#/products', 'Products', 'catalog'], ['#/inventory', 'Inventory', 'inventory', 'inventory'],
-  ['#/locations', 'Branches', 'inventory', 'locations'], ['#/mrp', 'Manufacturing', 'inventory', 'manufacturing'], ['#/projects', 'Projects', 'projects', 'projects'], ['#/helpdesk', 'Helpdesk', 'helpdesk', 'helpdesk'], ['#/maintenance', 'Maintenance', 'maintenance', 'maintenance'],
+  ['#/locations', 'Branches', 'inventory', 'locations'], ['#/mrp', 'Manufacturing', 'inventory', 'manufacturing'], ['#/property', 'Property', 'property', 'property'], ['#/school', 'School', 'school', 'school'], ['#/sites', 'Sites', 'sites', 'sites'], ['#/rooms', 'Rooms', 'rooms', 'rooms'], ['#/fleet', 'Fleet', 'fleet', 'fleet'], ['#/hire', 'Hire', 'hire', 'hire'], ['#/clinic', 'Patients', 'patients', 'patients'], ['#/farm', 'Farm', 'farm', 'farm'], ['#/projects', 'Projects', 'projects', 'projects'], ['#/helpdesk', 'Helpdesk', 'helpdesk', 'helpdesk'], ['#/maintenance', 'Maintenance', 'maintenance', 'maintenance'],
   ['#/crm', 'CRM', 'crm', 'crm'], ['#/partners?type=customer', 'Contacts', 'partners'], ['#/purchases', 'Purchasing', 'purchasing', 'purchasing'], ['#/quotes', 'Sales', 'sales', 'sales'], ['#/invoices?kind=customer_invoice', 'Invoicing', 'invoicing'],
   ['#/accounting', 'Accounting', 'accounting'], ['#/recon', 'Recon', 'recon', 'pos'], ['#/hrm', 'HR', 'hrm', 'hrm'], ['#/butchery', 'Butchery', 'inventory', 'butchery'], ['#/bar', 'Bar', 'inventory', 'bar'], ['#/reports', 'Reports', 'reports'], ['#/settings', 'Settings', 'settings']
 ];
@@ -68,11 +93,12 @@ function shell(html) {
   <div class="topbar">
     <a class="brand" href="#/">${state.logo ? `<span class="brand-logo"><img src="${state.logo}" alt=""></span>` : '<span class="home-ico">▦</span>'} ${esc(state.company.name || 'Maluti ERP')}</a>
     <nav>${NAV.filter(n => can(n[2]) && (!n[3] || hasMod(n[3])) && (n[2] !== 'hrm' || (state.hrm && state.hrm.enabled)) && (n[0] !== '#/butchery' || (state.butchery && state.butchery.enabled))).map(n => `<a href="${n[0]}" class="${h === n[0].split('?')[0] ? 'active' : ''}">${n[1]}</a>`).join('')}</nav>
-    <div class="user"><span>${esc(state.user.name)}</span><div class="avatar" title="${esc(state.user.role)}">${initials}</div>
+    <div class="user"><select id="lang" class="lang-sel" title="Language of the help notes / Puo ea litaelo">${LANGS.map(([k, l]) => `<option value="${k}" ${lang() === k ? 'selected' : ''}>${k === 'both' ? 'EN + ST' : k.toUpperCase()}</option>`).join('')}</select><span>${esc(state.user.name)}</span><div class="avatar" title="${esc(state.user.role)}">${initials}</div>
       <button class="icon-btn" style="color:#fff" id="logout" title="Log out">⏻</button></div>
   </div>
   <div id="view">${html || ''}</div>`;
   $('#logout').onclick = logout;
+  $('#lang').onchange = e => { setLang(e.target.value); route(); };
   return $('#view');
 }
 
@@ -90,7 +116,7 @@ function home(view) {
   if (can('settings')) GET('/setup-guide').then(g => {
     const el = $('#guideBanner'); if (!el || g.dismissed || g.complete) return;
     const next = g.steps.find(x => !x.done && !x.optional);
-    el.innerHTML = `<a class="guide-banner" href="#/guide"><span class="gb-ico">🧭</span><span style="flex:1"><b>Finish setting up your shop – ${g.done} of ${g.total} steps done</b><br>
+    el.innerHTML = `<a class="guide-banner" href="#/guide"><span class="gb-ico">🧭</span><span style="flex:1"><b>Finish setting up your business – ${g.done} of ${g.total} steps done</b><br>
       <small>Next: ${esc(next ? next.title : '')}</small></span><span class="gb-bar"><span style="width:${Math.round(g.done / g.total * 100)}%"></span></span><span class="btn btn-primary btn-sm">Continue →</span></a>`;
   }).catch(() => {});
 }
@@ -272,6 +298,32 @@ const ROUTES = {
   '#/timesheets': svc.timesheets,
   '#/helpdesk': svc.helpdesk,
   '#/ticket': svc.ticketForm,
+  '#/property': rent.property,
+  '#/building': rent.building,
+  '#/lease': rent.leaseForm,
+  '#/school': schoolui.school,
+  '#/learner': schoolui.learner,
+  '#/sites': sitesui.sites,
+  '#/site': sitesui.siteForm,
+  '#/reminders': remindui.reminders,
+  '#/rooms': roomsui.rooms,
+  '#/booking': roomsui.booking,
+  '#/fleet': fleetui.fleet,
+  '#/vehicle': fleetui.vehicle,
+  '#/hire': hireui.hire,
+  '#/import': importer.importer,
+  '#/farm': farmui.farm,
+  '#/farmgroup': farmui.farmGroup,
+  '#/animal': farmui.animal,
+  '#/season': farmui.season,
+  '#/clinic': clinicui.clinic,
+  '#/patient': clinicui.patient,
+  '#/visit': clinicui.visit,
+  '#/hireorder': hireui.hireOrder,
+  '#/pipeline': grow.pipeline,
+  '#/lead': grow.leadForm,
+  '#/contracts': grow.contracts,
+  '#/contract': grow.contractForm,
   '#/bar': barm.bar
 };
 
@@ -305,6 +357,32 @@ export async function route() {
   const view = shell('<div class="page"><div class="muted">Loading…</div></div>');
   try { await fn(view, path.split('/').slice(2)); } catch (e) { view.innerHTML = `<div class="page"><div class="empty">${esc(e.message)}</div></div>`; }
 }
+
+// "⬇ Excel" on every screen that shows a table: each visible table becomes a sheet
+function ensureExcel() {
+  const pg = document.querySelector('#app .page'); if (!pg) return;
+  const acts = pg.querySelector('.page-actions'); if (!acts || acts.querySelector('[data-xlsx]')) return;
+  if (![...pg.querySelectorAll('table')].some(t => t.rows.length > 1)) return;
+  const b = document.createElement('button'); b.className = 'btn'; b.dataset.xlsx = '1'; b.title = 'Download the tables on this screen as an Excel file'; b.textContent = '⬇ Excel';
+  b.onclick = () => {
+    const title = (pg.querySelector('.page-title h2') || {}).textContent || 'Maluti ERP';
+    const sheets = tablesToSheets(pg, title.slice(0, 28));
+    if (!sheets.length) return toast('Nothing to export on this screen', 'err');
+    const tab = (pg.querySelector('.tabs a.active') || {}).textContent;
+    download(workbook(sheets), `${(title + (tab ? ' - ' + tab : '')).replace(/[\\/:*?"<>|]+/g, '-').trim()} ${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+  acts.prepend(b);
+}
+// "⬆ Import" on each module's main screen, opening the importer for what that screen holds
+function ensureImport() {
+  const pg = document.querySelector('#app .page'); if (!pg) return;
+  const acts = pg.querySelector('.page-actions'); if (!acts || acts.querySelector('[data-imp]')) return;
+  const k = importer.ROUTE_KINDS[location.hash.split('?')[0]]; if (!k) return;
+  const kind = importer.KINDS.find(x => x.key === k); if (!kind || !can(kind.perm) || (kind.mod && !hasMod(kind.mod))) return;
+  const a = document.createElement('a'); a.className = 'btn'; a.dataset.imp = '1'; a.href = '#/import?kind=' + k; a.textContent = '⬆ Import'; a.title = 'Bring in data from another program or Excel';
+  acts.prepend(a);
+}
+let xlTimer; new MutationObserver(() => { clearTimeout(xlTimer); xlTimer = setTimeout(() => { ensureExcel(); ensureImport(); }, 150); }).observe(document.getElementById('app'), { childList: true, subtree: true });
 
 window.addEventListener('hashchange', () => { closeModals(); route(); guide.guideReturnPill(); });
 if (window.maluti && window.maluti.onUpdateAvailable) window.maluti.onUpdateAvailable(s => {

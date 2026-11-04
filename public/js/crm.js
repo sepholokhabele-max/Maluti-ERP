@@ -1,3 +1,4 @@
+import { filesCard } from './core.js';
 // CRM: customer list with stats, activities board, customer 360
 import { state, GET, POST, PUT, DEL, esc, $, $$, toast, err, can, money, qty, modal, confirmBox, formHtml, readForm, tableHtml, badge, page, dt, d, today, debounce, query, printHtml } from './core.js';
 
@@ -22,7 +23,7 @@ export const PARTNER_EXTRA_FIELDS = [
 // ---------------------------------------------------------------- CRM home
 export async function crm(view) {
   const tab = query().tab || 'customers';
-  view.innerHTML = page('CRM', `<button class="btn" id="newAct">＋ Activity</button><button class="btn btn-primary" id="newCust">＋ Customer</button>`, `
+  view.innerHTML = page('CRM', `<a class="btn" href="#/pipeline">🎯 Pipeline</a><button class="btn" id="newAct">＋ Activity</button><button class="btn btn-primary" id="newCust">＋ Customer</button>`, `
     <div class="tabs"><a href="#/crm?tab=customers" class="${tab === 'customers' ? 'active' : ''}">Customers</a>
     <a href="#/crm?tab=activities" class="${tab === 'activities' ? 'active' : ''}">Activities & follow-ups</a></div><div id="cb"></div>`);
   $('#newAct').onclick = () => activityDialog({ onSaved: () => crm(view) });
@@ -197,6 +198,7 @@ export async function customer360(view, [id]) {
       </div>
     </div>`, { back: '#/crm' });
 
+  filesCard('partner', c.id, 'ID copies, contracts & files');
   const reload = () => customer360(view, [id]);
   wireActivityRows($('#openActs'), open, reload);
   $$('[data-href]', view).forEach(el => el.onclick = () => location.hash = el.dataset.href);

@@ -127,11 +127,12 @@ r.get('/activities', ah(async (req, res) => {
   if (req.query.status === 'done') cond.push('a.done = 1');
   else if (req.query.status !== 'any') cond.push('a.done = 0');
   if (req.query.partner_id) { cond.push('a.partner_id = ?'); args.push(req.query.partner_id); }
+  if (req.query.lead_id) { cond.push('a.lead_id = ?'); args.push(req.query.lead_id); }
   if (req.query.type) { cond.push('a.type = ?'); args.push(req.query.type); }
   res.json(await db.query(
-    `SELECT a.*, p.name partner_name, p.phone partner_phone, au.name assigned_name, cu.name created_name,
+    `SELECT a.*, COALESCE(p.name, l.company, l.contact_name, l.title) partner_name, COALESCE(p.phone, l.phone) partner_phone, l.title lead_title, au.name assigned_name, cu.name created_name,
        (a.done = 0 AND a.due_at IS NOT NULL AND a.due_at < NOW()) overdue
-     FROM crm_activities a JOIN partners p ON p.id = a.partner_id
+     FROM crm_activities a LEFT JOIN partners p ON p.id = a.partner_id LEFT JOIN leads l ON l.id = a.lead_id
      LEFT JOIN users au ON au.id = a.assigned_to LEFT JOIN users cu ON cu.id = a.created_by
      ${cond.length ? 'WHERE ' + cond.join(' AND ') : ''}
      ORDER BY a.done, a.due_at IS NULL, a.due_at, a.id DESC LIMIT 500`, args));
@@ -155,14 +156,15 @@ r.get('/summary', ah(async (req, res) => {
 
 r.post('/activities', ah(async (req, res) => {
   const a = cleanActivity(req.body);
-  const partner = await db.one('SELECT id FROM partners WHERE id = ?', [req.body.partner_id]);
-  if (!partner) throw bad('Choose a customer');
+  const lead = req.body.lead_id ? await db.one('SELECT id, partner_id FROM leads WHERE id = ?', [req.body.lead_id]) : null;
+  const partner = await db.one('SELECT id FROM partners WHERE id = ?', [req.body.partner_id || (lead && lead.partner_id) || 0]);
+  if (!partner && !lead) throw bad('Choose a customer');
   // notes / logged calls default to done; tasks default to open and assigned to the creator
   const done = a.done !== undefined ? a.done : (['note', 'email', 'sms', 'visit'].includes(a.type || 'note') ? 1 : 0);
   const ins = await db.query(
-    `INSERT INTO crm_activities (partner_id, type, subject, body, due_at, done, done_at, assigned_to, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [partner.id, a.type || 'note', a.subject, a.body || null, a.due_at || null, done, done ? new Date() : null,
+    `INSERT INTO crm_activities (partner_id, lead_id, type, subject, body, due_at, done, done_at, assigned_to, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [partner ? partner.id : null, lead ? lead.id : null, a.type || 'note', a.subject, a.body || null, a.due_at || null, done, done ? new Date() : null,
       a.assigned_to !== undefined ? a.assigned_to : req.user.id, req.user.id]);
   res.json(await db.one('SELECT * FROM crm_activities WHERE id = ?', [ins.insertId]));
 }));

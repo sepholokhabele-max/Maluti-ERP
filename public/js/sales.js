@@ -1,3 +1,4 @@
+import { filesCard } from './core.js';
 // Sales: quotations → sales orders → invoices, and promotions / price rules
 import { hasMod } from './core.js';
 import { state, GET, POST, PUT, DEL, esc, $, $$, toast, err, can, money, qty, modal, confirmBox, promptBox, formHtml, readForm, tableHtml, badge, page, d, today, plusDays, query, round2, printHtml } from './core.js';
@@ -70,6 +71,7 @@ export async function quoteForm(view, [idq]) {
         { key: 'terms', label: 'Terms & conditions', type: 'textarea', rows: 2, span: 2 }], { ...o, order_date: d(o.order_date), valid_until: d(o.valid_until), delivery_date: d(o.delivery_date) }, { ctx: 'quote' })}</div>
       <h3 style="margin:16px 0 8px">Lines <small class="muted" style="font-weight:400">prices excl. VAT · promotions apply automatically</small></h3><div id="ql"></div></div>`);
   if (!editable) $$('#hdr input, #hdr select, #hdr textarea').forEach(i => i.disabled = true);
+  if (!isNew) filesCard('sale', o.id, 'Customer documents & files');
   const partnerOf = () => { const pid = Number($('#hdr [name=partner_id]').value); const c = customers.find(x => x.id === pid); return c ? { id: c.id, tags: c.tags } : null; };
   const applyRules = () => {
     for (const l of lines) {

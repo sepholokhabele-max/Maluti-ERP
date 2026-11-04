@@ -99,7 +99,7 @@ function createWindow() {
   setupSerial(win.webContents.session);
   win.loadURL(baseUrl);
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith(baseUrl)) return { action: 'allow' };
+    if (url.startsWith(baseUrl) || url.startsWith('blob:')) return { action: 'allow' }; // attachments open in a window
     shell.openExternal(url); return { action: 'deny' };
   });
 }

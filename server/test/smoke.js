@@ -574,7 +574,7 @@ const ok = (m) => console.log('  ✓', m);
     // ---- business types & modules, branches, transfers, branch profit ----
     let biz = await api('GET', '/business');
     // the setup-guide step above chose butchery + bar, which switched on their modules
-    assert(biz.configured && biz.modules.includes('pos') && biz.modules.includes('butchery') && biz.modules.includes('bar') && biz.modules.includes('restaurant') && biz.modules.includes('locations') && biz.all_types.length === 13 && biz.all_modules.some(m => m.coming));
+    assert(biz.configured && biz.modules.includes('pos') && biz.modules.includes('butchery') && biz.modules.includes('bar') && biz.modules.includes('restaurant') && biz.modules.includes('locations') && biz.all_types.length === 16 && biz.all_modules.some(m => m.coming));
     const sumCheck = async () => { const st = await api('GET', '/locations/stock'); for (const r of st.rows) { const s = Object.values(r.at).reduce((a, x) => a + x.qty, 0); assert(Math.abs(s - r.stock_qty) < 0.001, `${r.name}: locations ${s} vs total ${r.stock_qty}`); } return st; };
     await sumCheck();
     let locs = await api('GET', '/locations'); const MAIN = locs.find(l => l.is_default); const TRANSIT = locs.find(l => l.kind === 'transit');
@@ -786,6 +786,432 @@ const ok = (m) => console.log('  ✓', m);
     const hs = await api('GET', '/tickets/summary'); assert(hs.solved_30 >= 1);
     const tbs = await api('GET', '/reports/tb?from=2000-01-01&to=2999-12-31'); assert.strictEqual(tbs.debit, tbs.credit);
     ok('helpdesk: walk-in repair ticket with deadline, reply + internal note, part + 1.5 h labour → invoice M 650 + VAT, part leaves stock, books balance');
+  }
+  {
+    // ---- CRM pipeline, contracts with recurring invoices, attachments ----
+    const stages = await api('GET', '/crm/stages'); assert.strictEqual(stages.length, 4);
+    const l1 = await api('POST', '/leads', { title: 'Uniforms for 120 learners', company: 'Ha Abia High School', contact_name: 'Mrs Lerato Ntsane', phone: '+266 2231 9999', source: 'referral', expected_value: 48000, expected_close: '2026-12-15' });
+    assert.strictEqual(l1.stage_name, 'New'); assert.strictEqual(l1.status, 'open');
+    await api('POST', '/leads', { title: 'x' }, true);
+    await api('PUT', `/leads/${l1.id}`, { stage_id: stages[1].id });
+    await api('POST', '/crm/activities', { lead_id: l1.id, type: 'call', subject: 'Call about sizes', due_at: '2026-12-01 10:00:00' });
+    let lv = await api('GET', `/leads/${l1.id}`); assert.strictEqual(lv.stage_name, 'Qualified'); assert.strictEqual(lv.activities.length, 1); assert(lv.next_activity);
+    const q1 = await api('POST', `/leads/${l1.id}/quote`); assert(q1.sale_order_id);
+    assert.strictEqual((await api('POST', `/leads/${l1.id}/quote`)).existing, true);
+    lv = await api('GET', `/leads/${l1.id}`); assert(lv.partner_id && lv.stage_name === 'Proposal sent' && lv.quote_number);
+    await api('PUT', `/sales/${q1.sale_order_id}`, { partner_id: lv.partner_id, lines: [{ description: 'School uniform set', qty: 120, unit_price: 350, tax_rate: 15 }] });
+    await api('POST', `/sales/${q1.sale_order_id}/confirm`, {});
+    lv = await api('GET', `/leads/${l1.id}`); assert.strictEqual(lv.status, 'won'); assert.strictEqual(Number(lv.expected_value), 48300);
+    const l2 = await api('POST', '/leads', { title: 'Catering for wedding', contact_name: 'Thato', phone: '5800 1111', expected_value: 15000 });
+    await api('POST', `/leads/${l2.id}/lost`, {}, true);
+    await api('POST', `/leads/${l2.id}/lost`, { reason: 'Price too high' });
+    const l3 = await api('POST', '/leads', { title: 'Office cleaning tender', company: 'LNDC', expected_value: 90000, source: 'tender' });
+    const q3 = await api('POST', `/leads/${l3.id}/quote`);
+    await api('POST', `/sales/${q3.sale_order_id}/decline`, { reason: 'Went to a competitor' });
+    assert.strictEqual((await api('GET', `/leads/${l3.id}`)).status, 'lost');
+    const ps = await api('GET', '/leads/summary'); assert.strictEqual(ps.won_90, 1); assert.strictEqual(ps.lost_90, 2); assert.strictEqual(ps.win_rate, 33);
+    assert(ps.lost_reasons.some(r => r.reason === 'Price too high'));
+    ok('pipeline: lead → qualified → quotation (customer created) → order confirmed = won; lost needs a reason; declined quote = lost; win rate 33%');
+    // contracts
+    const { advance } = require('../routes/growth');
+    assert.strictEqual(advance('2026-01-31', 'monthly', 1), '2026-02-28'); assert.strictEqual(advance('2026-11-30', 'quarterly', 1), '2027-02-28'); assert.strictEqual(advance('2026-11-04', 'weekly', 2), '2026-11-18');
+    const cust = (await api('GET', '/partners?is_customer=1'))[0];
+    const n0 = new Date(); const first = new Date(n0.getFullYear(), n0.getMonth() - 2, 1);
+    const ymd = x => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+    const ct = await api('POST', '/contracts', { partner_id: cust.id, name: 'Security guard – main gate', period: 'monthly', start_date: ymd(first), due_days: 10,
+      lines: [{ description: 'Security service (1 guard, 12 h)', qty: 1, unit_price: 4500, tax_rate: 15 }] });
+    assert(/^CON\//.test(ct.number) && ct.status === 'draft' && ct.amount === 5175 && ct.monthly === 5175);
+    assert.strictEqual((await api('POST', '/contracts/run', { contract_id: ct.id })).invoices.length, 0);
+    await api('POST', `/contracts/${ct.id}/activate`);
+    const run1 = await api('POST', '/contracts/run', { contract_id: ct.id }); assert.strictEqual(run1.invoices.length, 3);
+    assert(run1.invoices.every(i => !i.number)); // drafts
+    let cv = await api('GET', `/contracts/${ct.id}`); assert.strictEqual(cv.invoices_made, 3); assert.strictEqual(String(cv.next_date).slice(0, 10), ymd(new Date(n0.getFullYear(), n0.getMonth() + 1, 1)));
+    const ci = await api('GET', `/invoices/${run1.invoices[0].invoice_id}`); assert.strictEqual(Number(ci.total), 5175); assert(/to /.test(ci.lines[0].description));
+    assert.strictEqual((await api('POST', '/contracts/run', { contract_id: ct.id })).invoices.length, 0);
+    const ct2 = await api('POST', '/contracts', { partner_id: cust.id, name: 'Software licence', period: 'yearly', start_date: ymd(n0), end_date: ymd(new Date(n0.getTime() + 86400000)), auto_post: 1,
+      lines: [{ description: 'Annual licence', qty: 1, unit_price: 1200, tax_rate: 15 }] });
+    await api('POST', `/contracts/${ct2.id}/activate`);
+    const run2 = await api('POST', '/contracts/run', { contract_id: ct2.id }); assert.strictEqual(run2.invoices.length, 1); assert(/^INV\//.test(run2.invoices[0].number));
+    assert.strictEqual((await api('GET', `/contracts/${ct2.id}`)).status, 'ended');
+    const cl = await api('GET', '/contracts'); assert.strictEqual(cl.mrr, 5175);
+    ok('contracts: monthly security contract catches up 3 draft invoices (month-end safe), yearly licence posted automatically then ended; monthly recurring revenue M 5 175');
+    // attachments
+    const att = await api('POST', '/attachments', { entity: 'invoice', entity_id: ci.id, filename: 'signed-delivery-note.txt', data_url: 'data:text/plain;base64,' + Buffer.from('Signed by Lerato').toString('base64') });
+    assert.strictEqual(att.size, 16);
+    await api('POST', '/attachments', { entity: 'invoice', entity_id: ci.id, filename: 'x.exe', data_url: 'data:application/octet-stream;base64,AAAA' }, true);
+    await api('POST', '/attachments', { entity: 'nonsense', entity_id: 1, filename: 'a.txt', data_url: 'data:text/plain;base64,QQ==' }, true);
+    assert.strictEqual((await api('GET', `/attachments?entity=invoice&entity_id=${ci.id}`)).length, 1);
+    const fr = await fetch(base + `/api/attachments/${att.id}/file`, { headers: { Authorization: 'Bearer ' + token } }); assert.strictEqual(await fr.text(), 'Signed by Lerato');
+    await api('DELETE', `/attachments/${att.id}`); assert.strictEqual((await api('GET', `/attachments?entity=invoice&entity_id=${ci.id}`)).length, 0);
+    ok('attachments: file stored with the invoice, downloaded, programs refused, removed');
+  }
+  {
+    // ---- property & rent ----
+    const n0 = new Date(); const ymd = x => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+    const cash = M('Cash').id;
+    const own = await api('POST', '/properties', { name: 'Mokhele Flats', address: 'Ha Thetsane' });
+    const f1 = await api('POST', '/units', { property_id: own.id, name: 'Flat 1', kind: 'flat', bedrooms: 2, market_rent: 3000 });
+    await api('POST', '/units', { property_id: own.id, name: 'Flat 2', kind: 'flat', market_rent: 3000 });
+    const ten = await api('POST', '/partners', { name: 'Palesa Ramoholi', phone: '5900 1234', is_customer: 1 });
+    const start = new Date(n0.getFullYear(), n0.getMonth() - 1, 15);
+    let ls = await api('POST', '/leases', { unit_id: f1.id, tenant_id: ten.id, start_date: ymd(start), rent: 3000, due_day: 1, deposit: 3000, escalation_pct: 10, next_escalation: ymd(n0) });
+    assert(/^LSE\//.test(ls.number) && ls.status === 'draft');
+    const act = await api('POST', `/leases/${ls.id}/activate`, {});
+    const lmDays = new Date(n0.getFullYear(), n0.getMonth(), 0).getDate();
+    assert.strictEqual(act.prorata, round(3000 * (lmDays - 14) / lmDays));
+    assert.strictEqual(act.first_rent_date, ymd(new Date(n0.getFullYear(), n0.getMonth(), 1)));
+    ls = act.lease; assert.strictEqual(ls.status, 'active'); assert.strictEqual(ls.arrears, round(act.prorata + 3000));
+    const ls2 = await api('POST', '/leases', { unit_id: f1.id, tenant_id: ten.id, start_date: ymd(n0), rent: 1 });
+    await api('POST', `/leases/${ls2.id}/activate`, {}, true); // unit already let
+    ls = await api('POST', `/leases/${ls.id}/deposit`, { amount: 3000, method_id: cash }); assert.strictEqual(Number(ls.deposit_held), 3000);
+    ls = (await api('POST', `/leases/${ls.id}/receive`, { amount: 2000, method_id: cash })).lease; assert.strictEqual(ls.arrears, round(act.prorata + 1000));
+    const esc = await api('POST', '/leases/escalate', {}); assert(esc.escalated.some(x => x.to === 3300));
+    ls = await api('GET', `/leases/${ls.id}`); assert.strictEqual(Number(ls.rent), 3300);
+    await api('POST', `/leases/${ls.id}/charge`, { description: 'Water October', amount: 250 });
+    ls = await api('GET', `/leases/${ls.id}`); const owing = ls.arrears;
+    await api('POST', `/leases/${ls.id}/deposit-return`, { to_arrears: 1000, deductions: 200, refund: 2000, method_id: cash }, true); // no reason for deductions
+    await api('POST', `/leases/${ls.id}/deposit-return`, { to_arrears: 2000, deductions: 2000, reason: 'x', refund: 0 }, true); // more than held? no: 4000 > 3000
+    const dr = await api('POST', `/leases/${ls.id}/deposit-return`, { to_arrears: 1000, deductions: 200, reason: 'Broken window', refund: 1800, method_id: cash });
+    assert.strictEqual(dr.lease.arrears, round(owing - 1000)); assert.strictEqual(Number(dr.lease.deposit_held), 0);
+    // managed building: rent collected for a landlord, 10 % commission
+    const owner = await api('POST', '/partners', { name: 'Ntate Mokoena (landlord)', is_supplier: 1, is_customer: 0 });
+    await api('POST', '/properties', { name: 'Kingsway Shops', owner_id: owner.id }, true); // commission needed
+    const man = await api('POST', '/properties', { name: 'Kingsway Shops', owner_id: owner.id, commission_pct: 10 });
+    const s1 = await api('POST', '/units', { property_id: man.id, name: 'Shop 1', kind: 'shop' });
+    const shopT = await api('POST', '/partners', { name: 'Maseru Cellular', is_customer: 1 });
+    let l2 = await api('POST', '/leases', { unit_id: s1.id, tenant_id: shopT.id, start_date: ymd(n0), rent: 5000, tax_rate: 15, due_day: Math.min(28, n0.getDate()) });
+    l2 = (await api('POST', `/leases/${l2.id}/activate`, {})).lease;
+    const expArrears = n0.getDate() > 28 ? null : 5750;
+    if (expArrears) {
+      assert.strictEqual(l2.arrears, 5750);
+      await api('POST', `/leases/${l2.id}/receive`, { amount: 5750, method_id: cash });
+      const os = await api('GET', `/property/owner-statement?property_id=${man.id}&from=${ymd(n0)}&to=${ymd(n0)}`);
+      assert.strictEqual(os.collected, 5000); assert.strictEqual(os.commission, 500); assert.strictEqual(os.net, 4500);
+      await api('POST', '/property/payout', { property_id: man.id, from: ymd(n0), to: ymd(n0), method_id: cash });
+      await api('POST', '/property/payout', { property_id: man.id, from: ymd(n0), to: ymd(n0), method_id: cash }, true);
+    }
+    const rr = await api('GET', '/property/rent-roll'); assert.strictEqual(rr.units, 3); assert.strictEqual(rr.occupied, 2); assert.strictEqual(rr.vacant, 1);
+    const ar = await api('GET', '/property/arrears'); assert(ar.some(x => x.tenant_id === ten.id));
+    await api('PUT', `/contracts/${ls.contract_id}`, { name: 'x' }, true); // lease contracts are changed on the lease
+    const tbp = await api('GET', '/reports/tb?from=2000-01-01&to=2999-12-31'); assert.strictEqual(tbp.debit, tbp.credit);
+    ok(`property: lease from the 15th → pro-rata M ${act.prorata} + monthly rent, deposit held (liability) and settled (arrears, damage, refund), 10% escalation, managed shop: M 5 000 collected → M 500 commission, M 4 500 to landlord`);
+  }
+  {
+    // ---- school fees ----
+    const cash = M('Cash').id;
+    await api('PUT', '/school/settings', { sibling_discount_pct: 10, post_invoices: 1 });
+    const g2 = await api('POST', '/school/classes', { name: 'Grade 2A', grade: 'Grade 2', sort: 2 });
+    const g1 = await api('POST', '/school/classes', { name: 'Grade 1A', grade: 'Grade 1', sort: 1, next_class_id: g2.id });
+    await api('POST', '/school/fees', { name: 'Tuition', grade: 'Grade 1', amount: 2500, period: 'term' });
+    await api('POST', '/school/fees', { name: 'Tuition', grade: 'Grade 2', amount: 2700, period: 'term' });
+    const lunch = await api('POST', '/school/fees', { name: 'Lunch', amount: 600, period: 'term', optional: 1, sibling_discount: 0 });
+    await api('POST', '/school/fees', { name: 'Registration', amount: 300, period: 'once' });
+    await api('POST', '/learners', { first_name: 'Neo', last_name: 'Ramoholi', class_id: g1.id }, true); // no guardian
+    const A = await api('POST', '/learners', { first_name: 'Neo', last_name: 'Ramoholi', class_id: g1.id, birth_date: '2019-03-01', guardian_name: 'Mpho Ramoholi', guardian_phone: '5800 7777' });
+    const B = await api('POST', '/learners', { first_name: 'Lineo', last_name: 'Ramoholi', class_id: g2.id, birth_date: '2017-05-01', guardian_id: A.guardian_id });
+    const C = await api('POST', '/learners', { first_name: 'Tumelo', last_name: 'Sello', class_id: g1.id, guardian_name: 'Karabo Sello', guardian_phone: '5800 8888', bursary_pct: 50 });
+    assert(A.admission_no && A.guardian_id === B.guardian_id && C.guardian_id !== A.guardian_id);
+    await api('PUT', `/learners/${A.id}/fees`, { fee_item_ids: [lunch.id] });
+    const pv = await api('POST', '/school/bill', { label: 'Term 1 2027', period: 'term', preview: true });
+    const PV = n => pv.rows.find(x => x.name === n).total;
+    assert.strictEqual(PV('Lineo Ramoholi'), 2700); assert.strictEqual(PV('Neo Ramoholi'), 2850); assert.strictEqual(PV('Tumelo Sello'), 1250); assert.strictEqual(pv.total, 6800);
+    const run = await api('POST', '/school/bill', { label: 'Term 1 2027', period: 'term', due_date: '2027-01-31' });
+    assert.strictEqual(run.invoices, 3); assert.strictEqual(run.total, 6800);
+    await api('POST', '/school/bill', { label: 'Term 1 2027', period: 'term' }, true);
+    const pay = await api('POST', `/learners/${A.id}/receive`, { amount: 3000, method_id: cash, family: 1 }); assert.strictEqual(pay.paid.length >= 1, true);
+    const arr = await api('GET', '/school/arrears'); assert.strictEqual(arr.total, 3800);
+    const cv = await api('GET', `/learners/${C.id}`); assert.strictEqual(cv.statement.length, 1); assert.strictEqual(cv.statement[0].balance, 1250);
+    const pr = await api('POST', '/school/promote', { graduate_final: 1 });
+    assert(pr.moved.some(m => m.graduated && m.learners === 1));
+    assert.strictEqual((await api('GET', `/learners/${A.id}`)).class_id, g2.id); assert.strictEqual((await api('GET', `/learners/${B.id}`)).status, 'graduated');
+    const tbs = await api('GET', '/reports/tb?from=2000-01-01&to=2999-12-31'); assert.strictEqual(tbs.debit, tbs.credit);
+    ok('school: term 1 billed to 3 learners – sibling 10% and bursary 50% applied (M 6 800), optional lunch only where chosen, family payment to oldest fees, arrears M 3 800, promotion & graduation');
+  }
+  {
+    // ---- security & cleaning sites ----
+    const n0 = new Date(); const ymd = x => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+    const emp = async (f, l) => (await api('POST', '/hrm/employees', { first_name: f, last_name: l, hire_date: '2026-01-01', basic_salary: 3900, status: 'active' })).id;
+    const e1 = await emp('Thabo', 'Guard'), e2 = await emp('Lerato', 'Guard'), e3 = await emp('Relief', 'Guard');
+    const client = await api('POST', '/partners', { name: 'LNDC', is_customer: 1 });
+    await api('POST', '/sites', { name: 'x', partner_id: client.id, billing: 'per_shift' }, true); // rate needed
+    const site = await api('POST', '/sites', { name: 'LNDC Kingsway – main gate', partner_id: client.id, kind: 'security', staff_night: 2, billing: 'per_shift', rate: 450 });
+    const ro = await api('POST', `/sites/${site.id}/roster`, { employee_ids: [e1, e2], from: ymd(n0), to: ymd(new Date(n0.getTime() + 2 * 86400000)), start_time: '18:00', end_time: '06:00' });
+    assert.strictEqual(ro.created, 6);
+    const again = await api('POST', `/sites/${site.id}/roster`, { employee_ids: [e1], from: ymd(n0), to: ymd(n0), start_time: '20:00', end_time: '23:00' });
+    assert.strictEqual(again.created, 0); assert.strictEqual(again.skipped.length, 1);
+    const today = await api('GET', `/shifts?from=${ymd(n0)}&to=${ymd(n0)}&site_id=${site.id}`);
+    const sh1 = today.find(x => x.employee_id === e1 && String(x.start_at).startsWith(ymd(n0))), sh2 = today.find(x => x.employee_id === e2 && String(x.start_at).startsWith(ymd(n0)));
+    assert(String(sh1.end_at).startsWith(ymd(new Date(n0.getTime() + 86400000)))); // night shift ends next morning
+    await api('POST', `/shifts/${sh1.id}/checkin`, { at: `${ymd(n0)} 17:55:00` });
+    await api('POST', `/shifts/${sh1.id}/checkout`, { at: `${ymd(new Date(n0.getTime() + 86400000))} 06:05:00` });
+    const ab = await api('POST', `/shifts/${sh2.id}/absent`, { replacement_id: e3, reason: 'Sick' }); assert(ab.relief_shift_id);
+    await api('POST', `/sites/${site.id}/log`, { kind: 'patrol', text: 'Perimeter patrol, all in order', employee_id: e1 });
+    const inc = await api('POST', `/sites/${site.id}/incidents`, { kind: 'trespass', severity: 'medium', description: 'Person climbed fence at 02:10, chased off', employee_id: e1, action_taken: 'Supervisor informed' });
+    assert(/^INC\//.test(inc.number));
+    const clean = await api('POST', '/sites', { name: 'Queen II Hospital – ward block', partner_id: client.id, kind: 'cleaning', staff_day: 4, billing: 'contract', checklist: 'Floors mopped\nToilets cleaned\nBins emptied\nWindows wiped' });
+    const insp = await api('POST', `/sites/${clean.id}/inspections`, { items: [{ item: 'Floors mopped', ok: 1 }, { item: 'Toilets cleaned', ok: 1 }, { item: 'Bins emptied', ok: 1 }, { item: 'Windows wiped', ok: 0, note: 'Ward 3' }], signed_by: 'Sister Mosala' });
+    assert.strictEqual(insp.score, 75);
+    const bleach = await api('POST', '/products', { name: 'Bleach 5 L', type: 'stock', cost: 60, price: 0, tax_id: 1, pos_visible: 0, opening_qty: 10 });
+    const iss = await api('POST', `/sites/${clean.id}/issue`, { lines: [{ product_id: bleach.id, qty: 2 }] }); assert.strictEqual(iss.value, 120);
+    const sv = await api('GET', `/sites/${site.id}`); assert(sv.log.length >= 4 && sv.incidents.length === 1);
+    const si = await api('POST', `/sites/${site.id}/invoice`, { from: ymd(n0), to: ymd(n0) }); assert.strictEqual(si.qty, 1);
+    assert.strictEqual(Number((await api('GET', `/invoices/${si.invoice_id}`)).subtotal), 450);
+    await api('POST', `/sites/${site.id}/invoice`, { from: ymd(n0), to: ymd(n0) }, true);
+    const rep = await api('GET', `/sites/report?from=${ymd(n0)}&to=${ymd(new Date(n0.getTime() + 86400000))}`);
+    const rs = rep.sites.find(x => x.site_id === site.id); assert.strictEqual(rs.shifts, 1); assert.strictEqual(rs.absent, 1); assert.strictEqual(rs.hours, 12.17);
+    assert.strictEqual(rep.sites.find(x => x.site_id === clean.id).consumables, 120);
+    const tbx = await api('GET', '/reports/tb?from=2000-01-01&to=2999-12-31'); assert.strictEqual(tbx.debit, tbx.credit);
+    ok('sites: night roster (6 shifts, clashes skipped), check-in/out, absence with relief, occurrence book, incident, cleaning inspection 75%, consumables M 120 to site, 1 shift invoiced at M 450, hours & profit per site');
+  }
+  {
+    // ---- payment reminders: fake SMS provider on this machine ----
+    const http = require('http'); const got = [];
+    const srv = http.createServer((q, s2) => { let b = ''; q.on('data', c => b += c); q.on('end', () => { got.push({ url: q.url, body: b }); s2.end(q.url.includes('fail') ? 'ERR' : '{"status":"OK","id":1}'); }); });
+    await new Promise(r2 => srv.listen(0, '127.0.0.1', r2)); const port = srv.address().port;
+    await api('PUT', '/reminders/settings', { sms: { mode: 'http', method: 'GET', url: 'ftp://x' } }, true);
+    await api('PUT', '/reminders/settings', { sms: { mode: 'http', method: 'GET', url: `http://127.0.0.1:${port}/send?to={to}&text={message}&from={sender}`, sender: 'MALUTI', success_text: 'OK' } });
+    const t1 = await api('POST', '/sms/test', { to: '5800 7777' }); assert.strictEqual(t1.to, '26658007777');
+    assert(decodeURIComponent(got[0].url).includes('to=26658007777') && got[0].url.includes('from=MALUTI'));
+    await api('POST', '/sms/test', { to: '12' }, true);
+    const due = await api('GET', '/reminders/due?source=rent');
+    const pr = await api('GET', '/reminders/due?source=school');
+    assert(Array.isArray(due) && Array.isArray(pr));
+    // make an overdue rent invoice for sure: a tenant with a phone and an invoice due yesterday
+    const ten = await api('POST', '/partners', { name: 'Late Payer', phone: '5900 0001', email: 'late@example.com', is_customer: 1 });
+    const inv = await api('POST', '/invoices', { kind: 'customer_invoice', partner_id: ten.id, invoice_date: '2026-01-01', due_date: '2026-01-10', lines: [{ description: 'Rent January', qty: 1, unit_price: 2000, tax_rate: 0 }] });
+    await api('POST', `/invoices/${inv.id}/post`);
+    const all = await api('GET', '/reminders/due?source=invoices'); const me = all.find(x => x.partner_id === ten.id);
+    assert(me && me.amount === 2000 && me.days > 30);
+    const pv = await api('POST', '/reminders/preview', { source: 'invoices', partner_id: ten.id }); assert(pv.sms.includes('Late Payer') && pv.sms.includes('2000.00'));
+    const sent = await api('POST', '/reminders/send', { partner_ids: [ten.id], source: 'invoices', channel: 'sms' });
+    assert.strictEqual(sent.sent, 1); assert(decodeURIComponent(got[got.length - 1].url).includes('Late Payer'));
+    const both = await api('POST', '/reminders/send', { partner_ids: [ten.id], source: 'invoices', channel: 'both' });
+    assert.strictEqual(both.results.length, 2); // email may fail when SMTP is not set – it is logged, not lost
+    const lg = await api('GET', `/reminders/log?partner_id=${ten.id}`); assert(lg.length >= 3 && lg.some(x => x.channel === 'sms' && x.status === 'sent'));
+    assert((await api('GET', `/crm/activities?partner_id=${ten.id}&scope=all&status=any`)).some(a => a.type === 'sms'));
+    // POST provider with a JSON body
+    await api('PUT', '/reminders/settings', { sms: { mode: 'http', method: 'POST', url: `http://127.0.0.1:${port}/api`, body: '{"to":"{to}","message":"{message}"}', headers: 'Authorization: Bearer abc', success_text: 'OK' } });
+    await api('POST', '/sms/test', { to: '+27 82 123 4567', message: 'Line 1\nLine "2"' });
+    const jb = JSON.parse(got[got.length - 1].body); assert.strictEqual(jb.to, '27821234567'); assert.strictEqual(jb.message, 'Line 1\nLine "2"');
+    await api('PUT', '/reminders/settings', { sms: { url: `http://127.0.0.1:${port}/fail`, method: 'GET', body: '' } });
+    await api('POST', '/sms/test', { to: '5800 7777' }, true); // provider did not confirm
+    await api('PUT', '/reminders/settings', { sms: { mode: 'log' }, auto: { enabled: 1, days: '3, 14,30', channel: 'sms', sources: ['invoices'] } });
+    const st = await api('GET', '/reminders/settings'); assert.deepStrictEqual(st.auto.days, [3, 14, 30]);
+    const au = await api('POST', '/reminders/run-auto', {}); assert(Array.isArray(au.results));
+    srv.close();
+    ok('reminders: SMS through any provider URL (GET or JSON POST, Lesotho numbers to 266…), overdue list per kind of account, personalised SMS/email, logged in CRM, automatic days 3/14/30');
+  }
+  {
+    // ---- rooms & bookings ----
+    const ymd = x => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+    const n0 = new Date(); const D = k => ymd(new Date(n0.getFullYear(), n0.getMonth(), n0.getDate() + k));
+    const cash = M('Cash').id; const acct = M('Customer Account');
+    const dbl = await api('POST', '/room-types', { name: 'Double', rate: 1150, capacity: 2, breakfast: 1 });
+    const r5 = await api('POST', '/rooms', { name: 'Room 5', room_type_id: dbl.id }), r6 = await api('POST', '/rooms', { name: 'Room 6', room_type_id: dbl.id });
+    const bk = await api('POST', '/bookings', { room_id: r5.id, guest_name: 'Teboho Lerotholi', guest_phone: '5811 2233', check_in: D(0), check_out: D(3), adults: 2, source: 'phone' });
+    assert(/^BK\//.test(bk.number) && Number(bk.nights) === 3 && Number(bk.rate) === 1150);
+    await api('POST', '/bookings', { room_id: r5.id, guest_name: 'Clash', check_in: D(2), check_out: D(4) }, true); // double booking
+    await api('POST', '/bookings', { room_id: r5.id, guest_name: 'Too many', check_in: D(5), check_out: D(6), adults: 5 }, true);
+    const free = await api('GET', `/rooms/free?check_in=${D(1)}&check_out=${D(2)}`); assert(free.some(x => x.id === r6.id) && !free.some(x => x.id === r5.id));
+    await api('POST', `/bookings/${bk.id}/deposit`, { amount: 1000, method_id: cash });
+    await api('POST', `/bookings/${bk.id}/charges`, { description: 'Laundry', amount: 115 }, true); // not checked in yet
+    await api('POST', `/bookings/${bk.id}/checkin`);
+    await api('POST', `/bookings/${bk.id}/charges`, { description: 'Laundry', amount: 115 });
+    // dinner at the restaurant put on the guest's account
+    const dinner = Number(P('White Bread').price) * 2;
+    if (acct) {
+      const tt = (await api('GET', '/pos/terminals')).find(t => t.mode === 'retail');
+      const sid = tt.open_session_id || (await api('POST', '/pos/sessions/open', { terminal_id: tt.id, opening_cash: 0 })).id;
+      await api('POST', '/pos/checkout', { session_id: sid, partner_id: bk.guest_id, lines: [{ product_id: P('White Bread').id, qty: 2 }], payments: [{ method_id: acct.id, amount: dinner }] });
+    }
+    let bv = await api('GET', `/bookings/${bk.id}`); assert.strictEqual(bv.folio.account_balance, round(dinner - 1000)); assert.strictEqual(bv.folio.balance, round(3565 + dinner - 1000)); assert.strictEqual(bv.folio.room, 3450); assert.strictEqual(bv.folio.extras_total, 115);
+    const st = await api('GET', '/rooms/stats'); assert.strictEqual(st.inhouse, 1);
+    const due = bv.folio.balance;
+    const co = await api('POST', `/bookings/${bk.id}/checkout`, { amount: due, method_id: cash });
+    assert(/^INV\//.test(co.number)); const ci = await api('GET', `/invoices/${co.invoice_id}`); assert.strictEqual(Number(ci.total), 3565); assert.strictEqual(ci.status, 'paid');
+    const led = await api('GET', `/partners/${bk.guest_id}/balance`); assert.strictEqual(led.receivable, 0);
+    assert.strictEqual((await api('GET', '/rooms')).find(x => x.id === r5.id).housekeeping, 'dirty');
+    const bk2 = await api('POST', '/bookings', { room_id: r6.id, guest_name: 'No Show', check_in: D(1), check_out: D(2) });
+    await api('POST', `/bookings/${bk2.id}/checkin`, {}, true); // arrives tomorrow
+    await api('POST', `/bookings/${bk2.id}/cancel`, { no_show: 1 });
+    const tbr = await api('GET', '/reports/tb?from=2000-01-01&to=2999-12-31'); assert.strictEqual(tbr.debit, tbr.credit);
+    ok(`rooms: booking with no double-booking, deposit, check-in, laundry, check-out bill M 3 565 (3 nights + extras) paid with deposit and cash – guest account at 0; room dirty for housekeeping`);
+  }
+  {
+    // ---- fleet & trips ----
+    const cash = M('Cash').id;
+    const drv = (await api('POST', '/hrm/employees', { first_name: 'Motlatsi', last_name: 'Driver', hire_date: '2026-01-01', basic_salary: 4500, status: 'active' })).id;
+    const trk = await api('POST', '/vehicles', { reg_no: 'a 123 bcd', kind: 'truck', make: 'Isuzu', model: 'NPR 400', odometer: 100000, driver_id: drv, licence_expiry: '2026-11-20', insurance_expiry: '2027-06-30' });
+    await api('POST', '/vehicles', { reg_no: 'A 123 BCD' }, true);
+    const vl = await api('GET', '/vehicles'); const tv = vl.find(v => v.id === trk.id);
+    assert.strictEqual(tv.reg_no, 'A 123 BCD'); assert(tv.equipment_id && (await api('GET', '/equipment')).some(e => e.id === tv.equipment_id));
+    await api('POST', `/vehicles/${trk.id}/fuel`, { litres: 100, amount: 2100, odometer: 100000, method_id: cash });
+    await api('POST', `/vehicles/${trk.id}/fuel`, { litres: 50, amount: 1050, odometer: 99000, method_id: cash }, true); // odometer back
+    const cust = await api('POST', '/partners', { name: 'Maluti Mountain Brewery', is_customer: 1 });
+    const t1 = await api('POST', '/trips', { vehicle_id: trk.id, partner_id: cust.id, from_place: 'Maseru', to_place: 'Mokhotlong', load_desc: '8 t beer', charge_by: 'km', rate: 18 });
+    await api('POST', `/trips/${t1.id}/depart`, { odometer: 100050 });
+    const t2 = await api('POST', '/trips', { vehicle_id: trk.id, partner_id: cust.id });
+    await api('POST', `/trips/${t2.id}/depart`, {}, true); // truck already out
+    const back = await api('POST', `/trips/${t1.id}/arrive`, { odometer: 100650, costs: 300 });
+    assert.strictEqual(Number(back.qty), 600); assert.strictEqual(Number(back.amount), 10800);
+    const f2 = await api('POST', `/vehicles/${trk.id}/fuel`, { litres: 120, amount: 2520, odometer: 100660, method_id: cash }); assert.strictEqual(f2.km_per_litre, 5.5);
+    const ti = await api('POST', '/trips/invoice', { trip_ids: [t1.id] }); assert.strictEqual(Number((await api('GET', `/invoices/${ti.invoice_id}`)).subtotal), 10800);
+    await api('POST', '/trips/invoice', { trip_ids: [t1.id] }, true);
+    const taxi = await api('POST', '/vehicles', { reg_no: 'B 777 TX', kind: 'taxi', seats: 15, odometer: 250000 });
+    await api('POST', `/vehicles/${taxi.id}/takings`, { amount: 950, method_id: cash, trips: 6 });
+    await api('POST', `/vehicles/${taxi.id}/takings`, { amount: 950, method_id: cash }, true);
+    const rep = await api('GET', '/fleet/report?from=2000-01-01&to=2999-12-31');
+    const rt = rep.rows.find(x => x.vehicle_id === trk.id); assert.strictEqual(rt.income, 10800); assert.strictEqual(rt.fuel, 4620); assert.strictEqual(rt.km, 660);
+    assert.strictEqual(rep.rows.find(x => x.vehicle_id === taxi.id).income, 950);
+    assert(tv.expiring.some(e => e.doc === 'Licence disc'));
+    const tbf = await api('GET', '/reports/tb?from=2000-01-01&to=2999-12-31'); assert.strictEqual(tbf.debit, tbf.credit);
+    ok('fleet: truck with expiring licence disc flagged, fuel 5.5 km/l, trip charged per km (600 km × M 18) and invoiced once, one truck one trip at a time, taxi takings, profit per vehicle');
+  }
+  {
+    // ---- equipment & party hire ----
+    const cash = M('Cash').id;
+    const { unitPrice } = require('../routes/hire');
+    assert.strictEqual(unitPrice(3, { rate_day: 1500, rate_week: 6000 }), 4500); assert.strictEqual(unitPrice(5, { rate_day: 1500, rate_week: 6000 }), 6000);
+    assert.strictEqual(unitPrice(9, { rate_day: 1500, rate_week: 6000 }), 9000); assert.strictEqual(unitPrice(0, { rate_day: 10 }), 10);
+    assert.strictEqual(unitPrice(40, { rate_day: 100, rate_week: 500, rate_month: 1500 }), 2300); // month + week + 3 days
+    const tent = (await api('POST', '/hire/items', { name: 'Tent 10 x 20 m', category: 'Tents', qty_owned: 2, rate_day: 1500, rate_week: 6000, deposit: 2000, replacement_cost: 25000 })).id;
+    const chair = (await api('POST', '/hire/items', { name: 'Plastic chair', category: 'Chairs', qty_owned: 100, rate_day: 10, deposit: 2, replacement_cost: 250 })).id;
+    await api('POST', '/hire/items', { name: 'No price' }, true);
+    const day = (n) => { const x = new Date(); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
+    const A = await api('POST', '/hire/orders', { customer_name: 'Mme Palesa Wedding', customer_phone: '58001122', start_date: day(0), end_date: day(2), delivery_address: 'Ha Abia', delivery_fee: 300,
+      lines: [{ item_id: tent, qty: 2 }, { item_id: chair, qty: 80 }] });
+    assert.strictEqual(Number(A.deposit_required), 4160);
+    await api('POST', '/hire/orders', { partner_id: A.partner_id, start_date: day(1), end_date: day(1), lines: [{ item_id: tent, qty: 1 }] }, true); // tents all booked
+    await api('POST', '/hire/orders', { partner_id: A.partner_id, start_date: day(1), end_date: day(1), lines: [{ item_id: chair, qty: 30 }] }, true); // only 20 chairs left
+    const B = await api('POST', '/hire/orders', { partner_id: A.partner_id, start_date: day(5), end_date: day(6), lines: [{ item_id: tent, qty: 2 }] }); // after A is back
+    const av = await api('GET', `/hire/available?from=${day(1)}&to=${day(1)}`); assert.strictEqual(av.find(x => x.id === chair).free, 20);
+    await api('POST', `/hire/orders/${A.id}/handover`, { deposit: 3000, method_id: cash }, true); // short deposit – nothing is booked
+    await api('POST', `/hire/orders/${A.id}/handover`, { deposit: 4160, method_id: cash });
+    await api('POST', `/hire/orders/${A.id}/settle`, {}, true); // not back yet
+    // three days later: tents back (one torn), 75 chairs back, 5 chairs lost
+    const ret = day(3);
+    const o1 = await api('GET', `/hire/orders/${A.id}`);
+    const lt = o1.lines.find(l => l.item_id === tent), lc = o1.lines.find(l => l.item_id === chair);
+    await api('POST', `/hire/orders/${A.id}/return`, { date: ret, lines: [{ line_id: lc.id, qty: 90 }] }, true); // more than out
+    await api('POST', `/hire/orders/${A.id}/return`, { date: ret, lines: [{ line_id: lt.id, qty: 2, damaged: 1, damage_charge: 800, note: 'torn side wall' }] });
+    let o2 = await api('GET', `/hire/orders/${A.id}`); assert.strictEqual(o2.status, 'out');
+    await api('POST', `/hire/orders/${A.id}/return`, { date: ret, lines: [{ line_id: lc.id, qty: 75, lost: 5 }] });
+    o2 = await api('GET', `/hire/orders/${A.id}`); assert.strictEqual(o2.status, 'returned');
+    assert.strictEqual(o2.bill.total, 13750); assert.strictEqual(o2.bill.to_pay, 9590); // 2×4500 + 80×30 + 800 + 5×250 + 300 delivery
+    const items = await api('GET', '/hire/items');
+    assert.strictEqual(Number(items.find(i => i.id === tent).qty_out_of_service), 1); assert.strictEqual(Number(items.find(i => i.id === chair).qty_owned), 95);
+    await api('POST', `/hire/orders/${B.id}/handover`, { date: day(5), deposit: 4000, method_id: cash }, true); // a tent is still torn
+    await api('POST', `/hire/items/${tent}/repaired`, { qty: 1 });
+    const st = await api('POST', `/hire/orders/${A.id}/settle`, { amount: 9590, method_id: cash });
+    const inv = await api('GET', `/invoices/${st.invoice_id}`);
+    assert.strictEqual(Number(inv.total), 13750); assert.strictEqual(inv.status, 'paid'); assert.strictEqual(st.deposit_applied, 4160);
+    // reservation with a deposit cancelled: a fee kept, the rest refunded
+    await api('POST', `/hire/orders/${B.id}/deposit`, { amount: 500, method_id: cash });
+    await api('POST', `/hire/orders/${B.id}/cancel`, { fee: 100, refund_method_id: cash, reason: 'date moved' });
+    // deposit bigger than the bill: the rest goes back
+    const C = await api('POST', '/hire/orders', { partner_id: A.partner_id, start_date: day(0), end_date: day(1), deposit_required: 100, lines: [{ item_id: chair, qty: 1 }] });
+    await api('POST', `/hire/orders/${C.id}/handover`, { deposit: 100, method_id: cash });
+    await api('PUT', `/hire/orders/${C.id}`, { end_date: day(4) });
+    await api('POST', `/hire/orders/${C.id}/return`, { date: day(1), lines: [{ line_id: (await api('GET', `/hire/orders/${C.id}`)).lines[0].id, qty: 1 }] });
+    await api('POST', `/hire/orders/${C.id}/settle`, {}, true); // refund method needed
+    const sc = await api('POST', `/hire/orders/${C.id}/settle`, { refund_method_id: cash }); assert.strictEqual(sc.refunded, 90);
+    const tbh = await api('GET', '/reports/tb?from=2000-01-01&to=2999-12-31'); assert.strictEqual(tbh.debit, tbh.credit);
+    const dep = tbh.rows.find(x => x.code === '2420'); assert(!dep || Math.abs(Number(dep.debit) - Number(dep.credit)) < 0.01);
+    const rep = await api('GET', `/hire/report?from=${day(-1)}&to=${day(10)}`);
+    assert(rep.rows.find(x => x.item_id === tent).hire_income === 9000);
+    const stt = await api('GET', '/hire/stats'); assert.strictEqual(stt.out_now, 0);
+    ok('hire: no over-booking of tents and chairs, deposit required at hand-over, part returns with damage and losses, cheapest day/week rate, bill M 13 750 less deposit, torn tent blocks the next hire until repaired, cancellation fee, deposit refund');
+  }
+  {
+    // ---- patients & dispensing ----
+    const cash = M('Cash').id;
+    const { allergyHit } = require('../routes/clinic');
+    assert(allergyHit('Penicillin', 'Amoxicillin 500mg caps')); assert(allergyHit('sulpha drugs, aspirin', 'Co-trimoxazole 480mg')); assert(!allergyHit('None known', 'Amoxicillin')); assert(!allergyHit('Penicillin', 'Paracetamol 500mg'));
+    const vat = (await api('GET', '/taxes'))[0].id;
+    const amox = await api('POST', '/products', { name: 'Amoxicillin 500mg caps', type: 'stock', uom: 'Cap', price: 3, cost: 1, tax_id: vat, track_batches: 1 });
+    const para = await api('POST', '/products', { name: 'Paracetamol 500mg tabs', type: 'stock', uom: 'Tab', price: 1, cost: 0.3, tax_id: vat, track_batches: 1 });
+    const gp = await api('POST', '/products', { name: 'Consultation – GP', type: 'service', price: 350, tax_id: vat });
+    const supp = (await api('GET', '/partners?is_supplier=1'))[0];
+    const po = await api('POST', '/purchases', { supplier_id: supp.id, lines: [{ product_id: amox.id, qty: 20, unit_cost: 1, tax_rate: 0 }, { product_id: amox.id, qty: 100, unit_cost: 1, tax_rate: 0 }, { product_id: para.id, qty: 200, unit_cost: 0.3, tax_rate: 0 }] });
+    await api('POST', `/purchases/${po.id}/confirm`); const pol = (await api('GET', `/purchases/${po.id}`)).lines;
+    await api('POST', `/purchases/${po.id}/receive`, { lines: [{ line_id: pol[0].id, qty: 20, batch_no: 'AMX-OLD', expiry_date: '2026-01-31' }, { line_id: pol[1].id, qty: 100, batch_no: 'AMX-27', expiry_date: '2027-12-31' }, { line_id: pol[2].id, qty: 200, batch_no: 'PCM-28', expiry_date: '2028-06-30' }] });
+    const aid = await api('POST', '/medical-aids', { name: 'LNIG Medical Aid' });
+    await api('POST', '/patients', { first_name: 'X', medical_aid_id: aid.id }, true); // member number needed
+    const pt = await api('POST', '/patients', { first_name: 'Thabo', last_name: 'Mokoena', dob: '1990-05-14', sex: 'M', phone: '58123456', allergies: 'Penicillin', medical_aid_id: aid.id, medical_aid_no: 'LN-55123' });
+    assert(pt.file_no && pt.age >= 36 && pt.partner_id);
+    await api('POST', '/visits', { patient_id: pt.id, reason: 'Sore throat', temp: 98.6 }, true); // Fahrenheit refused
+    const v = await api('POST', '/visits', { patient_id: pt.id, reason: 'Sore throat, fever', temp: 38.2, bp_sys: 125, bp_dia: 82, pulse: 96 });
+    assert.strictEqual(v.queue_no >= 1, true);
+    await api('POST', '/visits', { patient_id: pt.id }, true); // already waiting
+    await api('POST', `/visits/${v.id}/start`);
+    await api('POST', `/visits/${v.id}/done`, {}, true); // no diagnosis yet
+    await api('PUT', `/visits/${v.id}`, { history: '3 days sore throat', exam: 'Inflamed tonsils, no exudate', diagnosis: 'Acute tonsillitis', icd10: 'J03.9', plan: 'Analgesia, fluids', sick_note_days: 2 });
+    await api('POST', `/visits/${v.id}/items`, { kind: 'service', product_id: gp.id });
+    let e = await api('POST', `/visits/${v.id}/items`, { kind: 'medicine', product_id: amox.id, qty: 15 }, true); assert(/ALLERGY/.test(JSON.stringify(e)));
+    e = await api('POST', `/visits/${v.id}/items`, { kind: 'medicine', product_id: amox.id, qty: 15, override_allergy: 1 }, true); assert(/expired/.test(JSON.stringify(e)));
+    await api('POST', `/visits/${v.id}/items`, { kind: 'medicine', product_id: para.id, qty: 20, dosage: '2 tablets 3 times a day', duration: '3 days' });
+    await api('POST', `/visits/${v.id}/items`, { kind: 'medicine', product_id: para.id, qty: 500 }, true); // not enough stock
+    await api('POST', `/visits/${v.id}/done`);
+    const bill = await api('POST', `/visits/${v.id}/bill`, { bill_to: 'medical_aid', copay: 100, amount: 100, method_id: cash });
+    const ai = await api('GET', `/invoices/${bill.invoice_id}`), ci = await api('GET', `/invoices/${bill.copay_invoice_id}`);
+    assert.strictEqual(Number(ai.total), 270); assert.strictEqual(ai.partner_id, aid.id); assert.strictEqual(Number(ci.total), 100); assert.strictEqual(ci.status, 'paid');
+    assert.strictEqual(Number((await api('GET', `/products/${para.id}`)).stock_qty), 180);
+    await api('POST', `/visits/${v.id}/bill`, { bill_to: 'patient' }, true); // billed once
+    const claims = await api('GET', '/clinic/claims'); assert(claims.some(x => x.invoice_id === bill.invoice_id && Number(x.open) === 270 && x.medical_aid_no === 'LN-55123'));
+    // pharmacy walk-in with a new patient, paid in full
+    const w = await api('POST', '/visits', { kind: 'pharmacy', patient: { first_name: 'Lineo', last_name: 'Ramone', phone: '62000111' } });
+    await api('POST', `/visits/${w.id}/items`, { kind: 'medicine', product_id: para.id, qty: 10, dosage: '1-2 tabs when needed, max 8 a day' });
+    const wb = await api('POST', `/visits/${w.id}/bill`, { bill_to: 'patient', amount: 10, method_id: cash });
+    assert.strictEqual((await api('GET', `/invoices/${wb.invoice_id}`)).status, 'paid');
+    const rep = await api('GET', '/clinic/report?from=2000-01-01&to=2999-12-31');
+    assert.strictEqual(rep.register.filter(x => /Paracetamol/.test(x.description)).length, 2); assert(rep.diagnoses.some(x => x.icd10 === 'J03.9'));
+    const pf = await api('GET', `/patients/${pt.id}`); assert(pf.visits.length === 1 && pf.medicines.length === 1);
+    const tbp = await api('GET', '/reports/tb?from=2000-01-01&to=2999-12-31'); assert.strictEqual(tbp.debit, tbp.credit);
+    ok('patients: queue with vital-sign checks, notes & ICD-10 diagnosis, penicillin allergy blocks amoxicillin, expired batch refused, billed to medical aid M 270 + co-payment M 100 paid, stock dispensed, pharmacy walk-in, dispensing register, claims list');
+  }
+  {
+    // ---- farm ----
+    const vat = (await api('GET', '/taxes'))[0].id;
+    const mk = (name, uom, cost, qtyIn, price = 0) => api('POST', '/products', { name, type: 'stock', uom, cost, price, tax_id: vat, opening_qty: qtyIn });
+    const mash = await mk('Layer mash 50kg', 'Bag', 400, 10), vac = await mk('Newcastle vaccine', 'Dose', 120, 5), eggs = await mk('Eggs tray 30', 'Tray', 45, 0, 75), maize = await mk('Maize 50kg bag', 'Bag', 150, 0, 260);
+    const g = await api('POST', '/farm/groups', { name: 'Layers house 1', kind: 'poultry', species: 'chicken', purpose: 'eggs', head_count: 500, produce_id: eggs.id });
+    await api('POST', '/farm/logs', { kind: 'feed', group_id: g.id, product_id: mash.id, qty: 2 });
+    await api('POST', '/farm/logs', { kind: 'feed', group_id: g.id, product_id: mash.id, qty: 100 }, true); // not that much in stock
+    await api('POST', '/farm/logs', { kind: 'feed', group_id: g.id, product_id: mash.id, qty: 1, date: '2999-01-01' }, true); // future
+    await api('POST', '/farm/logs', { kind: 'feed', product_id: mash.id, qty: 1 }, true); // for whom?
+    const due = new Date(Date.now() + 10 * 86400000).toISOString().slice(0, 10);
+    await api('POST', '/farm/logs', { kind: 'vaccinate', group_id: g.id, product_id: vac.id, qty: 1, next_due: due });
+    await api('POST', '/farm/logs', { kind: 'production', group_id: g.id, produced_qty: 15 });
+    await api('POST', '/farm/logs', { kind: 'death', group_id: g.id, qty: 3, note: 'heat' });
+    const gg = await api('GET', `/farm/groups/${g.id}`);
+    assert.strictEqual(gg.heads, 497); assert.strictEqual(gg.produced_today, 15); assert.strictEqual(gg.cost_30, 920);
+    assert.strictEqual(Number((await api('GET', `/products/${mash.id}`)).stock_qty), 8); assert.strictEqual(Number((await api('GET', `/products/${eggs.id}`)).stock_qty), 15);
+    assert((await api('GET', '/farm/due')).some(x => x.product_id === vac.id && x.group_id === g.id));
+    // cattle: a cow, her calf, the calf sold
+    const herd = await api('POST', '/farm/groups', { name: 'Nguni herd', species: 'cattle', purpose: 'beef' });
+    const cow = await api('POST', '/farm/animals', { tag: 'LS-0001', species: 'cattle', breed: 'Nguni', sex: 'F', birth_date: '2021-09-01', group_id: herd.id, cost: 9000 });
+    await api('POST', '/farm/animals', { tag: 'LS-0001', species: 'cattle' }, true); // tag used
+    await api('POST', `/farm/animals/${cow.id}/birth`, { young: [{ tag: 'LS-0002', sex: 'M', weight: 28 }] });
+    const calf = (await api('GET', '/farm/animals?q=LS-0002'))[0]; assert.strictEqual(calf.mother_tag, 'LS-0001'); assert.strictEqual(calf.acquired, 'born');
+    const buyer = await api('POST', '/partners', { name: 'Maseru Abattoir', is_customer: 1 });
+    const sold = await api('POST', `/farm/animals/${calf.id}/exit`, { kind: 'sold', partner_id: buyer.id, amount: 3000, weight: 180 });
+    assert.strictEqual(Number((await api('GET', `/invoices/${sold.invoice_id}`)).total), 3000);
+    await api('POST', `/farm/animals/${calf.id}/exit`, { kind: 'died' }, true); // already sold
+    await api('POST', '/farm/logs', { kind: 'weigh', animal_id: cow.id, weight: 412 });
+    assert.strictEqual(Number((await api('GET', `/farm/animals/${cow.id}`)).weight), 412);
+    // a maize field
+    const fl = await api('POST', '/farm/fields', { name: 'Lower field', size_ha: 2 });
+    const se = await api('POST', '/farm/seasons', { field_id: fl.id, crop: 'maize', variety: 'PAN 6479', planted_on: '2026-10-15', produce_id: maize.id });
+    await api('POST', '/farm/logs', { kind: 'labour', season_id: se.id, cost: 500, note: 'tractor ploughing' });
+    await api('POST', '/farm/logs', { kind: 'harvest', season_id: se.id, produced_qty: 40, final: 1 });
+    const ss = await api('GET', `/farm/seasons/${se.id}`); assert.strictEqual(ss.status, 'harvested'); assert.strictEqual(ss.harvested, 40);
+    assert.strictEqual(Number((await api('GET', `/products/${maize.id}`)).stock_qty), 40);
+    const rep = await api('GET', '/farm/report?from=2000-01-01&to=2999-12-31');
+    const rg = rep.groups.find(x => x.id === g.id); assert.strictEqual(rg.costs, 920); assert.strictEqual(rg.produced, 15); assert.strictEqual(rg.deaths, 3);
+    assert.strictEqual(rep.groups.find(x => x.id === herd.id).animal_sales, 3000); assert(rep.herd.find(h => h.species === 'cattle').born === 1);
+    assert.strictEqual(rep.seasons.find(x => x.id === se.id).cost_per_ha, 250);
+    const tbf = await api('GET', '/reports/tb?from=2000-01-01&to=2999-12-31'); assert.strictEqual(tbf.debit, tbf.credit);
+    ok('farm: layers fed and vaccinated from stock (next dose due listed), 15 trays of eggs into stock, 3 deaths off the flock, cow calves, calf sold on an invoice, maize field ploughed and 40 bags harvested into stock, results per flock and per hectare');
   }
   const adminToken = token;
   const pin = await api('GET', '/pin-users'); const kat = pin.find(u => u.name === 'Cashier Kat');

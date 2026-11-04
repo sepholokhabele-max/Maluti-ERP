@@ -331,3 +331,17 @@ tr.unmatched td { background: #fffbeb; }
 .mod.on { border-color: #2563eb; background: #eff6ff; }
 .mod.coming { opacity: .55; cursor: default; }
 td.neg, .neg { color: var(--bad); }
+
+/* project task board */
+.kanban { display: grid; grid-template-columns: repeat(4, minmax(200px, 1fr)); gap: 10px; overflow-x: auto; }
+.kb-col { background: var(--bg); border-radius: 10px; padding: 8px; min-height: 120px; }
+.kb-head { font-weight: 600; font-size: 13px; margin: 2px 4px 8px; }
+.kb-card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; cursor: pointer; }
+.kb-card small { display: block; color: var(--ink-3); margin-top: 3px; }
+.kb-move { display: none; gap: 4px; flex-wrap: wrap; margin-top: 6px; } .kb-card:hover .kb-move { display: flex; }
+.kb-move .btn { padding: 2px 6px; font-size: 11px; }
+@media (max-width: 900px) { .kanban { grid-template-columns: repeat(4, 220px); } }
+/* ticket conversation */
+.thread { display: flex; flex-direction: column; gap: 8px; }
+.msg { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: #fff; }
+.msg.internal { background: var(--warn-soft); border-color: #fcd34d; }

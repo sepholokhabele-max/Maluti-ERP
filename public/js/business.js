@@ -44,7 +44,7 @@ function lineEditor(root, { products, lines, priceKey, defaultTax, readOnly, onC
 // ---------------------------------------------------------------- purchasing
 export async function purchases(view) {
   const rows = await GET('/purchases');
-  view.innerHTML = page('Purchase orders', `<a class="btn" href="#/partners?type=supplier">Suppliers</a><a class="btn" href="#/invoices?kind=supplier_bill">Supplier bills</a><a class="btn btn-primary" href="#/purchase/new">＋ New purchase order</a>`,
+  view.innerHTML = page('Purchase orders', `<a class="btn" href="#/rfqs">📨 Price requests (RFQ)</a><a class="btn" href="#/partners?type=supplier">Suppliers</a><a class="btn" href="#/invoices?kind=supplier_bill">Supplier bills</a><a class="btn btn-primary" href="#/purchase/new">＋ New purchase order</a>`,
     tableHtml([{ key: 'number', label: 'Number' }, { key: 'supplier_name', label: 'Supplier' }, { key: 'order_date', label: 'Date', fmt: d }, { key: 'expected_date', label: 'Expected', fmt: d },
       { key: 'status', label: 'Status', html: 1, fmt: v => badge(v) }, { key: 'billed', label: 'Billed', fmt: v => v ? 'Yes' : '' }, { key: 'total', label: 'Total', right: 1, fmt: money }], rows,
       { rowAttr: r => `data-href="#/purchase/${r.id}"`, empty: 'No purchase orders yet.' }));

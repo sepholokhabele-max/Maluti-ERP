@@ -22,8 +22,9 @@ const MODULES = [
   { key: 'attendance', name: 'Attendance', icon: '🕐', group: 'People', desc: 'Clock in/out with a PIN, hours worked and overtime to payroll.' },
   // planned – shown so the admin knows they are on the way
   { key: 'manufacturing', name: 'Manufacturing (BOM & work orders)', icon: '🏭', group: 'Operations', desc: 'Bills of materials with costing, work orders, quality check, batches and material shortages.' },
-  { key: 'projects', name: 'Projects & timesheets', icon: '📋', group: 'Operations', coming: true, desc: 'Projects, tasks, hours worked and billing by the hour or by milestone.' },
-  { key: 'helpdesk', name: 'Helpdesk & repairs', icon: '🛠️', group: 'Operations', coming: true, desc: 'Customer tickets, job cards and repairs with parts and labour.' },
+  { key: 'projects', name: 'Projects & timesheets', icon: '📋', group: 'Operations', desc: 'Projects, task boards, hours worked, billing by the hour or by progress, project profit.' },
+  { key: 'helpdesk', name: 'Helpdesk & repairs', icon: '🛠️', group: 'Operations', desc: 'Customer tickets with response deadlines, job cards for repairs, parts and labour invoiced.' },
+  { key: 'maintenance', name: 'Machines & maintenance', icon: '⚙️', group: 'Operations', desc: 'Machine register, breakdowns, scheduled servicing, spare parts and downtime per machine.' },
   { key: 'rooms', name: 'Rooms & bookings', icon: '🛏️', group: 'Sector', coming: true, desc: 'Lodges and guest houses: rooms, bookings, check-in and room charges.' },
   { key: 'school', name: 'School fees', icon: '🎓', group: 'Sector', coming: true, desc: 'Learners, classes, fee plans, statements and payments.' },
   { key: 'patients', name: 'Patients & dispensing', icon: '🩺', group: 'Sector', coming: true, desc: 'Clinics and pharmacies: patients, visits and dispensing from batches.' },
@@ -44,7 +45,7 @@ const TYPES = [
   { key: 'wholesale', name: 'Wholesale & distribution', icon: '📦', desc: 'Cash & carry, distributor, depot with branches or delivery vans',
     modules: ['pos', 'sales', 'promotions', 'crm', 'purchasing', 'inventory', 'locations', 'bank'], till: 'retail' },
   { key: 'manufacturing', name: 'Manufacturing & production', icon: '🏭', desc: 'Bakery, brick yard, furniture, textiles, food processing, printing',
-    modules: ['sales', 'purchasing', 'inventory', 'locations', 'manufacturing', 'hrm', 'attendance'] },
+    modules: ['sales', 'purchasing', 'inventory', 'locations', 'manufacturing', 'maintenance', 'hrm', 'attendance'] },
   { key: 'services', name: 'Services & projects', icon: '🧰', desc: 'Consulting, construction, IT, cleaning, security, garage / repairs',
     modules: ['sales', 'crm', 'expenses', 'attendance', 'projects', 'helpdesk', 'bank'] },
   { key: 'hospitality', name: 'Lodge / guest house / hotel', icon: '🏨', desc: 'Accommodation with a restaurant or bar',
@@ -54,7 +55,7 @@ const TYPES = [
   { key: 'health', name: 'Clinic / pharmacy', icon: '🩺', desc: 'Pharmacy, surgery, dental, optometrist, vet',
     modules: ['pos', 'inventory', 'purchasing', 'crm', 'patients'], till: 'retail' },
   { key: 'transport', name: 'Transport & logistics', icon: '🚛', desc: 'Taxis, buses, trucking, courier, car hire',
-    modules: ['sales', 'expenses', 'crm', 'attendance', 'fleet'] },
+    modules: ['sales', 'expenses', 'crm', 'attendance', 'maintenance', 'fleet'] },
   { key: 'rental', name: 'Rental & property', icon: '🔑', desc: 'Equipment hire, tents & chairs, flats and shops to let',
     modules: ['sales', 'crm', 'bank', 'rental'] },
   { key: 'agriculture', name: 'Agriculture', icon: '🌾', desc: 'Crop farm, poultry, piggery, dairy, wool & mohair',
@@ -94,7 +95,7 @@ async function save(patch) {
   let types = Array.isArray(patch.types) ? patch.types.filter(t => TYPES.some(x => x.key === t)) : cur.types;
   let modules;
   if (Array.isArray(patch.modules)) modules = patch.modules.filter(k => KEYS.has(k));
-  else if (Array.isArray(patch.types)) modules = [...new Set([...(cur.configured ? cur.modules : []), ...defaultsFor(types)])];
+  else if (Array.isArray(patch.types)) modules = [...new Set([...cur.modules, ...defaultsFor(types)])]; // never drops what is already on
   else modules = cur.modules;
   await db.setSetting('business', { types, modules });
   // keep the setup guide's list of business types the same

@@ -264,6 +264,83 @@ export const HELP = {
     max_shift_hours: 'If someone forgets to clock out, the shift is closed after this many hours and flagged for correction.'
   },
   department: { name: 'e.g. Butchery, Front shop, Kitchen, Admin.' },
+  equipment: {
+    name: 'What staff call it, e.g. "Oven 2", "Spiral mixer", "Generator", "Toyota Quantum A 1234".',
+    code: 'Your asset number or sticker on the machine.',
+    category: 'Group, e.g. Bakery, Workshop, Vehicles, Power.',
+    serial_no: 'From the rating plate – needed for warranty claims and spare parts.',
+    location_id: 'Branch or site where the machine stands.',
+    supplier_id: 'Who sold it or services it – shown when you need a repairer.',
+    purchase_date: 'Date bought.', cost: 'What it cost – for insurance and the asset register.',
+    warranty_until: 'Last day of the warranty. Check this before paying for a repair.',
+    interval_days: 'Service every … days (e.g. 90). The next service date moves forward each time a job is finished. Blank = no planned servicing.',
+    last_service: 'When it was last serviced.', next_service: 'When the next service is due. Filled from the interval when left blank.',
+    status: 'Broken down = cannot be used; work orders on it ask before starting.', notes: 'Anything useful: oil type, filter numbers, technician\'s phone.'
+  },
+  mreq: {
+    equipment_id: 'The machine with the problem.',
+    priority: 'Urgent = production has stopped. High = still working but getting worse.',
+    title: 'One line, e.g. "Belt slipping, mixer stops" or "Oven does not reach 200°C".',
+    description: 'What happened, when, any noises or error codes.',
+    machine_down: 'Tick when the machine must not be used. It shows as broken down until the job is finished.',
+    kind: 'Repair = something broke. Planned service = routine servicing.',
+    assigned_to: 'The technician who will do the work.', scheduled_date: 'When the work is planned.',
+    resolution: 'What was done, e.g. "Replaced both V-belts and tensioned".',
+    labour_cost: 'Technician\'s time in Maloti (for the machine\'s cost history).',
+    external_cost: 'What an outside repairer charged (book their bill under Supplier bills).',
+    downtime_hours: 'How many hours the machine could not be used. Blank = worked out from when it was reported.'
+  },
+  rfq: {
+    deadline: 'Date by which suppliers should send their prices.',
+    notes: 'Delivery address, payment terms, "prices must include delivery"…',
+    lead_days: 'How many days after ordering the supplier will deliver – sets the expected date on the purchase order.'
+  },
+  project: {
+    name: 'e.g. "Office network – Ha Abia clinic" or "Extension to Thabo\'s house".',
+    code: 'Short reference used on timesheets and invoices. Made automatically when blank.',
+    partner_id: 'The customer who pays. Leave blank for internal projects.',
+    billing: 'By the hour: logged hours × rate are invoiced. Fixed price: you invoice progress amounts or % of the contract. Not billed: internal work (hours are still costed).',
+    hourly_rate: 'Price per hour charged to the customer, excl. VAT.',
+    budget_hours: 'Hours you expect it to take – the project warns when they are used up.',
+    budget_amount: 'Contract value (fixed price) or spending budget.',
+    manager_id: 'Can add tasks and change the project even without full project rights.',
+    start_date: 'When work starts.', end_date: 'Deadline promised to the customer.', status: 'Finished and cancelled projects stop accepting hours from staff.',
+    description: 'Scope of work – what is and is not included.'
+  },
+  task: {
+    title: 'A piece of work someone can finish, e.g. "Run cables to 6 offices".',
+    assigned_to: 'Who does it. It appears under their "My tasks & hours".', status: 'To do → Busy → To check → Done.',
+    priority: 'Urgent and high tasks are listed first.', due_date: 'When it must be finished.',
+    estimate_hours: 'Expected hours – compared with hours logged.', description: 'Details, materials, contact person on site.'
+  },
+  timesheet: {
+    work_date: 'Day the work was done (not in the future).', hours: 'Hours worked, e.g. 1.5 for an hour and a half.',
+    project_id: 'Project the time was for.', task_id: 'Task within the project (optional).',
+    description: 'What was done – printed for the customer on hourly invoices.',
+    billable: 'Untick for time the customer does not pay for (travel, re-work, warranty).'
+  },
+  projinv: {
+    to: 'All billable hours up to this date that are not invoiced yet go on the invoice.',
+    percent: 'Percentage of the contract value to invoice now, e.g. 30 for a deposit.',
+    amount: 'Or type the amount excl. VAT instead of a percentage.', description: 'Text on the invoice line, e.g. "Progress payment 2: roof".'
+  },
+  ticket: {
+    subject: 'Short description, e.g. "Laptop does not charge" or "Printer jams".',
+    partner_id: 'Choose if the customer is in Contacts; otherwise fill in the name and phone – a contact is made when you invoice.',
+    contact_name: 'Person to talk to.', phone: 'Number to call or WhatsApp when it is ready.', email: 'For replies by email.',
+    kind: 'Repair = item booked in (job card). Problem / question / request = support without an item.',
+    channel: 'How the customer contacted you.', priority: 'Sets the deadline to respond (see Helpdesk → Settings).',
+    assigned_to: 'Technician responsible.', item: 'Make and model, e.g. "HP 250 G8 laptop, black".',
+    serial_no: 'Serial number or phone IMEI (*#06#) – proves it is the same item when collected.',
+    project_id: 'Link to a project or support contract so the time counts there.',
+    description: 'The problem in the customer\'s own words, plus accessories left with the item.',
+    callout: 'Fixed fee added to the invoice for coming out to the customer.'
+  },
+  hdsettings: {
+    labour_rate: 'Charged per hour for repairs when the time is not on an hourly project.',
+    sla_urgent: 'Hours within which an urgent ticket must get a first answer.', sla_high: 'Hours for high-priority tickets.',
+    sla_normal: 'Hours for normal tickets (24 = next day).', sla_low: 'Hours for low-priority tickets.'
+  },
   bom: {
     product_id: 'The finished product this recipe makes. It must be a stocked product so made goods are counted.',
     name: 'e.g. "Standard 50-loaf mix" or "Version 2". Keep the old one when a recipe changes – archive it instead of deleting.',
@@ -280,7 +357,8 @@ export const HELP = {
     qty: 'How much to make. Materials needed = recipe quantity × (this ÷ batch size) + expected waste.',
     planned_date: 'When production should happen – the open list is sorted by this date.',
     location_id: 'Where it is made: materials are taken from, and finished goods go into, this location.',
-    notes: 'Customer order, special instructions, machine to use…',
+    notes: 'Customer order, special instructions…',
+    equipment_id: 'Machine used. If it is broken down, starting the work order asks first.',
     qty_produced: 'Good units that can be sold. They go into stock now.',
     qty_rejected: 'Spoilt or failed units. Their share of the cost is written off as production rejects.',
     batch_no: 'Printed on labels for traceability. Leave blank to number it automatically.',

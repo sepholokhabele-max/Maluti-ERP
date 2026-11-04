@@ -7,13 +7,15 @@ const ROLE_PERMS = {
   admin: ['*'],
   manager: ['dashboard', 'pos', 'pos.refund', 'pos.discount', 'pos.void', 'catalog', 'inventory', 'partners', 'purchasing',
     'invoicing', 'accounting', 'reports', 'vas', 'kitchen', 'users', 'sessions', 'crm', 'recon', 'recon.approve', 'hrm', 'payroll',
-    'sales', 'expenses.approve', 'purchase.approve', 'attendance'],
+    'sales', 'expenses.approve', 'purchase.approve', 'attendance', 'maintenance', 'projects', 'helpdesk'],
   accountant: ['dashboard', 'partners', 'purchasing', 'invoicing', 'accounting', 'reports', 'inventory', 'crm', 'recon', 'recon.approve', 'hrm', 'payroll',
-    'sales', 'expenses.approve', 'attendance'],
-  cashier: ['pos', 'vas'],
+    'sales', 'expenses.approve', 'attendance', 'projects', 'helpdesk'],
+  cashier: ['pos', 'vas', 'helpdesk'],
   waiter: ['pos'],
   bartender: ['pos', 'vas'],
-  kitchen: ['kitchen']
+  kitchen: ['kitchen'],
+  technician: ['helpdesk', 'maintenance'],
+  staff: ['helpdesk']
 };
 
 function can(user, perm) {

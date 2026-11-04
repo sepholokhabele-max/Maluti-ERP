@@ -43,7 +43,8 @@ export async function mrp(view) {
     mb.innerHTML = `<div class="card">${tableHtml([{ key: 'name', label: 'Material' }, { key: 'need', label: 'Needed for open work orders', right: 1, fmt: (v, r) => `${qty(v)} ${r.uom || ''}` },
       { key: 'available', label: 'In stock', right: 1, fmt: qty }, { key: 'on_order', label: 'On order', right: 1, fmt: qty }, { key: 'missing', label: 'To buy', right: 1, html: 1, fmt: v => `<b class="neg">${qty(v)}</b>` },
       { key: 'cost', label: 'Est. cost', right: 1, fmt: (v, r) => money(v * r.missing) }], rows, { empty: 'Nothing to buy – all open work orders have their materials (in stock or on order).' })}
-      ${rows.length && can('purchasing') ? '<div class="row" style="margin-top:10px"><span class="spacer"></span><button class="btn btn-primary" id="mkpo">🚚 Create purchase order</button></div>' : ''}</div>`;
+      ${rows.length && can('purchasing') ? '<div class="row" style="margin-top:10px"><span class="spacer"></span><button class="btn" id="mkrfq">📨 Ask several suppliers (RFQ)</button><button class="btn btn-primary" id="mkpo">🚚 Create purchase order</button></div>' : ''}</div>`;
+    if ($('#mkrfq')) $('#mkrfq').onclick = () => { try { sessionStorage.setItem('rfq_prefill', JSON.stringify(rows.map(x => ({ product_id: x.product_id, description: x.name, qty: Math.ceil(x.missing * 1000) / 1000 })))); } catch (_) {} location.hash = '#/rfq/new'; };
     if ($('#mkpo')) $('#mkpo').onclick = async () => {
       const sup = await GET('/partners?is_supplier=1');
       const f = [{ key: 'supplier_id', label: 'Supplier', type: 'select', numeric: true, required: true, options: sup.map(s => ({ value: s.id, label: s.name })) }];
@@ -57,9 +58,12 @@ async function newWorkOrder(preset = {}) {
   const boms = await GET('/mrp/boms');
   if (!boms.length) { toast('Make a bill of materials first', 'err'); location.hash = '#/bom/new'; return; }
   const lo = await multiLocation() ? await locationOptions('Default location') : null;
+  const eq = await GET('/equipment').catch(() => []);
   const f = [{ key: 'bom_id', label: 'What to make (bill of materials)', type: 'select', numeric: true, required: true, options: boms.map(b => ({ value: b.id, label: `${b.product_name} – ${b.name}` })) },
     { key: 'qty', label: 'Quantity to make', type: 'number', required: true }, { key: 'planned_date', label: 'Planned date', type: 'date' },
-    ...(lo ? [{ key: 'location_id', label: 'Made at', type: 'select', numeric: true, options: lo }] : []), { key: 'notes', label: 'Notes', span: 2 }];
+    ...(lo ? [{ key: 'location_id', label: 'Made at', type: 'select', numeric: true, options: lo }] : []),
+    ...(eq.length ? [{ key: 'equipment_id', label: 'Machine', type: 'select', numeric: true, options: [{ value: '', label: '—' }, ...eq.map(e => ({ value: e.id, label: e.name + (e.status === 'down' ? ' (broken down)' : '') }))] }] : []),
+    { key: 'notes', label: 'Notes', span: 2 }];
   const b0 = boms.find(b => b.id === preset.bom_id) || boms[0];
   modal({ title: 'New work order', size: 'lg', body: formHtml(f, { bom_id: b0.id, qty: Number(b0.output_qty), planned_date: today(), location_id: state.user.location_id || '', ...preset }, { ctx: 'wo' }),
     actions: [{ label: 'Cancel' }, { label: 'Create', cls: 'btn-primary', onClick: async (c, r) => { const w = await POST('/mrp/work-orders', readForm(r, f)); c(); toast(`${w.number} created`); location.hash = '#/wo/' + w.id; } }] });
@@ -134,7 +138,7 @@ export async function woForm(view, [idq]) {
   if (open) acts.push('<button class="btn btn-ok" id="wFinish">✓ Finish</button>', '<button class="btn btn-danger" id="wCancel">Cancel</button>');
   view.innerHTML = page(`${w.number} · ${w.product_name}`, acts.join(''), `
     <div class="card"><div class="row wrap" style="margin-bottom:10px">${wsBadge(w.status)}${w.qc_status !== 'none' ? badge(QC[w.qc_status][0], QC[w.qc_status][1]) : ''}
-      <span class="muted">${esc(w.bom_name || '')}${w.location_name ? ' · ' + esc(w.location_name) : ''}${w.started_at ? ' · started ' + esc(dt(w.started_at)) : ''}${w.finished_at ? ' · finished ' + esc(dt(w.finished_at)) : ''}</span></div>
+      <span class="muted">${esc(w.bom_name || '')}${w.location_name ? ' · ' + esc(w.location_name) : ''}${w.equipment_name ? ' · machine ' + esc(w.equipment_name) + (w.equipment_status === 'down' ? ' (broken down)' : '') : ''}${w.sale_order_number ? ' · for ' + esc(w.sale_order_number) : ''}${w.started_at ? ' · started ' + esc(dt(w.started_at)) : ''}${w.finished_at ? ' · finished ' + esc(dt(w.finished_at)) : ''}</span></div>
       <div class="cols cols-4">
         <div class="kpi"><div class="label">To make</div><div class="value">${qty(w.qty_planned)} <small>${esc(w.uom || '')}</small></div><div class="hint">planned ${esc(d(w.planned_date))}</div></div>
         <div class="kpi"><div class="label">Made</div><div class="value">${w.qty_produced == null ? '–' : qty(w.qty_produced)}</div><div class="hint">${Number(w.qty_rejected) ? qty(w.qty_rejected) + ' rejected' : ''}</div></div>
@@ -147,7 +151,9 @@ export async function woForm(view, [idq]) {
         ...(w.status === 'done' ? [{ key: 'qty_used', label: 'Used', right: 1, fmt: qty }, { key: 'unit_cost', label: 'Unit cost', right: 1, fmt: money }, { key: 'cost_total', label: 'Cost', right: 1, fmt: money }, { key: 'batches', label: 'Batches used' }]
           : [{ key: 'available', label: 'Available', right: 1, html: 1, fmt: (v, r) => `<span class="${Number(v) < Number(r.qty_planned) ? 'neg' : ''}">${qty(v)}</span>` }, { key: 'product_cost', label: 'Est. cost', right: 1, fmt: (v, r) => money(v * r.qty_planned) }])], w.lines)}
       ${w.notes ? `<p class="muted">${esc(w.notes)}</p>` : ''}</div>`, { back: '#/mrp' });
-  const act = async (path, msg) => { try { await POST(`/mrp/work-orders/${w.id}/${path}`); toast(msg); woForm(view, [id]); } catch (e) { err(e); } };
+  const act = async (path, msg, body) => { try { await POST(`/mrp/work-orders/${w.id}/${path}`, body); toast(msg); woForm(view, [id]); } catch (e) {
+    if (path === 'start' && /broken down/.test(e.message) && await confirmBox(e.message + '\n\nStart anyway?', { okLabel: 'Start anyway' })) return act('start', 'Production started', { force: 1 });
+    err(e); } };
   if ($('#wConfirm')) $('#wConfirm').onclick = () => act('confirm', 'Planned');
   if ($('#wStart')) $('#wStart').onclick = () => act('start', 'Production started');
   if ($('#wCancel')) $('#wCancel').onclick = async () => { if (await confirmBox('Cancel this work order? Nothing has been taken from stock yet.', { danger: true, okLabel: 'Cancel work order' })) act('cancel', 'Cancelled'); };

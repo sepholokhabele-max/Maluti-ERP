@@ -48,7 +48,8 @@ pub.post('/setup', ah(async (req, res) => {
   await setup.initialise({ company: company || {}, admin, demo: !!demo });
   // remember the kinds of business for the setup guide; butchery mode is switched on straight away
   const types = Array.isArray(req.body.business_types) ? req.body.business_types : [];
-  if (types.length) await require('../services/guide').save({ types });
+  // a brand-new business: only the modules its types need are switched on
+  if (types.length) { const M = require('../services/modules'); await M.save({ types, modules: M.defaultsFor(types) }); }
   if (types.includes('butchery')) { const B = require('../services/butchery'); await db.setSetting('butchery', { ...(await B.settings()), enabled: true }); }
   res.json(await auth.login(admin.username, admin.password));
 }));

@@ -1,4 +1,18 @@
-## Maluti ERP 1.7.1
+## Maluti ERP 1.8.0
+
+**Operations and service businesses.**
+
+- **Machines & maintenance**: register ovens, mixers, generators, vehicles; anyone can report a breakdown (machine marked *down*, work orders on it ask before starting); technicians start and finish jobs with spare parts from stock (booked to Repairs & maintenance), labour, outside repairer and downtime; service intervals with *Plan due services*; repair cost and downtime per machine.
+- **Requests for quotation (RFQ)**: ask several suppliers for prices on the same items (email or print), type in their prices and delivery times, see the cheapest per item, and make one draft purchase order per supplier in one click. *Materials to buy* in Manufacturing can start an RFQ.
+- **Make to order**: a confirmed sales order makes work orders for products with a bill of materials – only what stock cannot cover, or the full quantity.
+- **Projects**: customer, billing by the hour / fixed price / internal, budget hours, task board (to do → busy → to check → done), hours by person, invoicing of logged hours or a % of the contract, profit so far (invoiced − staff cost − expenses).
+- **Timesheets**: everyone logs hours on their tasks; *My tasks & hours* screen; billable / non-billable; invoiced hours are locked.
+- **Helpdesk & repairs**: tickets by phone, walk-in, WhatsApp or email with response deadlines per priority, replies and internal notes, repair job cards with item and serial number, parts and labour, printable job card, one-click invoice.
+- Ticking a business type (in the setup guide or settings) now only ever **adds** modules – it no longer switches off modules you were already using, such as Branches & warehouses.
+- New roles **technician** (helpdesk, repairs, maintenance) and **staff** (helpdesk, own tasks and hours).
+- Setup guide steps and yellow help notes for all of these.
+
+### Also in 1.7.1
 
 - **Smoother updates:** the update now installs in the background without flashing command windows, and if the old copy of Maluti ERP does not close by itself within about 30 seconds it is ended automatically, so the update can no longer get stuck.
 

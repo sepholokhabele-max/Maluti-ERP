@@ -184,9 +184,9 @@ r.post('/expense-claims', ah(async (req, res) => {
   const acc = await db.one(`SELECT code FROM accounts WHERE code = ? AND type = 'expense'`, [b.account_code || '6000']);
   if (!acc) throw bad('Choose an expense category');
   if (b.paid_by === 'company' && !b.company_method_id) throw bad('Choose how the company paid');
-  const ins = await db.query(`INSERT INTO expense_claims (user_id, claim_date, description, account_code, amount, tax_rate, paid_by, company_method_id, supplier, receipt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  const ins = await db.query(`INSERT INTO expense_claims (user_id, claim_date, description, account_code, amount, tax_rate, paid_by, company_method_id, supplier, receipt, project_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [req.user.id, b.claim_date || today(), String(b.description).slice(0, 255), acc.code, amount, Number(b.tax_rate || 0), b.paid_by === 'company' ? 'company' : 'own',
-      b.paid_by === 'company' ? b.company_method_id : null, b.supplier || null, b.receipt || null]);
+      b.paid_by === 'company' ? b.company_method_id : null, b.supplier || null, b.receipt || null, Number(b.project_id) || null]);
   await db.query('UPDATE expense_claims SET number = ? WHERE id = ?', [`EXP/${String(b.claim_date || today()).slice(0, 4)}/${pad(ins.insertId, 5)}`, ins.insertId]);
   res.json(await db.one(`${claimSql} WHERE x.id = ?`, [ins.insertId]));
 }));

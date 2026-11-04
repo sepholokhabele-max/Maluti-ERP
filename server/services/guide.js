@@ -60,6 +60,15 @@ async function facts() {
     employees: await n(`SELECT COUNT(*) FROM employees WHERE status = 'active'`),
     claims: await n('SELECT COUNT(*) FROM expense_claims'),
     boms: await n('SELECT COUNT(*) FROM boms WHERE active = 1'),
+    machines: await n('SELECT COUNT(*) FROM equipment WHERE active = 1'),
+    machinesScheduled: await n('SELECT COUNT(*) FROM equipment WHERE active = 1 AND interval_days IS NOT NULL'),
+    projects: await n('SELECT COUNT(*) FROM projects'),
+    timesheets: await n('SELECT COUNT(*) FROM timesheets'),
+    projInvoiced: await n('SELECT COUNT(*) FROM invoices WHERE project_id IS NOT NULL'),
+    tickets: await n('SELECT COUNT(*) FROM tickets'),
+    techs: await n(`SELECT COUNT(*) FROM users WHERE active = 1 AND role IN ('technician','staff')`),
+    hdSet: !!(await db.getSetting('helpdesk', null)),
+    rfqs: await n('SELECT COUNT(*) FROM rfqs'),
     workOrders: await n(`SELECT COUNT(*) FROM work_orders WHERE status = 'done'`),
     batchTracked: await n('SELECT COUNT(*) FROM products WHERE active = 1 AND track_batches = 1'),
     noSpecies: await n('SELECT COUNT(*) FROM products WHERE active = 1 AND (is_carcass = 1 OR sold_by_weight = 1) AND species IS NULL')
@@ -239,6 +248,46 @@ function steps(F) {
       why: 'Payslips with Lesotho PAYE, leave and loans, and the payroll journal in the books.',
       how: 'HR & Payroll → New employee with ID number, start date and basic salary. Run the first payroll as a draft and check the payslips.',
       done: F.employees > 0 },
+    // ---------- maintenance
+    { key: 'machines', mods: ['maintenance'], group: 'Machines', title: 'Machine register', link: '#/maintenance?tab=machines',
+      why: 'Every oven, mixer, press, generator or vehicle gets its breakdown history, downtime and repair cost.',
+      how: 'Maintenance → Machines → New machine: name, where it stands, serial number and supplier. Staff can then report breakdowns from Maintenance → Report a problem.',
+      done: F.machines > 0 },
+    { key: 'pm', mods: ['maintenance'], group: 'Machines', title: 'Service intervals', link: '#/maintenance?tab=machines', optional: true,
+      why: 'Servicing on time is cheaper than repairing a breakdown in the middle of production.',
+      how: 'Edit each machine and enter "service every … days" (e.g. 90). Maintenance → "Plan due services" then creates the service jobs a week before they are due.',
+      done: F.machinesScheduled > 0 },
+    // ---------- buying
+    { key: 'rfq', mods: ['purchasing'], types: ['wholesale', 'manufacturing', 'services', 'agriculture'], group: 'Buying', title: 'Compare supplier prices (RFQ)', link: '#/rfqs', optional: true,
+      why: 'Asking two or three suppliers for the same items and buying from the cheapest saves money on big orders.',
+      how: 'Purchasing → Requests for quotation → New: items and quantities, tick the suppliers, Send (by email or print). Type in their prices as they reply; "Order from best prices" makes the purchase orders.',
+      done: F.rfqs > 0 },
+    // ---------- projects
+    { key: 'projects', mods: ['projects'], group: 'Projects', title: 'First project', link: '#/projects',
+      why: 'Keeps tasks, hours, costs and invoices for each job together and shows if it makes money.',
+      how: 'Projects → New project: customer, billing (by the hour, fixed price or not billed), hourly rate, budget hours. Add tasks and assign them to staff.',
+      done: F.projects > 0 },
+    { key: 'timesheets', mods: ['projects'], group: 'Projects', title: 'Staff log their hours', link: '#/timesheets',
+      why: 'Hours are what you invoice (hourly jobs) and what the job costs you (all jobs).',
+      how: 'Each person opens Timesheets (or the task) and logs hours per day. Link each employee to their login in HR so their cost per hour is known.',
+      done: F.timesheets > 0 },
+    { key: 'projinvoice', mods: ['projects'], group: 'Projects', title: 'Invoice a project', link: '#/projects', optional: true,
+      why: 'Turns logged hours (or a % of a fixed price) into a customer invoice in one click.',
+      how: 'Open the project → Invoice: hourly projects take all billable hours not yet invoiced; fixed-price projects ask for the amount or % of the contract.',
+      done: F.projInvoiced > 0 },
+    // ---------- helpdesk
+    { key: 'hdsettings', mods: ['helpdesk'], group: 'Helpdesk', title: 'Response times and labour rate', link: '#/helpdesk?tab=settings',
+      why: 'Every ticket gets a deadline from its priority, and repair labour is charged at your rate.',
+      how: 'Helpdesk → Settings: hours to respond for urgent / high / normal / low tickets, and the hourly labour rate for repairs.',
+      done: F.hdSet },
+    { key: 'techs', mods: ['helpdesk'], group: 'Helpdesk', title: 'Technician logins', link: '#/settings?tab=users', optional: true,
+      why: 'Technicians see the tickets and job cards assigned to them and log their time – without access to money or reports.',
+      how: 'Settings → Users → New user with role "technician" (helpdesk + maintenance) or "staff" (helpdesk only).',
+      done: F.techs > 0 },
+    { key: 'firstticket', mods: ['helpdesk'], group: 'Helpdesk', title: 'First ticket or job card', link: '#/helpdesk',
+      why: 'Proves the chain: customer problem → technician → parts & hours → invoice.',
+      how: 'Helpdesk → New ticket. For repairs choose "Repair" and fill in the item and serial number, then add parts and hours and click Invoice.',
+      done: F.tickets > 0 },
     // ---------- sector specific (until each sector module is released)
     { key: 'mfg', mods: ['manufacturing'], group: 'Production', title: 'Raw materials and finished goods', link: '#/products',
       why: 'You buy raw materials, make products and sell them; both need to exist as stocked products with a cost.',
@@ -318,7 +367,12 @@ async function save(patch) {
   if (patch.unmark) s.done = s.done.filter(k => k !== patch.unmark);
   if (patch.dismissed !== undefined) s.dismissed = !!patch.dismissed;
   await db.setSetting('setup_guide', s);
-  if (Array.isArray(patch.types)) await M.save({ types: s.types }); // switches on the modules those businesses use
+  // ticking a business type here only ever ADDS that type's modules; it never switches modules off
+  // (that is done on purpose in Settings → Business & modules)
+  if (Array.isArray(patch.types)) {
+    const cur = await M.get();
+    await M.save({ types: s.types, modules: [...new Set([...cur.modules, ...M.defaultsFor(s.types)])] });
+  }
   return guide();
 }
 

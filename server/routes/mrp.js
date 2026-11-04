@@ -68,8 +68,8 @@ r.put('/mrp/boms/:id', PERM, ah(async (req, res) => {
 r.delete('/mrp/boms/:id', PERM, ah(async (req, res) => { await db.query('UPDATE boms SET active = 0 WHERE id = ?', [req.params.id]); res.json({ ok: true }); }));
 
 // ---------------------------------------------------------------- work orders
-const WO_SQL = `SELECT w.*, p.name product_name, p.uom, b.name bom_name, l.name location_name, u.name user_name, so.number sale_order_number
-  FROM work_orders w JOIN products p ON p.id = w.product_id LEFT JOIN boms b ON b.id = w.bom_id LEFT JOIN locations l ON l.id = w.location_id
+const WO_SQL = `SELECT w.*, p.name product_name, p.uom, b.name bom_name, l.name location_name, u.name user_name, so.number sale_order_number, eq.name equipment_name, eq.status equipment_status
+  FROM work_orders w LEFT JOIN equipment eq ON eq.id = w.equipment_id JOIN products p ON p.id = w.product_id LEFT JOIN boms b ON b.id = w.bom_id LEFT JOIN locations l ON l.id = w.location_id
   LEFT JOIN users u ON u.id = w.user_id LEFT JOIN sale_orders so ON so.id = w.sale_order_id`;
 
 async function getWo(conn, id) {
@@ -102,9 +102,9 @@ r.post('/mrp/work-orders', PERM, ah(async (req, res) => {
     if (!(q > 0)) throw bad('Enter how much to make');
     const factor = q / Number(bom.output_qty);
     const loc = b.location_id ? Number(b.location_id) : null;
-    const ins = await c.query(`INSERT INTO work_orders (bom_id, product_id, qty_planned, location_id, planned_date, labour_cost, overhead_cost, sale_order_id, notes, user_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [bom.id, bom.product_id, q, loc, b.planned_date || today(), round2(Number(bom.labour_cost) * factor), round2(Number(bom.overhead_cost) * factor),
-      b.sale_order_id || null, b.notes ? String(b.notes).slice(0, 255) : null, req.user.id]);
+    const ins = await c.query(`INSERT INTO work_orders (bom_id, product_id, qty_planned, location_id, planned_date, labour_cost, overhead_cost, sale_order_id, notes, user_id, equipment_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [bom.id, bom.product_id, q, loc, b.planned_date || today(), round2(Number(bom.labour_cost) * factor), round2(Number(bom.overhead_cost) * factor),
+      b.sale_order_id || null, b.notes ? String(b.notes).slice(0, 255) : null, req.user.id, Number(b.equipment_id) || null]);
     await c.query('UPDATE work_orders SET number = ? WHERE id = ?', [`WO/${new Date().getFullYear()}/${pad(ins.insertId, 5)}`, ins.insertId]);
     for (const l of await c.query('SELECT * FROM bom_lines WHERE bom_id = ?', [bom.id]))
       await c.query('INSERT INTO work_order_lines (wo_id, product_id, qty_planned) VALUES (?, ?, ?)', [ins.insertId, l.product_id, r4(Number(l.qty) * factor * (1 + Number(l.scrap_pct) / 100))]);
@@ -126,8 +126,9 @@ r.put('/mrp/work-orders/:id', PERM, ah(async (req, res) => {
       await c.query('UPDATE work_order_lines SET qty_planned = ROUND(qty_planned * ?, 4) WHERE wo_id = ?', [f, w.id]);
       await c.query('UPDATE work_orders SET labour_cost = ROUND(labour_cost * ?, 2), overhead_cost = ROUND(overhead_cost * ?, 2) WHERE id = ?', [f, f, w.id]);
     }
-    await c.query('UPDATE work_orders SET qty_planned = ?, location_id = ?, planned_date = ?, notes = ? WHERE id = ?',
-      [q, b.location_id !== undefined ? (b.location_id || null) : w.location_id, b.planned_date || w.planned_date, b.notes !== undefined ? (b.notes || null) : w.notes, w.id]);
+    await c.query('UPDATE work_orders SET qty_planned = ?, location_id = ?, planned_date = ?, notes = ?, equipment_id = ? WHERE id = ?',
+      [q, b.location_id !== undefined ? (b.location_id || null) : w.location_id, b.planned_date || w.planned_date, b.notes !== undefined ? (b.notes || null) : w.notes,
+        b.equipment_id !== undefined ? (Number(b.equipment_id) || null) : w.equipment_id, w.id]);
   });
   res.json(await getWo(db, req.params.id));
 }));
@@ -139,7 +140,11 @@ const setStatus = (from, to, extra = '') => ah(async (req, res) => {
   res.json(await getWo(db, w.id));
 });
 r.post('/mrp/work-orders/:id/confirm', PERM, setStatus(['draft'], 'confirmed'));
-r.post('/mrp/work-orders/:id/start', PERM, setStatus(['draft', 'confirmed'], 'in_progress', ', started_at = NOW()'));
+r.post('/mrp/work-orders/:id/start', PERM, ah(async (req, res, next) => {
+  const w = await db.one('SELECT w.equipment_id, e.name, e.status FROM work_orders w LEFT JOIN equipment e ON e.id = w.equipment_id WHERE w.id = ?', [req.params.id]);
+  if (w && w.equipment_id && w.status === 'down' && !req.body.force) throw bad(`${w.name} is broken down (open maintenance request). Fix it first, or start anyway.`);
+  return setStatus(['draft', 'confirmed'], 'in_progress', ', started_at = NOW()')(req, res, next);
+}));
 r.post('/mrp/work-orders/:id/cancel', PERM, setStatus(['draft', 'confirmed', 'in_progress'], 'cancelled'));
 
 /**

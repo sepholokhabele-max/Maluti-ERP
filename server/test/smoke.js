@@ -563,7 +563,7 @@ const ok = (m) => console.log('  ✓', m);
     let g = await api('GET', '/setup-guide');
     assert(g.steps.length > 10 && g.steps.every(s => s.why && s.how && s.link)); 
     g = await api('PUT', '/setup-guide', { types: ['butchery', 'bar'] });
-    assert(g.steps.some(s => s.key === 'firstcut') && g.steps.some(s => s.key === 'measures') && !g.steps.some(s => s.key === 'floors'));
+    assert(g.steps.some(s => s.key === 'firstcut') && g.steps.some(s => s.key === 'measures') && g.steps.some(s => s.key === 'floors')); // ticking types never switches modules off
     assert(g.steps.find(s => s.key === 'butchery_on').done && g.steps.find(s => s.key === 'firstcut').done && g.steps.find(s => s.key === 'company').done !== undefined);
     const before = g.done;
     g = await api('PUT', '/setup-guide', { mark: 'printer' }); assert(g.steps.find(s => s.key === 'printer').done && g.done === before + 1);
@@ -574,7 +574,7 @@ const ok = (m) => console.log('  ✓', m);
     // ---- business types & modules, branches, transfers, branch profit ----
     let biz = await api('GET', '/business');
     // the setup-guide step above chose butchery + bar, which switched on their modules
-    assert(biz.configured && biz.modules.includes('pos') && biz.modules.includes('butchery') && biz.modules.includes('bar') && !biz.modules.includes('restaurant') && biz.all_types.length === 13 && biz.all_modules.some(m => m.coming));
+    assert(biz.configured && biz.modules.includes('pos') && biz.modules.includes('butchery') && biz.modules.includes('bar') && biz.modules.includes('restaurant') && biz.modules.includes('locations') && biz.all_types.length === 13 && biz.all_modules.some(m => m.coming));
     const sumCheck = async () => { const st = await api('GET', '/locations/stock'); for (const r of st.rows) { const s = Object.values(r.at).reduce((a, x) => a + x.qty, 0); assert(Math.abs(s - r.stock_qty) < 0.001, `${r.name}: locations ${s} vs total ${r.stock_qty}`); } return st; };
     await sumCheck();
     let locs = await api('GET', '/locations'); const MAIN = locs.find(l => l.is_default); const TRANSIT = locs.find(l => l.kind === 'transit');
@@ -686,6 +686,107 @@ const ok = (m) => console.log('  ✓', m);
     const tbm = await api('GET', '/reports/tb?from=2000-01-01&to=2999-12-31'); assert.strictEqual(tbm.debit, tbm.credit);
     ok('manufacturing: BOM cost M 10.02/loaf; work order of 100 → 95 good + 5 rejects at M 9.90, labour & overhead absorbed, shortages → purchase order, books balance');
   }
+  {
+    // ---- machines & maintenance, RFQs, make-to-order ----
+    const td = new Date(); const ymd = x => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+    const belt = await api('POST', '/products', { name: 'V-belt A42', type: 'stock', cost: 80, price: 0, tax_id: 1, pos_visible: 0, opening_qty: 5 });
+    const mixer = await api('POST', '/equipment', { name: 'Spiral dough mixer', code: 'MIX-1', category: 'Bakery', interval_days: 90, serial_no: 'SM-2231' });
+    assert(mixer.next_service);
+    const mr = await api('POST', '/maintenance', { equipment_id: mixer.id, title: 'Belt slipping, mixer stops', machine_down: 1, priority: 'urgent' });
+    assert(/^MR\/\d{4}\/\d{5}$/.test(mr.number));
+    assert.strictEqual((await api('GET', '/equipment')).find(e => e.id === mixer.id).status, 'down');
+    const bomL = (await api('GET', '/mrp/boms'))[0];
+    const wo2 = await api('POST', '/mrp/work-orders', { bom_id: bomL.id, qty: 10, equipment_id: mixer.id });
+    await api('POST', `/mrp/work-orders/${wo2.id}/start`, {}, true);
+    await api('POST', `/maintenance/${mr.id}/start`);
+    const mdone = await api('POST', `/maintenance/${mr.id}/done`, { parts: [{ product_id: belt.id, qty: 2 }], labour_cost: 150, resolution: 'Replaced both belts', downtime_hours: 3 });
+    assert.strictEqual(Number(mdone.parts_cost), 160); assert.strictEqual(mdone.status, 'done');
+    const mx = (await api('GET', '/equipment')).find(e => e.id === mixer.id);
+    assert.strictEqual(mx.status, 'working'); assert.strictEqual(String(mx.last_service).slice(0, 10), ymd(td)); assert.strictEqual(Number(mx.cost_12m), 310);
+    assert.strictEqual(Number((await api('GET', `/products/${belt.id}`)).stock_qty), 3);
+    await api('POST', `/mrp/work-orders/${wo2.id}/start`); await api('POST', `/mrp/work-orders/${wo2.id}/cancel`);
+    await api('PUT', `/equipment/${mixer.id}`, { next_service: ymd(td) });
+    assert.strictEqual((await api('POST', '/maintenance/schedule', { days: 7 })).created.length, 1);
+    assert.strictEqual((await api('POST', '/maintenance/schedule', { days: 7 })).created.length, 0);
+    ok('maintenance: breakdown stops the machine (work orders blocked), repair books 2 belts (M 160) to repairs, service due → scheduled job once');
+    // RFQ to two suppliers, best price per line → one purchase order per supplier
+    const sA = await api('POST', '/partners', { name: 'Lesotho Flour Mills', is_supplier: 1, is_customer: 0 }), sB = await api('POST', '/partners', { name: 'Bakers Supply SA', is_supplier: 1, is_customer: 0 });
+    const prods = await api('GET', '/products'); const PP = n => prods.find(p => p.name === n);
+    let rq = await api('POST', '/rfqs', { supplier_ids: [sA.id, sB.id], deadline: ymd(td), lines: [{ product_id: PP('Bread flour 1kg').id, qty: 100 }, { product_id: PP('Dry yeast').id, qty: 2 }] });
+    assert(/^RFQ\//.test(rq.number) && rq.suppliers.length === 2);
+    rq = (await api('POST', `/rfqs/${rq.id}/send`, {})).rfq; assert.strictEqual(rq.status, 'sent');
+    const [lF, lY] = rq.lines;
+    await api('POST', `/rfqs/${rq.id}/quotes`, { partner_id: sA.id, prices: [{ line_id: lF.id, unit_cost: 11 }, { line_id: lY.id, unit_cost: 95 }] });
+    rq = await api('POST', `/rfqs/${rq.id}/quotes`, { partner_id: sB.id, lead_days: 3, prices: [{ line_id: lF.id, unit_cost: 12 }, { line_id: lY.id, unit_cost: 90 }] });
+    assert.strictEqual(rq.lines[0].best_partner_id, sA.id); assert.strictEqual(rq.lines[1].best_partner_id, sB.id);
+    const aw = await api('POST', `/rfqs/${rq.id}/award`, {});
+    assert.strictEqual(aw.purchase_orders.length, 2); assert.strictEqual(aw.rfq.status, 'closed');
+    const poA = await api('GET', `/purchases/${aw.purchase_orders.find(p => p.supplier === 'Lesotho Flour Mills').id}`);
+    assert.strictEqual(Number(poA.subtotal), 1100);
+    await api('POST', `/rfqs/${rq.id}/award`, {}, true);
+    ok('RFQ to 2 suppliers: flour from Lesotho Flour Mills @ 11, yeast from Bakers Supply @ 90 → 2 draft purchase orders');
+    // make to order
+    const cust = (await api('GET', '/partners?is_customer=1'))[0];
+    const so = await api('POST', '/sales', { partner_id: cust.id, lines: [{ product_id: PP('Brown loaf (own bake)').id, qty: 30, unit_price: 13, tax_rate: 15 }] });
+    await api('POST', `/sales/${so.id}/manufacture`, {}, true); // not confirmed yet
+    await api('POST', `/sales/${so.id}/confirm`, {});
+    assert.strictEqual((await api('POST', `/sales/${so.id}/manufacture`, {})).work_orders.length, 0); // 95 loaves in stock already
+    const mto = await api('POST', `/sales/${so.id}/manufacture`, { all: true });
+    assert.strictEqual(mto.work_orders.length, 1); assert.strictEqual(mto.work_orders[0].qty, 30);
+    assert.strictEqual((await api('POST', `/sales/${so.id}/manufacture`, { all: true })).work_orders.length, 0);
+    assert.strictEqual((await api('GET', `/sales/${so.id}/work-orders`))[0].status, 'confirmed');
+    ok('make to order: confirmed sales order → work order for 30 loaves (only once)');
+  }
+  {
+    // ---- projects, timesheets, helpdesk ----
+    const cust = (await api('GET', '/partners?is_customer=1'))[0];
+    const me = await api('GET', '/me');
+    const pj = await api('POST', '/projects', { name: 'Office network – Ha Abia clinic', partner_id: cust.id, billing: 'hourly', hourly_rate: 450, budget_hours: 10 });
+    assert(/^PRJ-/.test(pj.code));
+    await api('POST', '/projects', { name: 'No customer', billing: 'hourly' }, true);
+    const tk = await api('POST', '/tasks', { project_id: pj.id, title: 'Run cables to 6 offices', assigned_to: me.id, estimate_hours: 6 });
+    await api('PUT', `/tasks/${tk.id}`, { status: 'doing' });
+    const d0 = new Date(); const day = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}-${String(d0.getDate()).padStart(2, '0')}`;
+    await api('POST', '/timesheets', { task_id: tk.id, hours: 3, description: 'Cabling' });
+    await api('POST', '/timesheets', { project_id: pj.id, hours: 2, description: 'Router set-up' });
+    await api('POST', '/timesheets', { project_id: pj.id, hours: 1, billable: 0, description: 'Travel' });
+    await api('POST', '/timesheets', { project_id: pj.id, hours: 19 }, true); // > 24 h that day
+    await api('POST', '/timesheets', { project_id: pj.id, hours: 1, work_date: '2999-01-01' }, true);
+    let pv = await api('GET', `/projects/${pj.id}`);
+    assert.strictEqual(pv.hours, 6); assert.strictEqual(pv.to_invoice_hours, 5); assert.strictEqual(pv.budget_used_pct, 60);
+    const pinv = await api('POST', `/projects/${pj.id}/invoice`, {});
+    const inv = await api('GET', `/invoices/${pinv.invoice_id}`); assert.strictEqual(Number(inv.subtotal), 2250);
+    await api('POST', `/projects/${pj.id}/invoice`, {}, true);
+    const tsl = await api('GET', `/timesheets?from=${day}&to=${day}&project_id=${pj.id}`);
+    await api('DELETE', `/timesheets/${tsl.rows.find(x => x.invoice_id).id}`, null, true);
+    await api('POST', `/invoices/${pinv.invoice_id}/post`);
+    pv = await api('GET', `/projects/${pj.id}`); assert.strictEqual(pv.invoiced, 2250);
+    const fx = await api('POST', '/projects', { name: 'Clinic extension (fixed price)', partner_id: cust.id, billing: 'fixed', budget_amount: 10000 });
+    const finv = await api('POST', `/projects/${fx.id}/invoice`, { percent: 30 });
+    assert.strictEqual(Number((await api('GET', `/invoices/${finv.invoice_id}`)).subtotal), 3000);
+    ok('projects: 5 billable h × M 450 invoiced (non-billable and future hours handled), fixed price invoiced 30% = M 3 000');
+    // helpdesk / repair job card
+    await api('PUT', '/helpdesk/settings', { labour_rate: 300, sla_hours: { urgent: 2, high: 8, normal: 24, low: 72 } });
+    const port = await api('POST', '/products', { name: 'Laptop charging port', type: 'stock', cost: 100, price: 230, tax_id: 1, opening_qty: 3 });
+    let t = await api('POST', '/tickets', { contact_name: 'Palesa Mohapi', phone: '+266 5888 1111', subject: 'Laptop does not charge', kind: 'repair', channel: 'walk_in', item: 'HP 250 G8 laptop', serial_no: '5CD1234XYZ', priority: 'high' });
+    assert(/^TCK\//.test(t.number) && t.sla_due && t.status === 'new');
+    await api('POST', '/tickets', { subject: 'x' }, true);
+    t = await api('POST', `/tickets/${t.id}/messages`, { body: 'Booked in. We will call you when it is ready.' });
+    assert(t.first_response_at && t.status === 'open');
+    t = await api('POST', `/tickets/${t.id}/messages`, { body: 'Port is loose, replace', internal: 1 }); assert.strictEqual(t.messages.length, 2);
+    await api('PUT', `/tickets/${t.id}/parts`, { parts: [{ product_id: port.id, qty: 1 }] });
+    await api('POST', '/timesheets', { ticket_id: t.id, hours: 1.5, description: 'Replace charging port' });
+    const tinv = await api('POST', `/tickets/${t.id}/invoice`, {});
+    const ti = await api('GET', `/invoices/${tinv.invoice_id}`);
+    assert.strictEqual(Number(ti.subtotal), 650); assert.strictEqual(Number(ti.total), 747.5);
+    await api('POST', `/invoices/${tinv.invoice_id}/post`);
+    assert.strictEqual(Number((await api('GET', `/products/${port.id}`)).stock_qty), 2);
+    await api('POST', `/tickets/${t.id}/invoice`, {}, true);
+    t = await api('POST', `/tickets/${t.id}/status`, { status: 'solved' }); assert(t.solved_at);
+    const hs = await api('GET', '/tickets/summary'); assert(hs.solved_30 >= 1);
+    const tbs = await api('GET', '/reports/tb?from=2000-01-01&to=2999-12-31'); assert.strictEqual(tbs.debit, tbs.credit);
+    ok('helpdesk: walk-in repair ticket with deadline, reply + internal note, part + 1.5 h labour → invoice M 650 + VAT, part leaves stock, books balance');
+  }
   const adminToken = token;
   const pin = await api('GET', '/pin-users'); const kat = pin.find(u => u.name === 'Cashier Kat');
   token = (await api('POST', '/pin-login', { user_id: kat.id, pin: '4321' })).token; ok('cashier PIN login');
@@ -700,6 +801,10 @@ const ok = (m) => console.log('  ✓', m);
   { const me = await api('POST', '/attendance/me'); assert(['in', 'out'].includes(me.status)); await api('GET', '/attendance', null, true); ok('cashier clocks in from the till, cannot see the attendance report'); }
   await api('GET', '/setup-guide', null, true); ok('cashier cannot open the setup guide');
   { const b = await api('GET', '/business'); assert(b.modules.length); await api('PUT', '/business', { types: ['retail'] }, true); await api('POST', '/transfers', {}, true); ok('cashier sees enabled modules but cannot change them or move stock'); }
+  { await api('GET', '/rfqs', null, true); await api('POST', '/equipment', { name: 'x' }, true); assert.strictEqual((await api('GET', '/projects')).length, 0);
+    const eq = (await api('GET', '/equipment'))[0]; const rp = await api('POST', '/maintenance', { equipment_id: eq.id, title: 'Strange noise' }); assert(rp.number);
+    await api('POST', `/maintenance/${rp.id}/done`, {}, true); assert((await api('GET', '/tickets')).length >= 0);
+    ok('cashier can report a breakdown and use the helpdesk, but not manage machines, RFQs or projects'); }
   token = adminToken;
 
   console.log('\nALL SMOKE TESTS PASSED');

@@ -1,4 +1,5 @@
 // Sales: quotations → sales orders → invoices, and promotions / price rules
+import { hasMod } from './core.js';
 import { state, GET, POST, PUT, DEL, esc, $, $$, toast, err, can, money, qty, modal, confirmBox, promptBox, formHtml, readForm, tableHtml, badge, page, d, today, plusDays, query, round2, printHtml } from './core.js';
 import { best as bestRule, describeRule } from './pricing.js';
 
@@ -55,6 +56,7 @@ export async function quoteForm(view, [idq]) {
   if (!isNew && ['quote', 'sent'].includes(o.status)) acts.push('<button class="btn btn-ok" id="qConfirm">✓ Customer accepted</button>', '<button class="btn" id="qDecline">Declined</button>');
   if (o.status === 'confirmed' && can('invoicing')) acts.push('<button class="btn btn-ok" id="qInvoice">Create invoice</button>');
   if (o.invoice_id) acts.push(`<a class="btn" href="#/invoice/${o.invoice_id}">Open invoice ${esc(o.invoice_number || '')}</a>`);
+  if (['confirmed', 'invoiced'].includes(o.status) && can('inventory') && hasMod('manufacturing')) acts.push('<button class="btn" id="qMake">🏭 Make products</button>');
   if (!isNew && ['quote', 'sent', 'confirmed'].includes(o.status)) acts.push('<button class="btn btn-danger" id="qCancel">Cancel</button>');
   if (!isNew && ['declined', 'cancelled'].includes(o.status)) acts.push('<button class="btn" id="qReopen">Reopen</button>');
   if (!isNew) acts.push('<button class="btn" id="qCopy">Duplicate</button>');
@@ -139,6 +141,16 @@ export async function quoteForm(view, [idq]) {
   on('#qMail', async () => {
     const to = await promptBox('Send to email address', { value: o.partner_email || '' }); if (!to) return;
     await POST(`/sales/${id}/email`, { to, html: quoteDocHtml(o) }); toast('Emailed to ' + to); reload();
+  });
+  on('#qMake', async () => {
+    const wos = await GET(`/sales/${o.id}/work-orders`);
+    modal({ title: `Make products for ${o.number}`, body: `${wos.length ? `<p>Already planned:</p>${tableHtml([{ key: 'number', label: 'Work order' }, { key: 'product_name', label: 'Product' }, { key: 'qty_planned', label: 'Qty', right: 1, fmt: qty }, { key: 'status', label: 'Status' }], wos)}` : ''}
+      <p>Work orders are made for every product on this order that has a bill of materials.</p>
+      <label class="row" style="gap:6px"><input type="checkbox" id="mAll"> Make the full quantity (do not use what is already in stock)</label>`,
+      actions: [{ label: 'Cancel' }, { label: 'Make work orders', cls: 'btn-primary', onClick: async (c, r) => {
+        const out = await POST(`/sales/${o.id}/manufacture`, { all: r.querySelector('#mAll').checked });
+        c(); toast(out.work_orders.length ? `${out.work_orders.length} work order(s): ${out.work_orders.map(w => `${w.number} ${w.qty} × ${w.product}`).join(', ')}` : 'Nothing to make – stock covers the order or it is already planned', 'ok', 7000);
+      } }] });
   });
   on('#qCopy', async () => { const r = await POST('/sales', { ...body(), order_date: today(), valid_until: plusDays(30), customer_ref: null }); toast('Copied to a new quotation'); location.hash = '#/quote/' + r.id; });
 }

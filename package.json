@@ -1,7 +1,7 @@
 {
   "name": "maluti-erp",
   "productName": "Maluti ERP",
-  "version": "1.7.1",
+  "version": "1.8.0",
   "description": "ERP + Point of Sale for restaurants, bars and retail stores. MySQL backed, with VAS plugins and end-of-day email reports.",
   "main": "electron/main.js",
   "author": "Maluti ERP",

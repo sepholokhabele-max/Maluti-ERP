@@ -15,6 +15,8 @@ import * as fin from './finance.js';
 import * as att from './attendance.js';
 import * as locm from './locations.js';
 import * as mrpm from './mrp.js';
+import * as ops from './ops.js';
+import * as svc from './svc.js';
 
 const APPS = [
   { href: '#/pos', label: 'Point of Sale', ico: '🛒', color: '#ea580c', perm: 'pos', mod: 'pos' },
@@ -41,6 +43,11 @@ const APPS = [
   { href: '#/approvals', label: 'Approvals', ico: '✅', color: '#15803d', perm: 'dashboard', mod: ['purchasing', 'expenses'] },
   { href: '#/attendance', label: 'Attendance', ico: '🕐', color: '#7c3aed', perm: 'attendance', mod: 'attendance' },
   { href: '#/mrp', label: 'Manufacturing', ico: '🏭', color: '#b45309', perm: 'inventory', mod: 'manufacturing' },
+  { href: '#/maintenance', label: 'Maintenance', ico: '⚙️', color: '#57534e', mod: 'maintenance' },
+  { href: '#/projects', label: 'Projects', ico: '📋', color: '#0f766e', perm: 'projects', mod: 'projects' },
+  { href: '#/timesheets', label: 'My tasks & hours', ico: '🕒', color: '#4338ca', mod: 'projects' },
+  { href: '#/helpdesk', label: 'Helpdesk & repairs', ico: '🛠️', color: '#c2410c', perm: 'helpdesk', mod: 'helpdesk' },
+  { href: '#/rfqs', label: 'Supplier price requests', ico: '📨', color: '#6d28d9', perm: 'purchasing', mod: 'purchasing' },
   { href: '#/locations', label: 'Branches & warehouses', ico: '🏬', color: '#0369a1', perm: 'inventory', mod: 'locations' },
   { href: '#/transfers', label: 'Stock transfers', ico: '🔁', color: '#0891b2', perm: 'inventory', mod: 'locations' },
   { href: '#/guide', label: 'Setup guide', ico: '🧭', color: '#0d9488', perm: 'settings' },
@@ -49,7 +56,7 @@ const APPS = [
 
 const NAV = [
   ['#/dashboard', 'Dashboard', 'dashboard'], ['#/pos', 'POS', 'pos', 'pos'], ['#/products', 'Products', 'catalog'], ['#/inventory', 'Inventory', 'inventory', 'inventory'],
-  ['#/locations', 'Branches', 'inventory', 'locations'], ['#/mrp', 'Manufacturing', 'inventory', 'manufacturing'],
+  ['#/locations', 'Branches', 'inventory', 'locations'], ['#/mrp', 'Manufacturing', 'inventory', 'manufacturing'], ['#/projects', 'Projects', 'projects', 'projects'], ['#/helpdesk', 'Helpdesk', 'helpdesk', 'helpdesk'], ['#/maintenance', 'Maintenance', 'maintenance', 'maintenance'],
   ['#/crm', 'CRM', 'crm', 'crm'], ['#/partners?type=customer', 'Contacts', 'partners'], ['#/purchases', 'Purchasing', 'purchasing', 'purchasing'], ['#/quotes', 'Sales', 'sales', 'sales'], ['#/invoices?kind=customer_invoice', 'Invoicing', 'invoicing'],
   ['#/accounting', 'Accounting', 'accounting'], ['#/recon', 'Recon', 'recon', 'pos'], ['#/hrm', 'HR', 'hrm', 'hrm'], ['#/butchery', 'Butchery', 'inventory', 'butchery'], ['#/bar', 'Bar', 'inventory', 'bar'], ['#/reports', 'Reports', 'reports'], ['#/settings', 'Settings', 'settings']
 ];
@@ -75,7 +82,7 @@ async function logout() {
 }
 
 function home(view) {
-  const apps = APPS.filter(a => can(a.perm) && (!a.mod || hasMod(a.mod)) && (!a.hrm || (state.hrm && state.hrm.enabled) || can('settings')) && (!a.butchery || (state.butchery && state.butchery.enabled) || can('settings')));
+  const apps = APPS.filter(a => (!a.perm || can(a.perm)) && (!a.mod || hasMod(a.mod)) && (!a.hrm || (state.hrm && state.hrm.enabled) || can('settings')) && (!a.butchery || (state.butchery && state.butchery.enabled) || can('settings')));
   view.innerHTML = `<div class="home"><h1>Welcome, ${esc(state.user.name.split(' ')[0])}</h1>
     <div class="sub">${esc(state.company.name || '')} · ${new Date().toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div>
     <div id="guideBanner"></div>
@@ -256,6 +263,15 @@ const ROUTES = {
   '#/mrp': mrpm.mrp,
   '#/bom': mrpm.bomForm,
   '#/wo': mrpm.woForm,
+  '#/maintenance': ops.maintenance,
+  '#/mr': ops.mrForm,
+  '#/rfqs': ops.rfqs,
+  '#/rfq': ops.rfqForm,
+  '#/projects': svc.projects,
+  '#/project': svc.projectForm,
+  '#/timesheets': svc.timesheets,
+  '#/helpdesk': svc.helpdesk,
+  '#/ticket': svc.ticketForm,
   '#/bar': barm.bar
 };
 

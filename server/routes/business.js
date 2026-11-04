@@ -410,3 +410,4 @@ r.get('/dashboard', requirePerm('dashboard'), ah(async (req, res) => {
 }));
 
 module.exports = r;
+r.createInvoice = createInvoice; r.calcLines = calcLines;

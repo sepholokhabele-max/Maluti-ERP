@@ -51,6 +51,8 @@ async function start({ port = 8069, host = '0.0.0.0', dbConfig, configStore, emb
   app.use('/api', require('./routes/attendance').router);
   app.use('/api', require('./routes/locations'));
   app.use('/api', require('./routes/mrp'));
+  app.use('/api', require('./routes/operations'));
+  app.use('/api', require('./routes/services'));
   app.use('/api', require('./routes/master'));
   app.use('/api', require('./routes/business'));
 

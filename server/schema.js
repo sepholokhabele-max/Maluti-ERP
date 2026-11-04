@@ -1100,4 +1100,211 @@ module.exports = [
       `INSERT IGNORE INTO accounts (code, name, type) VALUES ('5220', 'Production rejects & scrap', 'expense')`
     ]
   }
+  ,{
+    id: 11,
+    name: 'maintenance_rfq_projects_helpdesk',
+    sql: [
+      `ALTER TABLE users MODIFY role ENUM('admin','manager','accountant','cashier','waiter','bartender','kitchen','technician','staff') NOT NULL DEFAULT 'cashier'`,
+      // ---- machines & maintenance
+      `CREATE TABLE IF NOT EXISTS equipment (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(120) NOT NULL,
+        code VARCHAR(40) NULL,
+        category VARCHAR(60) NULL,
+        location_id INT NULL,
+        serial_no VARCHAR(80) NULL,
+        supplier_id INT NULL,
+        purchase_date DATE NULL,
+        cost DECIMAL(14,2) NULL,
+        warranty_until DATE NULL,
+        interval_days INT NULL,
+        last_service DATE NULL,
+        next_service DATE NULL,
+        status ENUM('working','down','retired') NOT NULL DEFAULT 'working',
+        notes VARCHAR(255) NULL,
+        active TINYINT(1) NOT NULL DEFAULT 1,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS maintenance_requests (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        number VARCHAR(40) NULL UNIQUE,
+        equipment_id INT NOT NULL,
+        kind ENUM('corrective','preventive') NOT NULL DEFAULT 'corrective',
+        priority ENUM('low','normal','high','urgent') NOT NULL DEFAULT 'normal',
+        title VARCHAR(160) NOT NULL,
+        description TEXT NULL,
+        status ENUM('new','in_progress','done','cancelled') NOT NULL DEFAULT 'new',
+        machine_down TINYINT(1) NOT NULL DEFAULT 0,
+        reported_by INT NULL,
+        assigned_to INT NULL,
+        scheduled_date DATE NULL,
+        started_at DATETIME NULL,
+        done_at DATETIME NULL,
+        downtime_hours DECIMAL(10,2) NULL,
+        labour_cost DECIMAL(14,2) NOT NULL DEFAULT 0,
+        parts_cost DECIMAL(14,2) NOT NULL DEFAULT 0,
+        external_cost DECIMAL(14,2) NOT NULL DEFAULT 0,
+        resolution VARCHAR(255) NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (status), INDEX (equipment_id),
+        FOREIGN KEY (equipment_id) REFERENCES equipment(id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS maintenance_parts (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        request_id INT NOT NULL,
+        product_id INT NOT NULL,
+        qty DECIMAL(14,4) NOT NULL,
+        unit_cost DECIMAL(14,4) NULL,
+        FOREIGN KEY (request_id) REFERENCES maintenance_requests(id) ON DELETE CASCADE,
+        FOREIGN KEY (product_id) REFERENCES products(id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `ALTER TABLE work_orders ADD COLUMN equipment_id INT NULL`,
+      `INSERT IGNORE INTO accounts (code, name, type) VALUES ('6900', 'Repairs & maintenance', 'expense')`,
+
+      // ---- requests for quotation to several suppliers
+      `CREATE TABLE IF NOT EXISTS rfqs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        number VARCHAR(40) NULL UNIQUE,
+        status ENUM('draft','sent','closed','cancelled') NOT NULL DEFAULT 'draft',
+        deadline DATE NULL,
+        location_id INT NULL,
+        notes VARCHAR(255) NULL,
+        user_id INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS rfq_lines (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        rfq_id INT NOT NULL,
+        product_id INT NULL,
+        description VARCHAR(200) NOT NULL,
+        qty DECIMAL(14,3) NOT NULL,
+        FOREIGN KEY (rfq_id) REFERENCES rfqs(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS rfq_suppliers (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        rfq_id INT NOT NULL,
+        partner_id INT NOT NULL,
+        status ENUM('invited','replied','declined') NOT NULL DEFAULT 'invited',
+        sent_at DATETIME NULL,
+        replied_at DATETIME NULL,
+        lead_days INT NULL,
+        notes VARCHAR(255) NULL,
+        po_id BIGINT NULL,
+        UNIQUE KEY (rfq_id, partner_id),
+        FOREIGN KEY (rfq_id) REFERENCES rfqs(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS rfq_quotes (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        rfq_id INT NOT NULL,
+        line_id INT NOT NULL,
+        partner_id INT NOT NULL,
+        unit_cost DECIMAL(14,4) NOT NULL,
+        awarded TINYINT(1) NOT NULL DEFAULT 0,
+        UNIQUE KEY (line_id, partner_id),
+        FOREIGN KEY (rfq_id) REFERENCES rfqs(id) ON DELETE CASCADE,
+        FOREIGN KEY (line_id) REFERENCES rfq_lines(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+
+      // ---- projects, tasks, timesheets
+      `CREATE TABLE IF NOT EXISTS projects (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        code VARCHAR(30) NULL UNIQUE,
+        name VARCHAR(160) NOT NULL,
+        partner_id INT NULL,
+        manager_id INT NULL,
+        status ENUM('active','on_hold','done','cancelled') NOT NULL DEFAULT 'active',
+        billing ENUM('hourly','fixed','none') NOT NULL DEFAULT 'hourly',
+        hourly_rate DECIMAL(14,2) NOT NULL DEFAULT 0,
+        budget_hours DECIMAL(10,2) NULL,
+        budget_amount DECIMAL(14,2) NULL,
+        start_date DATE NULL,
+        end_date DATE NULL,
+        location_id INT NULL,
+        sale_order_id BIGINT NULL,
+        description TEXT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (status)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS tasks (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        project_id INT NOT NULL,
+        title VARCHAR(200) NOT NULL,
+        description TEXT NULL,
+        status ENUM('todo','doing','review','done') NOT NULL DEFAULT 'todo',
+        priority ENUM('low','normal','high','urgent') NOT NULL DEFAULT 'normal',
+        assigned_to INT NULL,
+        due_date DATE NULL,
+        estimate_hours DECIMAL(10,2) NULL,
+        sort INT NOT NULL DEFAULT 0,
+        created_by INT NULL,
+        done_at DATETIME NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (project_id, status), INDEX (assigned_to),
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS timesheets (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        work_date DATE NOT NULL,
+        hours DECIMAL(6,2) NOT NULL,
+        project_id INT NULL,
+        task_id INT NULL,
+        ticket_id INT NULL,
+        description VARCHAR(255) NULL,
+        billable TINYINT(1) NOT NULL DEFAULT 1,
+        rate DECIMAL(14,2) NOT NULL DEFAULT 0,
+        cost_rate DECIMAL(14,2) NOT NULL DEFAULT 0,
+        invoice_id BIGINT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (user_id, work_date), INDEX (project_id), INDEX (ticket_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `ALTER TABLE invoices ADD COLUMN project_id INT NULL, ADD COLUMN ticket_id INT NULL`,
+      `ALTER TABLE expense_claims ADD COLUMN project_id INT NULL`,
+
+      // ---- helpdesk & repairs
+      `CREATE TABLE IF NOT EXISTS tickets (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        number VARCHAR(40) NULL UNIQUE,
+        partner_id INT NULL,
+        contact_name VARCHAR(120) NULL,
+        phone VARCHAR(40) NULL,
+        email VARCHAR(120) NULL,
+        subject VARCHAR(200) NOT NULL,
+        description TEXT NULL,
+        channel ENUM('phone','walk_in','email','whatsapp','other') NOT NULL DEFAULT 'phone',
+        kind ENUM('question','problem','repair','request') NOT NULL DEFAULT 'problem',
+        priority ENUM('low','normal','high','urgent') NOT NULL DEFAULT 'normal',
+        status ENUM('new','open','waiting','solved','closed') NOT NULL DEFAULT 'new',
+        assigned_to INT NULL,
+        project_id INT NULL,
+        item VARCHAR(160) NULL,
+        serial_no VARCHAR(80) NULL,
+        sla_due DATETIME NULL,
+        first_response_at DATETIME NULL,
+        solved_at DATETIME NULL,
+        invoice_id BIGINT NULL,
+        created_by INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (status), INDEX (assigned_to), INDEX (partner_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS ticket_messages (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        ticket_id INT NOT NULL,
+        user_id INT NULL,
+        body TEXT NOT NULL,
+        internal TINYINT(1) NOT NULL DEFAULT 0,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS ticket_parts (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        ticket_id INT NOT NULL,
+        product_id INT NOT NULL,
+        qty DECIMAL(14,4) NOT NULL,
+        unit_price DECIMAL(14,4) NOT NULL DEFAULT 0,
+        FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE,
+        FOREIGN KEY (product_id) REFERENCES products(id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+    ]
+  }
 ];

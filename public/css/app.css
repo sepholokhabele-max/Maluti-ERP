@@ -32,7 +32,7 @@ textarea { resize: vertical; font-family: Consolas, monospace; font-size: 12.5px
 .topbar { height: 50px; background: var(--brand); color: #fff; display: flex; align-items: center; padding: 0 14px; gap: 14px; position: sticky; top: 0; z-index: 20; }
 .topbar a { color: #fff; } .topbar .brand { font-weight: 700; font-size: 16px; display: flex; align-items: center; gap: 8px; }
 .topbar .brand .home-ico { font-size: 18px; opacity: .9; }
-.topbar nav { display: flex; gap: 2px; flex: 1; overflow-x: auto; }
+.topbar nav { display: flex; gap: 2px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.35) transparent; }
 .topbar nav a { padding: 7px 11px; border-radius: 7px; opacity: .85; white-space: nowrap; } .topbar nav a:hover, .topbar nav a.active { background: rgba(255,255,255,.14); opacity: 1; }
 .topbar .user { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .topbar .avatar { width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,.2); display: grid; place-items: center; font-weight: 700; }
@@ -314,3 +314,20 @@ table.grid td.r { white-space: nowrap; }
 .guide-pill { position: fixed; left: 50%; transform: translateX(-50%); bottom: 16px; z-index: 90; display: flex; gap: 10px; align-items: center; background: #0f766e; color: #fff; padding: 9px 16px; border-radius: 999px; box-shadow: var(--shadow); text-decoration: none; font-size: 13px; }
 .guide-pill .gp-back { background: rgba(255,255,255,.18); padding: 3px 10px; border-radius: 999px; font-weight: 600; }
 @media print { .guide-pill { display: none; } }
+.promo-tag { color: #b45309; font-weight: 600; font-size: 11px; }
+.pin-dots { display: flex; gap: 10px; justify-content: center; margin: 6px 0 14px; } .pin-dots span { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--brand-2); }
+.pin-dots span.on { background: var(--brand-2); }
+.pin-user .av { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: var(--brand-soft); color: var(--brand); font-weight: 700; margin: 0 auto 6px; }
+tr.unmatched td { background: #fffbeb; }
+
+/* Settings → Business & modules */
+.biz-type.on, .biz-type:has(input:checked) { border-color: #0d9488; background: #f0fdfa; }
+.biz-type b, .mod b { font-size: 13.5px; }
+.bt-ico { font-size: 22px; width: 30px; text-align: center; flex: none; }
+.card .biz-types { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
+.mod-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; }
+.mod { display: flex; gap: 10px; align-items: center; border: 1.5px solid var(--line); border-radius: 10px; padding: 9px 12px; cursor: pointer; }
+.mod small { display: block; color: var(--ink-3); font-size: 11.5px; }
+.mod.on { border-color: #2563eb; background: #eff6ff; }
+.mod.coming { opacity: .55; cursor: default; }
+td.neg, .neg { color: var(--bad); }

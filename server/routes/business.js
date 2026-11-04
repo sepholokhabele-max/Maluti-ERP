@@ -49,8 +49,8 @@ r.post('/purchases', requirePerm('purchasing'), ah(async (req, res) => {
   const b = req.body;
   if (!b.supplier_id) throw bad('Select a supplier');
   const id = await db.tx(async c => {
-    const ins = await c.query(`INSERT INTO purchase_orders (supplier_id, order_date, expected_date, notes, user_id) VALUES (?, ?, ?, ?, ?)`,
-      [b.supplier_id, b.order_date || today(), b.expected_date || null, b.notes || null, req.user.id]);
+    const ins = await c.query(`INSERT INTO purchase_orders (supplier_id, order_date, expected_date, notes, user_id, location_id) VALUES (?, ?, ?, ?, ?, ?)`,
+      [b.supplier_id, b.order_date || today(), b.expected_date || null, b.notes || null, req.user.id, b.location_id || req.user.location_id || null]);
     await c.query('UPDATE purchase_orders SET number = ? WHERE id = ?', [`PO/${new Date().getFullYear()}/${pad(ins.insertId, 5)}`, ins.insertId]);
     await savePoLines(c, ins.insertId, b.lines);
     return ins.insertId;
@@ -63,19 +63,37 @@ r.put('/purchases/:id', requirePerm('purchasing'), ah(async (req, res) => {
     const po = await c.one('SELECT * FROM purchase_orders WHERE id = ? FOR UPDATE', [req.params.id]);
     if (!po) throw notFound();
     if (po.status !== 'draft') throw bad('Only draft purchase orders can be edited');
-    await c.query('UPDATE purchase_orders SET supplier_id = ?, order_date = ?, expected_date = ?, notes = ? WHERE id = ?',
-      [b.supplier_id || po.supplier_id, b.order_date || po.order_date, b.expected_date || null, b.notes || null, po.id]);
+    await c.query('UPDATE purchase_orders SET supplier_id = ?, order_date = ?, expected_date = ?, notes = ?, location_id = ? WHERE id = ?',
+      [b.supplier_id || po.supplier_id, b.order_date || po.order_date, b.expected_date || null, b.notes || null, b.location_id !== undefined ? (b.location_id || null) : po.location_id, po.id]);
     await savePoLines(c, po.id, b.lines);
   });
   res.json({ id: Number(req.params.id) });
 }));
 r.post('/purchases/:id/confirm', requirePerm('purchasing'), ah(async (req, res) => {
-  const x = await db.query(`UPDATE purchase_orders SET status = 'confirmed' WHERE id = ? AND status = 'draft'`, [req.params.id]);
-  if (!x.affectedRows) throw bad('Only draft orders can be confirmed');
+  const po = await db.one('SELECT * FROM purchase_orders WHERE id = ?', [req.params.id]);
+  if (!po || po.status !== 'draft') throw bad('Only draft orders can be confirmed');
+  // orders above the approval limit wait for a manager
+  const lim = Number(((await db.getSetting('approvals', {})) || {}).po_limit || 0);
+  const { can } = require('../auth');
+  if (lim > 0 && Number(po.total) > lim && !can(req.user, 'purchase.approve')) {
+    await db.query(`UPDATE purchase_orders SET status = 'to_approve' WHERE id = ?`, [po.id]);
+    return res.json({ ok: true, status: 'to_approve', message: `Orders above ${lim.toFixed(2)} need a manager's approval – it is waiting in Approvals.` });
+  }
+  await db.query(`UPDATE purchase_orders SET status = 'confirmed', approved_by = ?, approved_at = IF(? > 0 AND total > ?, NOW(), NULL) WHERE id = ?`, [req.user.id, lim, lim, po.id]);
+  res.json({ ok: true, status: 'confirmed' });
+}));
+r.post('/purchases/:id/approve', requirePerm('purchase.approve'), ah(async (req, res) => {
+  const x = await db.query(`UPDATE purchase_orders SET status = 'confirmed', approved_by = ?, approved_at = NOW() WHERE id = ? AND status = 'to_approve'`, [req.user.id, req.params.id]);
+  if (!x.affectedRows) throw bad('This order is not waiting for approval');
+  res.json({ ok: true });
+}));
+r.post('/purchases/:id/reject', requirePerm('purchase.approve'), ah(async (req, res) => {
+  const x = await db.query(`UPDATE purchase_orders SET status = 'draft', notes = CONCAT(COALESCE(notes,''), ?) WHERE id = ? AND status = 'to_approve'`, [` [Sent back: ${String(req.body.reason || '').slice(0, 120)}]`, req.params.id]);
+  if (!x.affectedRows) throw bad('This order is not waiting for approval');
   res.json({ ok: true });
 }));
 r.post('/purchases/:id/cancel', requirePerm('purchasing'), ah(async (req, res) => {
-  const x = await db.query(`UPDATE purchase_orders SET status = 'cancelled' WHERE id = ? AND status IN ('draft','confirmed')`, [req.params.id]);
+  const x = await db.query(`UPDATE purchase_orders SET status = 'cancelled' WHERE id = ? AND status IN ('draft','to_approve','confirmed')`, [req.params.id]);
   if (!x.affectedRows) throw bad('Received orders cannot be cancelled');
   res.json({ ok: true });
 }));
@@ -107,7 +125,7 @@ r.post('/purchases/:id/receive', requirePerm('purchasing'), ah(async (req, res) 
         for (const pc of pieces.length ? pieces : [{ qty: q, batch_no: bi.batch_no, live_weight: bi.live_weight }]) {
           const lw = Number(pc.live_weight) > 0 ? Math.round(Number(pc.live_weight) * 1000) / 1000 : null;
           if (lw && lw < pc.qty) throw bad(`Live weight (${lw} kg) cannot be less than the carcass weight (${pc.qty} kg)${pc.batch_no ? ' for ' + pc.batch_no : ''}`);
-          await stock.move(c, { product_id: l.product_id, qty: pc.qty, unit_cost: Number(l.unit_cost), move_type: 'purchase', reference: po.number, user_id: req.user.id,
+          await stock.move(c, { product_id: l.product_id, qty: pc.qty, unit_cost: Number(l.unit_cost), move_type: 'purchase', reference: po.number, user_id: req.user.id, location_id: po.location_id,
             batch: { batch_no: pc.batch_no || null, expiry_date: bi.expiry_date || null, supplier_id: po.supplier_id, source: 'purchase', live_weight: lw } });
         }
         value += q * Number(l.unit_cost);
@@ -115,7 +133,7 @@ r.post('/purchases/:id/receive', requirePerm('purchasing'), ah(async (req, res) 
     }
     value = round2(value);
     if (![...req_.values()].some(q => q > 0)) throw bad('Enter a quantity to receive');
-    await accounting.post(c, { reference: po.number, memo: `Goods received ${po.number}`, source_type: 'po_receipt', source_id: po.id, user_id: req.user.id,
+    await accounting.post(c, { reference: po.number, memo: `Goods received ${po.number}`, source_type: 'po_receipt', source_id: po.id, user_id: req.user.id, location_id: po.location_id,
       lines: [{ code: '1200', debit: value }, { code: '2050', credit: value, partner_id: po.supplier_id }] });
     const rem = await c.one('SELECT SUM(qty - qty_received) r FROM purchase_lines WHERE po_id = ?', [po.id]);
     const status = Number(rem.r) > 1e-9 ? 'partial' : 'received';
@@ -145,8 +163,8 @@ r.post('/purchases/:id/bill', requirePerm('purchasing'), ah(async (req, res) => 
 /* ======================= INVOICES & BILLS ======================= */
 async function createInvoice(c, user, b) {
   if (!b.partner_id) throw bad('Select a partner');
-  const ins = await c.query(`INSERT INTO invoices (kind, partner_id, invoice_date, due_date, po_id, order_id, notes, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [b.kind, b.partner_id, b.invoice_date || today(), b.due_date || null, b.po_id || null, b.order_id || null, b.notes || null, user.id]);
+  const ins = await c.query(`INSERT INTO invoices (kind, partner_id, invoice_date, due_date, po_id, order_id, notes, user_id, location_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [b.kind, b.partner_id, b.invoice_date || today(), b.due_date || null, b.po_id || null, b.order_id || null, b.notes || null, user.id, b.location_id || user.location_id || null]);
   await saveInvoiceLines(c, ins.insertId, b.lines);
   return ins.insertId;
 }
@@ -196,8 +214,8 @@ r.put('/invoices/:id', requirePerm('invoicing'), ah(async (req, res) => {
     const i = await c.one('SELECT * FROM invoices WHERE id = ? FOR UPDATE', [req.params.id]);
     if (!i) throw notFound();
     if (i.status !== 'draft') throw bad('Only drafts can be edited');
-    await c.query('UPDATE invoices SET partner_id = ?, invoice_date = ?, due_date = ?, notes = ? WHERE id = ?',
-      [req.body.partner_id || i.partner_id, req.body.invoice_date || i.invoice_date, req.body.due_date || null, req.body.notes || null, i.id]);
+    await c.query('UPDATE invoices SET partner_id = ?, invoice_date = ?, due_date = ?, notes = ?, location_id = ? WHERE id = ?',
+      [req.body.partner_id || i.partner_id, req.body.invoice_date || i.invoice_date, req.body.due_date || null, req.body.notes || null, req.body.location_id !== undefined ? (req.body.location_id || null) : i.location_id, i.id]);
     await saveInvoiceLines(c, i.id, req.body.lines);
   });
   res.json({ id: Number(req.params.id) });
@@ -218,7 +236,7 @@ r.post('/invoices/:id/post', requirePerm('invoicing'), ah(async (req, res) => {
       for (const l of lines) {
         jl.push({ code: l.account_code || '4000', credit: l.net_amount, description: l.description });
         if (l.product_id && l.type === 'stock') {
-          const cost = await stock.move(c, { product_id: l.product_id, qty: -Number(l.qty), move_type: 'invoice', reference: number, user_id: req.user.id });
+          const cost = await stock.move(c, { product_id: l.product_id, qty: -Number(l.qty), move_type: 'invoice', reference: number, user_id: req.user.id, location_id: i.location_id });
           cogs += Number(l.qty) * cost;
         }
       }
@@ -230,7 +248,7 @@ r.post('/invoices/:id/post', requirePerm('invoicing'), ah(async (req, res) => {
         let code = l.account_code || '6000';
         if (!i.po_id && l.product_id && l.type === 'stock') {
           // direct bill for stock without a PO: receive the stock now
-          await stock.move(c, { product_id: l.product_id, qty: Number(l.qty), unit_cost: Number(l.unit_price), move_type: 'purchase', reference: number, user_id: req.user.id });
+          await stock.move(c, { product_id: l.product_id, qty: Number(l.qty), unit_cost: Number(l.unit_price), move_type: 'purchase', reference: number, user_id: req.user.id, location_id: i.location_id });
           code = '1200';
         }
         jl.push({ code, debit: l.net_amount, description: l.description, partner_id: code === '2050' ? i.partner_id : null });
@@ -239,7 +257,7 @@ r.post('/invoices/:id/post', requirePerm('invoicing'), ah(async (req, res) => {
       jl.push({ code: '2000', credit: i.total, partner_id: i.partner_id });
     }
     await accounting.post(c, { date: i.invoice_date, reference: number, memo: `${i.kind === 'customer_invoice' ? 'Invoice' : 'Bill'} ${number}`,
-      source_type: 'invoice', source_id: i.id, user_id: req.user.id, lines: jl });
+      source_type: 'invoice', source_id: i.id, user_id: req.user.id, location_id: i.location_id, lines: jl });
     await c.query(`UPDATE invoices SET status = 'posted', number = ? WHERE id = ?`, [number, i.id]);
     return { number };
   });
@@ -254,8 +272,8 @@ r.post('/invoices/:id/cancel', requirePerm('invoicing'), ah(async (req, res) => 
       await accounting.reverseSource(c, 'invoice', i.id, { reference: `CANCEL ${i.number}`, user_id: req.user.id });
       const lines = await c.query('SELECT l.*, p.type FROM invoice_lines l LEFT JOIN products p ON p.id = l.product_id WHERE invoice_id = ?', [i.id]);
       for (const l of lines) if (l.product_id && l.type === 'stock') {
-        if (i.kind === 'customer_invoice') await stock.move(c, { product_id: l.product_id, qty: Number(l.qty), move_type: 'refund', reference: `CANCEL ${i.number}`, user_id: req.user.id });
-        else if (!i.po_id) await stock.move(c, { product_id: l.product_id, qty: -Number(l.qty), move_type: 'adjustment', reference: `CANCEL ${i.number}`, user_id: req.user.id });
+        if (i.kind === 'customer_invoice') await stock.move(c, { product_id: l.product_id, qty: Number(l.qty), move_type: 'refund', reference: `CANCEL ${i.number}`, user_id: req.user.id, location_id: i.location_id });
+        else if (!i.po_id) await stock.move(c, { product_id: l.product_id, qty: -Number(l.qty), move_type: 'adjustment', reference: `CANCEL ${i.number}`, user_id: req.user.id, location_id: i.location_id });
       }
     }
     if (i.po_id) await c.query('UPDATE purchase_orders SET billed = 0 WHERE id = ?', [i.po_id]);
@@ -350,7 +368,7 @@ r.post('/customer-payments', requirePerm('invoicing'), ah(async (req, res) => {
 /* ======================= REPORTS ======================= */
 const range = q => ({ from: q.from || today(), to: q.to || q.from || today() });
 r.get('/reports/sales', requirePerm('reports'), ah(async (req, res) => { const { from, to } = range(req.query); res.json(await reports.salesSummary(from, to)); }));
-r.get('/reports/pl', requirePerm('reports'), ah(async (req, res) => { const { from, to } = range(req.query); res.json(await reports.profitAndLoss(from, to)); }));
+r.get('/reports/pl', requirePerm('reports'), ah(async (req, res) => { const { from, to } = range(req.query); res.json(await reports.profitAndLoss(from, to, Number(req.query.location_id) || null)); }));
 r.get('/reports/bs', requirePerm('reports'), ah(async (req, res) => res.json(await reports.balanceSheet(req.query.to || today()))));
 r.get('/reports/vat', requirePerm('reports'), ah(async (req, res) => { const { from, to } = range(req.query); res.json(await reports.vatReport(from, to)); }));
 r.get('/reports/tb', requirePerm('reports'), ah(async (req, res) => {

@@ -31,7 +31,8 @@ r.get('/catalog', ah(async (req, res) => {
   }
   const posSettings = await db.getSetting('pos', {}) || {};
   const butchery = await require('../services/butchery').settings();
-  res.json({ categories, products, methods, company, vas, pos: posSettings, butchery: butchery.enabled ? butchery : { enabled: false } });
+  const price_rules = (await require('../services/pricing').activeRules()).filter(r => Number(r.on_pos));
+  res.json({ categories, products, methods, company, vas, pos: posSettings, butchery: butchery.enabled ? butchery : { enabled: false }, price_rules });
 }));
 
 // ---- sessions ----

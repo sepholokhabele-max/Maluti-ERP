@@ -27,7 +27,7 @@ export async function hrm(view) {
 }
 
 // ---------------------------------------------------------------- employees
-const EMP_FIELDS = depts => [
+const EMP_FIELDS = (depts, users = []) => [
   { key: 'first_name', label: 'First name', required: true }, { key: 'last_name', label: 'Last name', required: true },
   { key: 'code', label: 'Employee no. (auto if blank)' }, { key: 'job_title', label: 'Job title' },
   { key: 'department_id', label: 'Department', type: 'select', numeric: true, options: [{ value: '', label: '—' }, ...depts.map(x => ({ value: x.id, label: x.name }))] },
@@ -42,6 +42,7 @@ const EMP_FIELDS = depts => [
   { key: 'pay_method', label: 'Paid by', type: 'select', options: [['bank', 'Bank transfer'], ['cash', 'Cash'], ['mobile_money', 'Mobile money']].map(([v, l]) => ({ value: v, label: l })) },
   { key: 'bank_name', label: 'Bank' }, { key: 'bank_account', label: 'Bank account no.' }, { key: 'mobile_money_number', label: 'M-Pesa / EcoCash no.' },
   { key: 'paye_applies', label: 'Deduct PAYE for this employee', type: 'checkbox', default: 1 },
+  { key: 'user_id', label: 'Login user (for clock-in / attendance)', type: 'select', numeric: true, options: [{ value: '', label: '— none —' }, ...users.map(u => ({ value: u.id, label: `${u.name} (${u.username})` }))] },
   { key: 'emergency_contact', label: 'Emergency contact', span: 2 }, { key: 'notes', label: 'Notes', type: 'textarea', span: 2 }
 ];
 
@@ -63,7 +64,7 @@ async function employeesTab(root) {
   };
   $('#eq').oninput = () => { clearTimeout(load.t); load.t = setTimeout(load, 250); }; $('#es').onchange = load;
   $('#ne').onclick = async () => {
-    const f = EMP_FIELDS(await GET('/hrm/departments'));
+    const f = EMP_FIELDS(await GET('/hrm/departments'), await GET('/users').catch(() => []));
     modal({ title: 'New employee', wide: true, body: formHtml(f, { status: 'active', employment_type: 'permanent', pay_method: 'bank', paye_applies: 1, hire_date: today() }, { ctx: 'employee' }),
       actions: [{ label: 'Cancel' }, { label: 'Create', cls: 'btn-primary', onClick: async (c, r) => { const x = await POST('/hrm/employees', readForm(r, f)); c(); location.hash = '#/employee/' + x.id; } }] });
   };
@@ -73,7 +74,7 @@ async function employeesTab(root) {
 export async function employee(view, [id]) {
   const e = await GET('/hrm/employees/' + id);
   const depts = await GET('/hrm/departments');
-  const f = EMP_FIELDS(depts);
+  const f = EMP_FIELDS(depts, await GET('/users').catch(() => []));
   const p = e.pay_preview;
   view.innerHTML = page(`${fullName(e)} ${e.code ? `· ${e.code}` : ''}`, `<button class="btn" id="edit">Edit details</button>${can('payroll') ? '<button class="btn btn-primary" id="addItem">＋ Allowance / deduction</button>' : ''}<button class="btn" id="addLeave">＋ Leave</button>`, `
     <div class="cols cols-4" style="margin-bottom:14px">

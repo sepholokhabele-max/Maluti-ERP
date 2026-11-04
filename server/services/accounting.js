@@ -47,7 +47,7 @@ async function accountId(conn, code) {
  * Post a journal entry. lines: [{ code, debit, credit, partner_id, description }]
  * Lines with zero amounts are skipped. Throws if not balanced.
  */
-async function post(conn, { date, reference, memo, source_type, source_id, user_id, lines }) {
+async function post(conn, { date, reference, memo, source_type, source_id, user_id, lines, location_id }) {
   const clean = lines
     .map(l => ({ ...l, debit: round2(l.debit || 0), credit: round2(l.credit || 0) }))
     .filter(l => l.debit !== 0 || l.credit !== 0);
@@ -56,9 +56,9 @@ async function post(conn, { date, reference, memo, source_type, source_id, user_
   const cr = round2(clean.reduce((s, l) => s + l.credit, 0));
   if (Math.abs(dr - cr) > 0.009) throw bad(`Unbalanced journal entry ${reference}: debit ${dr} vs credit ${cr}`);
   const r = await conn.query(
-    `INSERT INTO journal_entries (entry_date, reference, memo, source_type, source_id, user_id)
-     VALUES (COALESCE(?, CURDATE()), ?, ?, ?, ?, ?)`,
-    [date || null, reference || null, memo || null, source_type || null, source_id || null, user_id || null]);
+    `INSERT INTO journal_entries (entry_date, reference, memo, source_type, source_id, user_id, location_id)
+     VALUES (COALESCE(?, CURDATE()), ?, ?, ?, ?, ?, ?)`,
+    [date || null, reference || null, memo || null, source_type || null, source_id || null, user_id || null, location_id || null]);
   for (const l of clean) {
     await conn.query(
       'INSERT INTO journal_lines (entry_id, account_id, partner_id, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?)',

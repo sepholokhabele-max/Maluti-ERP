@@ -468,6 +468,97 @@ const ok = (m) => console.log('  ✓', m);
   // permissions
   await api('POST', '/users', { name: 'Cashier Kat', username: 'kat', password: 'kat12345', pin: '4321', role: 'cashier' });
   {
+    // ---- pricing rules & promotions ----
+    const coke = P('Coca-Cola'), bread = P('White Bread');
+    const r1 = await api('POST', '/price-rules', { name: 'Cold drinks 10% off', kind: 'percent', value: 10, applies_to: 'category', category_id: coke.category_id });
+    await api('POST', '/price-rules', { name: 'Bread 3 for 2', kind: 'multibuy', applies_to: 'product', product_id: bread.id, min_qty: 3, free_qty: 1 });
+    await api('POST', '/price-rules', { name: 'bad', kind: 'multibuy', applies_to: 'product', product_id: bread.id, min_qty: 2, free_qty: 2 }, true);
+    await api('POST', '/partners', { name: 'Spar Wholesale Client', is_customer: 1, tags: 'vip, wholesale' });
+    const ws = (await api('GET', '/partners?q=Spar Wholesale'))[0];
+    await api('POST', '/price-rules', { name: 'Wholesale bread', kind: 'fixed_price', value: 15, applies_to: 'product', product_id: bread.id, customer_scope: 'tag', partner_tag: 'wholesale', on_invoice: 1 });
+    const hh = new Date(); const t0 = `${String(hh.getHours()).padStart(2, '0')}:00`, t1 = `${String((hh.getHours() + 1) % 24).padStart(2, '0')}:00`;
+    await api('POST', '/price-rules', { name: 'Happy hour', kind: 'amount_off', value: 2, applies_to: 'category', category_id: coke.category_id, time_from: t0, time_to: t1 });
+    let pc = await api('GET', `/price-check?product_id=${coke.id}&qty=1`); assert(pc.rule && pc.rule.name === 'Happy hour' && pc.discount_pct > 10, JSON.stringify(pc));
+    pc = await api('GET', `/price-check?product_id=${bread.id}&qty=3`); assert.strictEqual(pc.rule.name, 'Bread 3 for 2');
+    pc = await api('GET', `/price-check?product_id=${bread.id}&qty=1&partner_id=${ws.id}`); assert.strictEqual(pc.unit_after, 15);
+    ok('price rules: category %, multi-buy, wholesale customer price, happy hour – best one wins');
+    const ps = await api('POST', '/pos/sessions/open', { terminal_id: retail.id, opening_cash: 0 }).catch(() => sess);
+    const sale = await api('POST', '/pos/checkout', { session_id: ps.id || sess.id, lines: [{ product_id: bread.id, qty: 3 }], payments: [{ method_id: M('Cash').id, amount: 100 }] });
+    assert.strictEqual(sale.order.total, round(bread.price * 2)); assert(sale.order.lines[0].rule_id); ok(`POS applies "3 for 2" automatically: 3 bread = ${sale.order.total}`);
+    const ws2 = await api('POST', '/pos/checkout', { session_id: ps.id || sess.id, partner_id: ws.id, lines: [{ product_id: bread.id, qty: 2 }], payments: [{ method_id: M('Cash').id, amount: 30 }] });
+    assert.strictEqual(ws2.order.total, 30); ok('wholesale customer pays 15 a loaf at the till');
+    await api('PUT', `/price-rules/${r1.id}`, { ...r1, active: 0 });
+
+    // ---- quotation → sales order → invoice ----
+    const q = await api('POST', '/sales', { partner_id: ws.id, valid_until: '2099-12-31', lines: [{ product_id: P('Maize Meal').id, description: 'Maize meal 5kg', qty: 10, unit_price: 65.22, discount_pct: 5, tax_rate: 15 }, { description: 'Delivery to Mafeteng', qty: 1, unit_price: 150, tax_rate: 15 }] });
+    assert(q.quote_number.startsWith('Q/') && q.status === 'quote' && q.lines.length === 2);
+    assert.strictEqual(Number(q.total), round(round(10 * 65.22 * 0.95 * 1.15) + 172.5)); ok(`quotation ${q.quote_number}: total ${q.total} incl. 5% discount and VAT`);
+    await api('POST', `/sales/${q.id}/invoice`, {}, true);
+    const so = await api('POST', `/sales/${q.id}/confirm`, { customer_ref: 'PO-7781' }); assert(so.number.startsWith('SO/') && so.status === 'confirmed');
+    const stockBefore = Number((await api('GET', `/products/${P('Maize Meal').id}`)).stock_qty);
+    const iv = await api('POST', `/sales/${q.id}/invoice`, {});
+    const inv = await api('GET', `/invoices/${iv.invoice_id}`); assert.strictEqual(Number(inv.total), Number(q.total));
+    await api('POST', `/invoices/${iv.invoice_id}/post`);
+    assert.strictEqual(Number((await api('GET', `/products/${P('Maize Meal').id}`)).stock_qty), stockBefore - 10);
+    assert.strictEqual((await api('GET', `/sales/${q.id}`)).status, 'invoiced');
+    ok(`quotation accepted → ${so.number} → invoice ${inv.total}; stock left on posting`);
+    const q2 = await api('POST', '/sales', { partner_id: ws.id, valid_until: '2020-01-01', lines: [{ description: 'Catering', qty: 1, unit_price: 1000, tax_rate: 15 }] });
+    assert((await api('GET', `/sales/${q2.id}`)).expired); await api('POST', `/sales/${q2.id}/decline`);
+    const sm = await api('GET', '/sales/summary'); assert(Number(sm.lost_90) >= 1); ok('expired quotation flagged, declined, summary counts it');
+
+    // ---- bank / M-Pesa statement reconciliation ----
+    const stmt = await api('POST', '/bank-statements', { account_code: '1020', name: 'M-Pesa statement', closing_balance: 0, lines: [
+      { date: todayStr, description: 'Payment received QK7H2X9 58001234', reference: 'QK7H2X9', amount: 63 },
+      { date: todayStr, description: 'Transaction charge', amount: -4.6 },
+      { date: todayStr, description: 'Deposit from Spar Wholesale', reference: 'X1', amount: 250 }] });
+    assert.strictEqual(stmt.matched, 1); assert(stmt.lines.find(l => l.amount == 63).journal_line_id);
+    const charge = stmt.lines.find(l => Number(l.amount) === -4.6), dep = stmt.lines.find(l => Number(l.amount) === 250);
+    await api('POST', `/bank-statements/${stmt.id}/done`, {}, true);
+    await api('POST', `/bank-statements/${stmt.id}/lines/${charge.id}/create`, { account_code: '6400', description: 'M-Pesa charges' });
+    await api('POST', `/bank-statements/${stmt.id}/lines/${dep.id}/create`, { account_code: '1100' }, true);
+    let st2 = await api('POST', `/bank-statements/${stmt.id}/lines/${dep.id}/create`, { account_code: '1100', partner_id: ws.id });
+    assert.strictEqual(st2.matched, 3); st2 = await api('POST', `/bank-statements/${stmt.id}/done`); assert.strictEqual(st2.status, 'done');
+    ok('M-Pesa statement: sale auto-matched by reference, charges & customer deposit booked from the statement, reconciliation closed');
+
+    // ---- approvals: purchase limit ----
+    await api('PUT', '/approvals/settings', { po_limit: 1000 });
+    await api('POST', '/users', { name: 'Accountant Nthabi', username: 'nthabi', password: 'nthabi123', role: 'accountant' });
+    const adminTok = token;
+    token = (await api('POST', '/login', { username: 'nthabi', password: 'nthabi123' })).token;
+    const supp = (await api('GET', '/partners?is_supplier=1'))[0];
+    const big = await api('POST', '/purchases', { supplier_id: supp.id, lines: [{ product_id: P('Maize Meal').id, qty: 30, unit_cost: 58, tax_rate: 15 }] });
+    const cf = await api('POST', `/purchases/${big.id}/confirm`); assert.strictEqual(cf.status, 'to_approve');
+    await api('POST', `/purchases/${big.id}/receive`, {}, true);
+    // ---- expense claim by the accountant ----
+    const claim = await api('POST', '/expense-claims', { description: 'Taxi to Maseru bank', account_code: '6500', amount: 46, paid_by: 'own', receipt: 'data:image/png;base64,iVBORw0KGgo=' });
+    await api('POST', `/expense-claims/${claim.id}/approve`, {}, true);
+    token = adminTok;
+    const ap = await api('GET', '/approvals'); assert(ap.purchase_orders.some(p => p.id === big.id) && ap.expense_claims.some(c => c.id === claim.id));
+    await api('POST', `/purchases/${big.id}/approve`); assert.strictEqual((await api('GET', `/purchases/${big.id}`)).status, 'confirmed');
+    ok('purchase over the M1,000 limit waits for a manager, then approved');
+    await api('POST', `/expense-claims/${claim.id}/approve`);
+    let acc = await api('GET', '/accounts'); assert.strictEqual(acc.find(a => a.code === '2250').balance, 46);
+    const rb = await api('POST', `/expense-claims/${claim.id}/reimburse`, { method_id: M('Cash').id }); assert.strictEqual(rb.status, 'reimbursed');
+    acc = await api('GET', '/accounts'); assert.strictEqual(acc.find(a => a.code === '2250').balance, 0); assert.strictEqual(acc.find(a => a.code === '6500').balance, 46);
+    const c2 = await api('POST', '/expense-claims', { description: 'Printer paper', account_code: '6000', amount: 115, tax_rate: 15, paid_by: 'company', company_method_id: M('Cash').id });
+    assert.strictEqual((await api('POST', `/expense-claims/${c2.id}/approve`)).status, 'reimbursed');
+    ok('expense claims: submitted with receipt, approved by someone else, reimbursed in cash; company-paid claim books straight to cash');
+
+    // ---- attendance ----
+    await api('POST', '/users', { name: 'Clock Tester', username: 'clock', password: 'clock123', pin: '2468', role: 'cashier' });
+    const ct = (await api('GET', '/pin-users')).find(u => u.name === 'Clock Tester');
+    await api('POST', '/attendance/clock', { user_id: ct.id, pin: '0000' }, true);
+    const cin = await api('POST', '/attendance/clock', { user_id: ct.id, pin: '2468' }); assert.strictEqual(cin.status, 'in');
+    assert((await api('GET', '/attendance/now')).some(a => a.user_id === ct.id));
+    const cout = await api('POST', '/attendance/clock', { user_id: ct.id, pin: '2468' }); assert.strictEqual(cout.status, 'out');
+    await api('POST', '/attendance', { user_id: ct.id, check_in: '2026-10-05 07:00:00', check_out: '2026-10-05 19:00:00' });
+    for (const d of ['06', '07', '08', '09']) await api('POST', '/attendance', { user_id: ct.id, check_in: `2026-10-${d} 08:00:00`, check_out: `2026-10-${d} 17:30:00` });
+    const ar = await api('GET', `/attendance?from=2026-10-05&to=2026-10-11&user_id=${ct.id}`);
+    const pr = ar.people[0]; assert.strictEqual(pr.hours, 50); assert.strictEqual(pr.overtime_hours, 5);
+    ok(`attendance: PIN clock in/out; week of 50 h → ${pr.overtime_hours} h overtime (above 45 h / 9 h a day)`);
+    const tb3 = await api('GET', '/reports/tb?from=2000-01-01&to=2999-12-31'); assert.strictEqual(tb3.debit, tb3.credit); ok('books balance after sales, bank recon, claims');
+  }
+  {
     // ---- store setup guide ----
     let g = await api('GET', '/setup-guide');
     assert(g.steps.length > 10 && g.steps.every(s => s.why && s.how && s.link)); 
@@ -479,6 +570,122 @@ const ok = (m) => console.log('  ✓', m);
     g = await api('PUT', '/setup-guide', { unmark: 'printer' }); assert(!g.steps.find(s => s.key === 'printer').done);
     ok(`setup guide: ${g.total} required steps for butchery + bar, ${g.done} already done from the data; manual steps can be ticked`);
   }
+  {
+    // ---- business types & modules, branches, transfers, branch profit ----
+    let biz = await api('GET', '/business');
+    // the setup-guide step above chose butchery + bar, which switched on their modules
+    assert(biz.configured && biz.modules.includes('pos') && biz.modules.includes('butchery') && biz.modules.includes('bar') && !biz.modules.includes('restaurant') && biz.all_types.length === 13 && biz.all_modules.some(m => m.coming));
+    const sumCheck = async () => { const st = await api('GET', '/locations/stock'); for (const r of st.rows) { const s = Object.values(r.at).reduce((a, x) => a + x.qty, 0); assert(Math.abs(s - r.stock_qty) < 0.001, `${r.name}: locations ${s} vs total ${r.stock_qty}`); } return st; };
+    await sumCheck();
+    let locs = await api('GET', '/locations'); const MAIN = locs.find(l => l.is_default); const TRANSIT = locs.find(l => l.kind === 'transit');
+    assert(MAIN && TRANSIT);
+    const TY = await api('POST', '/locations', { name: 'Teyateyaneng branch', code: 'TY', kind: 'branch', phone: '5800 0000' });
+    const WH = await api('POST', '/locations', { name: 'Maseru warehouse', kind: 'warehouse' });
+    await api('POST', '/locations', { name: 'Again', code: 'TY' }, true);
+    assert.strictEqual(WH.code, 'MASERUWA');
+    const mm = await api('POST', '/products', { name: 'Maize meal 10kg', type: 'stock', price: 120, cost: 80, tax_id: 1, opening_qty: 50 });
+    const qty = async (pid, lid) => { const st = await api('GET', '/locations/stock?q=' + encodeURIComponent((await api('GET', `/products/${pid}`)).name)); return st.rows.find(r => r.id === pid).at[lid].qty; };
+    assert.strictEqual(await qty(mm.id, MAIN.id), 50);
+    // transfer main → TY: 20 bags, 2 go missing on the way
+    let tr = await api('POST', '/transfers', { from_location_id: MAIN.id, to_location_id: TY.id, lines: [{ product_id: mm.id, qty: 20 }], notes: 'Weekly stock' });
+    assert.strictEqual(tr.status, 'draft'); assert.strictEqual(Number(tr.lines[0].available), 50);
+    await api('POST', '/transfers', { from_location_id: MAIN.id, to_location_id: MAIN.id, lines: [{ product_id: mm.id, qty: 1 }] }, true);
+    await api('POST', `/transfers/${tr.id}/receive`, {}, true);
+    const sent = await api('POST', `/transfers/${tr.id}/send`, {}); assert(/^TR\/\d{4}\/\d{5}$/.test(sent.number));
+    assert.strictEqual(await qty(mm.id, MAIN.id), 30); assert.strictEqual(await qty(mm.id, TRANSIT.id), 20);
+    assert.strictEqual(Number((await api('GET', `/products/${mm.id}`)).stock_qty), 50); assert.strictEqual(Number((await api('GET', `/products/${mm.id}`)).cost), 80);
+    await api('PUT', `/transfers/${tr.id}`, { from_location_id: MAIN.id, to_location_id: TY.id, lines: [{ product_id: mm.id, qty: 1 }] }, true);
+    await api('POST', `/transfers/${tr.id}/receive`, { lines: [{ line_id: tr.lines[0].id, qty_received: 21 }] }, true);
+    const rcv = await api('POST', `/transfers/${tr.id}/receive`, { lines: [{ line_id: tr.lines[0].id, qty_received: 18 }] });
+    assert.strictEqual(rcv.short_value, 160); assert.strictEqual(rcv.transfer.status, 'received');
+    assert.strictEqual(await qty(mm.id, TY.id), 18); assert.strictEqual(await qty(mm.id, TRANSIT.id), 0);
+    assert.strictEqual(Number((await api('GET', `/products/${mm.id}`)).stock_qty), 48);
+    ok('transfer main → branch via "In transit": 20 sent, 18 received, 2 short written off (M 160), total and average cost kept');
+    // too much, and cancelling a sent transfer brings the stock back
+    const big = await api('POST', '/transfers', { from_location_id: MAIN.id, to_location_id: WH.id, lines: [{ product_id: mm.id, qty: 100 }] });
+    await api('POST', `/transfers/${big.id}/send`, {}, true);
+    const back = await api('POST', '/transfers', { from_location_id: MAIN.id, to_location_id: WH.id, lines: [{ product_id: mm.id, qty: 5 }], send: true });
+    assert.strictEqual(back.status, 'sent'); assert.strictEqual(await qty(mm.id, MAIN.id), 25);
+    await api('POST', `/transfers/${back.id}/cancel`); assert.strictEqual(await qty(mm.id, MAIN.id), 30); assert.strictEqual(await qty(mm.id, TRANSIT.id), 0);
+    await api('POST', `/transfers/${tr.id}/cancel`, {}, true);
+    ok('sending more than the branch has is refused; cancelling a sent transfer returns the goods');
+    // batches keep their number and expiry when they move
+    const pills = await api('POST', '/products', { name: 'Paracetamol 500mg x20', type: 'stock', price: 25, cost: 10, tax_id: 1, track_batches: 1, opening_qty: 10 });
+    let bt = await api('GET', `/locations/batches?product_id=${pills.id}`); assert.strictEqual(bt.length, 1);
+    await api('POST', '/transfers', { from_location_id: MAIN.id, to_location_id: TY.id, lines: [{ product_id: pills.id, qty: 4 }], send: true }).then(t => api('POST', `/transfers/${t.id}/receive`, {}));
+    bt = await api('GET', `/locations/batches?product_id=${pills.id}`);
+    const btTy = bt.find(b => b.location_id === TY.id), btMain = bt.find(b => b.location_id === MAIN.id);
+    assert(btTy && btMain && btTy.batch_no === btMain.batch_no && Number(btTy.qty_remaining) === 4 && Number(btMain.qty_remaining) === 6);
+    ok('batch-tracked stock moves with its batch number: 6 at main, 4 at the branch');
+    // a till at the branch sells from the branch and its profit shows per branch
+    const tyTill = await api('POST', '/terminals', { name: 'TY counter', mode: 'retail', location_id: TY.id });
+    const tySess = await api('POST', '/pos/sessions/open', { terminal_id: tyTill.id, opening_cash: 0 });
+    await api('POST', '/pos/checkout', { session_id: tySess.id, lines: [{ product_id: mm.id, qty: 3 }], payments: [{ method_id: M('Cash').id, amount: 360 }] });
+    assert.strictEqual(await qty(mm.id, TY.id), 15); assert.strictEqual(await qty(mm.id, MAIN.id), 30);
+    const br = await api('GET', '/reports/branches?from=2000-01-01&to=2999-12-31');
+    const brTy = br.rows.find(x => x.location_id === TY.id);
+    assert.strictEqual(brTy.income, round(360 / 1.15)); assert.strictEqual(brTy.cogs, 240 + 160);
+    const plTy = await api('GET', `/reports/pl?from=2000-01-01&to=2999-12-31&location_id=${TY.id}`); assert.strictEqual(plTy.total_income, brTy.income);
+    ok(`branch till sells from branch stock; branch profit: income ${brTy.income}, cost of sales ${brTy.cogs}`);
+    // stock count at one branch only
+    const adj = await api('POST', '/inventory/adjust', { location_id: TY.id, reason: 'TY count', lines: [{ product_id: mm.id, counted_qty: 14 }] });
+    assert.strictEqual(adj.changes[0].from, 15); assert.strictEqual(await qty(mm.id, TY.id), 14); assert.strictEqual(await qty(mm.id, MAIN.id), 30);
+    const val = await api('GET', `/inventory/valuation?location_id=${TY.id}`); assert.strictEqual(Number(val.rows.find(r => r.id === mm.id).stock_qty), 14);
+    await api('PUT', `/locations/${TY.id}/levels`, { lines: [{ product_id: mm.id, min_qty: 20, bin: 'A1' }] });
+    const low = await api('GET', '/locations/stock?low=1'); assert(low.rows.some(r => r.id === mm.id && r.low.includes(TY.id)));
+    await api('DELETE', `/locations/${TY.id}`, null, true); await api('DELETE', `/locations/${MAIN.id}`, null, true);
+    await sumCheck();
+    ok('stock count per branch, minimum levels per branch, branches with stock cannot be closed; branch totals add up to company stock');
+    const tbl = await api('GET', '/reports/tb?from=2000-01-01&to=2999-12-31'); assert.strictEqual(tbl.debit, tbl.credit); ok('books balance after transfers');
+    // choose business types → modules and guide follow
+    const allMods = biz.modules.slice();
+    biz = await api('PUT', '/business', { types: ['wholesale'] });
+    assert(biz.configured && biz.modules.includes('locations') && biz.modules.includes('sales') && biz.modules.includes('butchery'));
+    let gg = await api('GET', '/setup-guide');
+    assert(gg.types.includes('wholesale') && gg.steps.some(s => s.key === 'branches' && s.done) && gg.steps.some(s => s.key === 'pricegroups'));
+    biz = await api('PUT', '/business', { modules: biz.modules.filter(m => m !== 'butchery') });
+    assert.strictEqual((await api('GET', '/butchery/status')).enabled, false);
+    gg = await api('GET', '/setup-guide'); assert(!gg.steps.some(s => s.key === 'firstcut'));
+    biz = await api('PUT', '/business', { types: ['services'] }); assert(biz.modules.includes('projects') && biz.modules.includes('locations'));
+    gg = await api('GET', '/setup-guide'); assert(gg.steps.some(s => s.key === 'services') && gg.steps.some(s => s.key === 'firstinvoice') && !gg.steps.some(s => s.key === 'pricegroups'));
+    biz = await api('PUT', '/business', { types: ['butchery', 'bar'], modules: allMods }); assert.strictEqual((await api('GET', '/butchery/status')).enabled, true);
+    ok('business types switch modules on (wholesale → branches, quotes; services → projects) and the setup guide follows');
+  }
+  {
+    // ---- manufacturing: BOM costing, work order, rejects, shortages → PO ----
+    const mk = (name, extra) => api('POST', '/products', { name, type: 'stock', tax_id: 1, pos_visible: 0, ...extra });
+    const flour = await mk('Bread flour 1kg', { uom: 'kg', cost: 12, opening_qty: 30 }), yeast = await mk('Dry yeast', { uom: 'kg', cost: 100, opening_qty: 1 });
+    const loaf = await mk('Brown loaf (own bake)', { price: 15, cost: 0, pos_visible: 1 });
+    await api('POST', '/mrp/boms', { product_id: loaf.id, output_qty: 50, lines: [{ product_id: loaf.id, qty: 1 }] }, true);
+    const bom = await api('POST', '/mrp/boms', { product_id: loaf.id, name: 'Brown loaf – 50 per mix', output_qty: 50, labour_cost: 100, overhead_cost: 50, shelf_life_days: 4,
+      lines: [{ product_id: flour.id, qty: 25 }, { product_id: yeast.id, qty: 0.5, scrap_pct: 2 }] });
+    assert.strictEqual(bom.cost.unit, 10.02); assert.strictEqual(bom.cost.material, 351);
+    let wo = await api('POST', '/mrp/work-orders', { bom_id: bom.id, qty: 100 });
+    assert(/^WO\/\d{4}\/\d{5}$/.test(wo.number)); assert.strictEqual(Number(wo.lines.find(l => l.product_id === flour.id).qty_planned), 50);
+    assert.strictEqual(Number(wo.lines.find(l => l.product_id === yeast.id).qty_planned), 1.02); assert.strictEqual(Number(wo.labour_cost), 200);
+    assert(wo.short.some(x => x.product_id === flour.id && x.missing === 20));
+    const sh = await api('GET', '/mrp/shortages'); assert(sh.find(x => x.product_id === flour.id).missing === 20);
+    const supp = (await api('GET', '/partners?is_supplier=1'))[0];
+    const spo = await api('POST', '/mrp/shortages/purchase', { supplier_id: supp.id }); assert.strictEqual(spo.lines, 2);
+    assert.strictEqual((await api('GET', '/mrp/shortages')).length, 0); // now on order
+    await api('POST', `/purchases/${spo.id}/cancel`);
+    await api('POST', `/mrp/work-orders/${wo.id}/finish`, { qty_produced: 100 }, true); // not enough flour
+    await api('POST', '/inventory/adjust', { reason: 'Flour delivery counted', lines: [{ product_id: flour.id, counted_qty: 60 }, { product_id: yeast.id, counted_qty: 2 }] });
+    wo = await api('POST', `/mrp/work-orders/${wo.id}/start`); assert.strictEqual(wo.status, 'in_progress');
+    await api('POST', `/mrp/work-orders/${wo.id}/finish`, { qty_produced: 95, qc_status: 'failed' }, true);
+    const fin = await api('POST', `/mrp/work-orders/${wo.id}/finish`, { qty_produced: 95, qty_rejected: 5, batch_no: 'BR-001', qc_status: 'passed', qc_notes: 'Crust colour OK',
+      lines: [{ line_id: wo.lines.find(l => l.product_id === flour.id).id, qty_used: 49 }] });
+    assert.strictEqual(fin.material, 690); assert.strictEqual(fin.total, 990); assert.strictEqual(fin.unit_cost, 9.9); assert.strictEqual(fin.reject_value, 49.5);
+    const lp = await api('GET', `/products/${loaf.id}`); assert.strictEqual(Number(lp.stock_qty), 95); assert.strictEqual(Number(lp.cost), 9.9);
+    assert.strictEqual(Number((await api('GET', `/products/${flour.id}`)).stock_qty), 11);
+    assert.strictEqual(fin.work_order.batch_no, 'BR-001'); assert.strictEqual(fin.work_order.status, 'done');
+    await api('POST', `/mrp/work-orders/${wo.id}/finish`, {}, true);
+    const acc = await api('GET', '/accounts'); const A = c => (acc.find(a => a.code === c) || {}).balance;
+    assert.strictEqual(A('5210'), -300); assert.strictEqual(A('5220'), 49.5);
+    const sm = await api('GET', '/mrp/summary'); assert.strictEqual(sm.reject_rate, 5);
+    const tbm = await api('GET', '/reports/tb?from=2000-01-01&to=2999-12-31'); assert.strictEqual(tbm.debit, tbm.credit);
+    ok('manufacturing: BOM cost M 10.02/loaf; work order of 100 → 95 good + 5 rejects at M 9.90, labour & overhead absorbed, shortages → purchase order, books balance');
+  }
   const adminToken = token;
   const pin = await api('GET', '/pin-users'); const kat = pin.find(u => u.name === 'Cashier Kat');
   token = (await api('POST', '/pin-login', { user_id: kat.id, pin: '4321' })).token; ok('cashier PIN login');
@@ -487,7 +694,12 @@ const ok = (m) => console.log('  ✓', m);
   await api('PUT', '/settings-logo', { data_url: png }, true); ok('cashier cannot change logo');
   await api('GET', '/hrm/employees', null, true); ok('cashier blocked from HR');
   await api('POST', '/pos/checkout', { session_id: sess.id, lines: [{ product_id: P('White Bread').id, qty: 1, discount_pct: 50 }], payments: [] }, true); ok('cashier cannot discount');
+  { const tt = (await api('GET', '/pos/terminals')).find(t => t.id === retail.id); const sid = tt.open_session_id || (await api('POST', '/pos/sessions/open', { terminal_id: retail.id, opening_cash: 0 })).id;
+    const cs = await api('POST', '/pos/checkout', { session_id: sid, lines: [{ product_id: P('White Bread').id, qty: 3 }], payments: [{ method_id: M('Cash').id, amount: 100 }] }); assert(cs.order.lines[0].rule_id); ok('cashier gets promotions automatically without discount rights'); }
+  { const cl = await api('POST', '/expense-claims', { description: 'Airtime for shop phone', account_code: '6700', amount: 20 }); await api('POST', `/expense-claims/${cl.id}/approve`, {}, true); assert((await api('GET', '/expense-claims')).every(c => c.user_name === 'Cashier Kat')); ok('cashier can submit claims, sees only their own, cannot approve'); }
+  { const me = await api('POST', '/attendance/me'); assert(['in', 'out'].includes(me.status)); await api('GET', '/attendance', null, true); ok('cashier clocks in from the till, cannot see the attendance report'); }
   await api('GET', '/setup-guide', null, true); ok('cashier cannot open the setup guide');
+  { const b = await api('GET', '/business'); assert(b.modules.length); await api('PUT', '/business', { types: ['retail'] }, true); await api('POST', '/transfers', {}, true); ok('cashier sees enabled modules but cannot change them or move stock'); }
   token = adminToken;
 
   console.log('\nALL SMOKE TESTS PASSED');

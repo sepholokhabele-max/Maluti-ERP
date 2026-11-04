@@ -1,3 +1,4 @@
+import { multiLocation, locationOptions } from './core.js';
 import { state, GET, POST, PUT, DEL, esc, $, $$, toast, err, can, money, qty, modal, confirmBox, formHtml, readForm, tableHtml, badge, page, dt, d, today, debounce, query, printHtml } from './core.js';
 import { receiptHtml } from './pos.js';
 
@@ -143,22 +144,32 @@ function parseCsv(text) {
 
 // ---------------------------------------------------------------- inventory
 export async function inventory(view) {
-  const tab = query().tab || 'stock';
-  view.innerHTML = page('Inventory', `<button class="btn" id="count">Stock count / adjust</button><a class="btn btn-primary" href="#/purchase/new">＋ Purchase order</a>`, `
-    <div class="tabs"><a href="#/inventory?tab=stock" class="${tab === 'stock' ? 'active' : ''}">Stock on hand</a><a href="#/inventory?tab=low" class="${tab === 'low' ? 'active' : ''}">Reorder list</a><a href="#/inventory?tab=moves" class="${tab === 'moves' ? 'active' : ''}">Stock moves</a></div><div id="ib"></div>`);
+  const q = query(); const tab = q.tab || 'stock';
+  const multi = await multiLocation();
+  const lopts = multi ? await locationOptions('All locations') : [];
+  const loc = multi ? (q.loc || '') : '';
+  const lq = loc ? `location_id=${loc}` : '';
+  const locSel = multi ? `<select id="invLoc" title="Branch / warehouse">${lopts.map(o => `<option value="${o.value}" ${String(o.value) === String(loc) ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}</select>` : '';
+  const tl = t => `#/inventory?tab=${t}${loc ? '&loc=' + loc : ''}`;
+  view.innerHTML = page('Inventory', `${locSel}${multi ? '<a class="btn" href="#/transfers">🔁 Transfers</a>' : ''}<button class="btn" id="count">Stock count / adjust</button><a class="btn btn-primary" href="#/purchase/new">＋ Purchase order</a>`, `
+    <div class="tabs"><a href="${tl('stock')}" class="${tab === 'stock' ? 'active' : ''}">Stock on hand</a><a href="${tl('low')}" class="${tab === 'low' ? 'active' : ''}">Reorder list</a><a href="${tl('moves')}" class="${tab === 'moves' ? 'active' : ''}">Stock moves</a>${multi ? '<a href="#/locations?tab=stock">By location</a>' : ''}</div><div id="ib"></div>`);
+  if ($('#invLoc')) $('#invLoc').onchange = () => { location.hash = `#/inventory?tab=${tab}${$('#invLoc').value ? '&loc=' + $('#invLoc').value : ''}`; };
   const ib = $('#ib');
   if (tab === 'moves') {
-    const rows = await GET('/inventory/moves');
-    ib.innerHTML = tableHtml([{ key: 'created_at', label: 'Date', fmt: dt }, { key: 'product', label: 'Product' }, { key: 'move_type', label: 'Type', html: 1, fmt: v => badge(v, 'posted') }, { key: 'reference', label: 'Reference' }, { key: 'qty', label: 'Qty', right: 1, fmt: qty }, { key: 'unit_cost', label: 'Unit cost', right: 1, fmt: money }, { key: 'user_name', label: 'By' }], rows);
+    const rows = await GET('/inventory/moves?' + lq);
+    ib.innerHTML = tableHtml([{ key: 'created_at', label: 'Date', fmt: dt }, { key: 'product', label: 'Product' }, { key: 'move_type', label: 'Type', html: 1, fmt: v => badge(v, 'posted') }, ...(multi ? [{ key: 'location_name', label: 'Location' }] : []), { key: 'reference', label: 'Reference' }, { key: 'qty', label: 'Qty', right: 1, fmt: qty }, { key: 'unit_cost', label: 'Unit cost', right: 1, fmt: money }, { key: 'user_name', label: 'By' }], rows);
   } else {
-    const v = await GET('/inventory/valuation');
+    const v = await GET('/inventory/valuation?' + lq);
     const rows = tab === 'low' ? v.rows.filter(r => Number(r.stock_qty) <= Number(r.reorder_level)) : v.rows;
     ib.innerHTML = `${tab === 'stock' ? `<div class="kpi" style="max-width:300px;margin-bottom:12px"><div class="label">Inventory value (at cost)</div><div class="value">${money(v.total)}</div></div>` : ''}
       ${tableHtml([{ key: 'name', label: 'Product' }, { key: 'sku', label: 'SKU' }, { key: 'category', label: 'Category' }, { key: 'stock_qty', label: 'On hand', right: 1, fmt: qty }, { key: 'reorder_level', label: 'Reorder at', right: 1, fmt: qty }, { key: 'cost', label: 'Avg cost', right: 1, fmt: money }, { key: 'value', label: 'Value', right: 1, fmt: money }], rows, { empty: 'Nothing to reorder' })}`;
   }
   $('#count').onclick = async () => {
-    const v = await GET('/inventory/valuation');
-    modal({ title: 'Stock count', wide: true, body: `<p class="muted">Enter the counted quantity. Only changed rows are adjusted; differences are posted to Inventory Adjustments.</p>
+    // with branches, a count is always for one location (the chosen one, else the default)
+    const cl = multi ? (loc || (lopts[1] && lopts.find(o => /\(default\)$/.test(o.label)) || lopts[1] || {}).value) : '';
+    const v = await GET('/inventory/valuation' + (cl ? `?location_id=${cl}` : ''));
+    const clName = multi ? (lopts.find(o => String(o.value) === String(cl)) || {}).label : '';
+    modal({ title: 'Stock count' + (clName ? ' – ' + clName : ''), wide: true, body: `<p class="muted">Enter the counted quantity${clName ? ' at <b>' + esc(clName) + '</b> (choose another location at the top of the Inventory page)' : ''}. Only changed rows are adjusted; differences are posted to Inventory Adjustments.</p>
       <input id="cf" placeholder="Filter…" style="margin-bottom:8px"><div class="table-wrap" style="max-height:55vh"><table class="grid lines"><thead><tr><th>Product</th><th class="r">System qty</th><th style="width:140px">Counted</th></tr></thead><tbody>
       ${v.rows.map(r => `<tr data-n="${esc(r.name.toLowerCase())}"><td>${esc(r.name)}</td><td class="r">${qty(r.stock_qty)}</td><td><input type="number" step="any" data-p="${r.id}" data-o="${r.stock_qty}" value="${r.stock_qty}"></td></tr>`).join('')}</tbody></table></div>
       <label class="field" style="margin-top:10px"><span>Reason</span><input id="cr" value="Stock count ${today()}"></label>`,
@@ -166,7 +177,7 @@ export async function inventory(view) {
       actions: [{ label: 'Cancel' }, { label: 'Apply adjustments', cls: 'btn-primary', onClick: async (c, r) => {
         const lines = $$('[data-p]', r).filter(i => Number(i.value) !== Number(i.dataset.o)).map(i => ({ product_id: Number(i.dataset.p), counted_qty: Number(i.value) }));
         if (!lines.length) return toast('No changes', 'info');
-        const res = await POST('/inventory/adjust', { lines, reason: r.querySelector('#cr').value });
+        const res = await POST('/inventory/adjust', { lines, reason: r.querySelector('#cr').value, location_id: cl || undefined });
         c(); toast(`${res.changes.length} products adjusted (${money(res.value)})`); inventory(view);
       } }] });
   };

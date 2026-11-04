@@ -142,6 +142,14 @@ A ⚖ button appears next to every weight field (breakdown, production, waste, r
 - **Bar → Pour check**: weigh the bottle before and after a pour to see over- or under-pours, and what each over-pour costs. Put any open bottle on the scale to see the ml and tots left.
 - **Bar → Poured / sold**: ml and bottles used per spirit for any period.
 
+## 2g. Sales, promotions, bank recon, expense claims, attendance (v1.7)
+- **Sales → Quotations & orders**: new quotation (prices excl. VAT, discounts, promotions apply) → *Print / PDF* or *Email* → *Customer accepted* (becomes sales order SO/…) → *Create invoice* (stock leaves when the invoice is posted).
+- **Promotions** (Sales → 🏷 Promotions): rules by product / category / everything, customers (everyone, a tag such as `wholesale`, one customer), minimum quantity, days, times (happy hour, also past midnight) and dates. Kinds: % off, amount off each, special price incl. VAT, multi-buy. The highest discount wins; rules don't stack. Manual discounts still need the *discount* permission.
+- **Accounting → 🏦 Bank & M-Pesa recon**: import CSV (any column layout; day-first dates such as 04/11/2026 are understood), auto-match by amount, date (±5 days) and reference, *Create entry* for charges, interest, cash deposits, customer/supplier payments, then *Finish reconciliation*.
+- **Expense claims** (tile): any staff member submits; managers/accountants approve (not their own), reject with a reason, and *Pay back*. Booked Dr expense (+ VAT input) / Cr 2250 Staff expense claims payable, then Dr 2250 / Cr cash or bank.
+- **Approvals** (tile): pending claims, purchase orders above the limit (set on the same page), recons to sign off.
+- **Attendance** (tile): clock in/out from the login screen (🕐) or the till (🕐). Managers correct shifts; overtime above 9 h a day or 45 h a week (Labour Code) at 1.25×; link employees to their login in HR to estimate overtime pay and add it to a draft payroll run.
+
 ## 3. Email end-of-day reports
 
 Go to **Settings → Email & EOD reports** and fill in:

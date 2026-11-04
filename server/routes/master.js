@@ -46,7 +46,7 @@ crud('taxes', 'taxes', ['name', 'rate', 'price_includes_tax', 'active'], { perm:
 crud('partners', 'partners', ['name', 'is_customer', 'is_supplier', 'phone', 'email', 'address', 'tax_number', 'credit_limit', 'notes', 'active',
   'contact_person', 'birthday', 'tags', 'owner_id'],
   { perm: 'partners', orderBy: 'name', search: ['name', 'phone', 'email', 'tags'] });
-crud('terminals', 'pos_terminals', ['name', 'mode', 'active'], { perm: 'settings' });
+crud('terminals', 'pos_terminals', ['name', 'mode', 'active', 'location_id'], { perm: 'settings' });
 crud('payment-methods', 'payment_methods', ['name', 'kind', 'account_code', 'requires_reference', 'plugin_id', 'active', 'sort_order', 'qr_payload', 'qr_label'], { perm: 'settings', orderBy: 'sort_order' });
 crud('floors', 'floors', ['name', 'sort_order'], { perm: 'settings', softDelete: false, orderBy: 'sort_order' });
 crud('tables', 'restaurant_tables', ['floor_id', 'name', 'seats', 'active'], { perm: 'settings' });
@@ -114,33 +114,42 @@ r.delete('/products/:id', requirePerm('catalog'), ah(async (req, res) => {
 
 // ---- inventory ----
 r.post('/inventory/adjust', requirePerm('inventory'), ah(async (req, res) => {
-  // body: { lines: [{ product_id, counted_qty }] , reason } -> sets stock to counted quantity
+  // body: { lines: [{ product_id, counted_qty }], reason, location_id } -> sets stock at that location (default: main) to the counted quantity
   const out = await db.tx(async c => {
     let value = 0; const changes = [];
+    const loc = await stock.resolveLocation(c, req.body.location_id);
     for (const l of req.body.lines || []) {
       const p = await c.one('SELECT * FROM products WHERE id = ? FOR UPDATE', [l.product_id]);
       if (!p || p.type !== 'stock') continue;
-      const diff = Number(l.counted_qty) - Number(p.stock_qty);
+      if (!isFinite(Number(l.counted_qty)) || l.counted_qty === '' || l.counted_qty === null) continue;
+      const before = loc ? await stock.qtyAt(c, p.id, loc) : Number(p.stock_qty);
+      const diff = Number(l.counted_qty) - before;
       if (Math.abs(diff) < 1e-9) continue;
-      await stock.move(c, { product_id: p.id, qty: diff, move_type: 'adjustment', reference: req.body.reason || 'Stock count', user_id: req.user.id });
+      await stock.move(c, { product_id: p.id, qty: diff, move_type: 'adjustment', reference: req.body.reason || 'Stock count', user_id: req.user.id, location_id: loc });
       value += diff * Number(p.cost);
-      changes.push({ product: p.name, from: Number(p.stock_qty), to: Number(l.counted_qty) });
+      changes.push({ product: p.name, from: before, to: Number(l.counted_qty) });
     }
     value = round2(value);
-    if (value) await accounting.post(c, { reference: 'STOCK-ADJ', memo: req.body.reason || 'Stock adjustment', source_type: 'stock_adjust', user_id: req.user.id,
+    if (value) await accounting.post(c, { reference: 'STOCK-ADJ', memo: req.body.reason || 'Stock adjustment', source_type: 'stock_adjust', user_id: req.user.id, location_id: loc,
       lines: value > 0 ? [{ code: '1200', debit: value }, { code: '5100', credit: value }] : [{ code: '5100', debit: -value }, { code: '1200', credit: -value }] });
     return { changes, value };
   });
   res.json(out);
 }));
 r.get('/inventory/valuation', requirePerm('inventory'), ah(async (req, res) => {
-  const rows = await db.query(`SELECT p.id, p.sku, p.name, c.name category, p.stock_qty, p.cost, ROUND(p.stock_qty*p.cost,2) value, p.reorder_level
-    FROM products p LEFT JOIN categories c ON c.id = p.category_id WHERE p.type = 'stock' AND p.active = 1 ORDER BY p.name`);
+  const loc = Number(req.query.location_id) || null;
+  const rows = loc
+    ? await db.query(`SELECT p.id, p.sku, p.name, c.name category, COALESCE(pl.qty,0) stock_qty, p.cost, ROUND(COALESCE(pl.qty,0)*p.cost,2) value, COALESCE(pl.min_qty, p.reorder_level) reorder_level
+        FROM products p LEFT JOIN categories c ON c.id = p.category_id LEFT JOIN product_locations pl ON pl.product_id = p.id AND pl.location_id = ?
+        WHERE p.type = 'stock' AND p.active = 1 ORDER BY p.name`, [loc])
+    : await db.query(`SELECT p.id, p.sku, p.name, c.name category, p.stock_qty, p.cost, ROUND(p.stock_qty*p.cost,2) value, p.reorder_level
+        FROM products p LEFT JOIN categories c ON c.id = p.category_id WHERE p.type = 'stock' AND p.active = 1 ORDER BY p.name`);
   res.json({ rows, total: round2(rows.reduce((s, r) => s + Number(r.value), 0)) });
 }));
 r.get('/inventory/moves', requirePerm('inventory'), ah(async (req, res) => {
-  res.json(await db.query(`SELECT m.*, p.name product, u.name user_name FROM stock_moves m JOIN products p ON p.id = m.product_id
-    LEFT JOIN users u ON u.id = m.user_id ORDER BY m.id DESC LIMIT 500`));
+  const loc = Number(req.query.location_id) || null;
+  res.json(await db.query(`SELECT m.*, p.name product, u.name user_name, l.name location_name FROM stock_moves m JOIN products p ON p.id = m.product_id
+    LEFT JOIN users u ON u.id = m.user_id LEFT JOIN locations l ON l.id = m.location_id ${loc ? 'WHERE m.location_id = ?' : ''} ORDER BY m.id DESC LIMIT 500`, loc ? [loc] : []));
 }));
 
 // partner ledger balance (AR/AP)

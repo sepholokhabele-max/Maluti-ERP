@@ -137,7 +137,12 @@ function toCsv(d) {
 }
 
 /** Profit & loss and balance sheet from the journal */
-async function accountBalances(from, to) {
+async function accountBalances(from, to, locationId) {
+  if (locationId) return db.query(
+    `SELECT a.code, a.name, a.type, COALESCE(SUM(x.debit),0) debit, COALESCE(SUM(x.credit),0) credit
+     FROM accounts a LEFT JOIN (SELECT l.account_id, l.debit, l.credit FROM journal_lines l JOIN journal_entries e ON e.id = l.entry_id
+       WHERE e.entry_date BETWEEN ? AND ? AND e.location_id = ?) x ON x.account_id = a.id
+     GROUP BY a.id ORDER BY a.code`, [from, to, locationId]);
   return db.query(
     `SELECT a.code, a.name, a.type,
             COALESCE(SUM(l.debit),0) debit, COALESCE(SUM(l.credit),0) credit
@@ -148,13 +153,13 @@ async function accountBalances(from, to) {
      GROUP BY a.id ORDER BY a.code`, [from, to]);
 }
 
-async function profitAndLoss(from, to) {
-  const rows = (await accountBalances(from, to)).filter(r => r.type === 'income' || r.type === 'expense');
+async function profitAndLoss(from, to, locationId) {
+  const rows = (await accountBalances(from, to, locationId)).filter(r => r.type === 'income' || r.type === 'expense');
   const income = rows.filter(r => r.type === 'income').map(r => ({ ...r, amount: round2(r.credit - r.debit) }));
   const expense = rows.filter(r => r.type === 'expense').map(r => ({ ...r, amount: round2(r.debit - r.credit) }));
   const ti = round2(income.reduce((s, r) => s + r.amount, 0));
   const te = round2(expense.reduce((s, r) => s + r.amount, 0));
-  return { from, to, income, expense, total_income: ti, total_expense: te, net_profit: round2(ti - te) };
+  return { from, to, location_id: locationId || null, income, expense, total_income: ti, total_expense: te, net_profit: round2(ti - te) };
 }
 
 async function balanceSheet(asOf) {

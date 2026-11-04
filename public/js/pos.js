@@ -1,6 +1,7 @@
 // Point of Sale: retail (barcode), restaurant (floor plan, kitchen tickets) and bar (tabs).
 import { receiptLogoHtml, ensureLogo } from './core.js';
 import { parseScaleBarcode } from './barcode.js';
+import { best as bestRule } from './pricing.js';
 import { readWeight, scaleSupported, chooseScalePort } from './scale.js';
 import { state, GET, POST, PUT, esc, $, $$, toast, err, can, money, qty as fq, round2, modal, confirmBox, promptBox, printHtml, dt, timeAgo, badge, setToken, debounce, today } from './core.js';
 
@@ -71,7 +72,7 @@ function render() {
       ${S.catalog.vas.length && can('vas') ? '<button class="btn" id="vasBtn">⚡ Airtime / Power</button>' : ''}
       <span class="spacer"></span>
       <span class="info">${sess ? `Session #${sess.id} · ${esc(state.user.name)}` : 'No session'}</span>
-      <button class="btn" id="histBtn">History</button>
+      <button class="btn" id="histBtn">History</button><button class="btn" id="clkBtn" title="Clock in / out for your shift">🕐</button>
       ${sess ? '<button class="btn" id="closeBtn">Close session</button>' : '<button class="btn" id="openBtn">Open session</button>'}
       <button class="btn" id="lockBtn" title="Lock / switch user">🔒</button>
       ${can('dashboard') ? '<a class="btn" href="#/">✕</a>' : '<a class="btn" href="#/pos">✕</a>'}
@@ -80,6 +81,11 @@ function render() {
   </div>`;
   $$('[data-v]').forEach(b => b.onclick = () => switchView(b.dataset.v));
   $('#histBtn').onclick = historyDialog;
+  const clk = $('#clkBtn');
+  if (clk) {
+    GET('/attendance/me').then(x => { clk.textContent = x.clocked_in ? '🕐 On shift' : '🕐 Clock in'; }).catch(() => {});
+    clk.onclick = async () => { try { const x = await POST('/attendance/me'); toast(x.status === 'in' ? `Clocked in at ${String(x.at).slice(11, 16)}` : `Clocked out – ${x.hours} h`); clk.textContent = x.status === 'in' ? '🕐 On shift' : '🕐 Clock in'; if (x.warning) toast(x.warning, 'err', 8000); } catch (e) { err(e); } };
+  }
   $('#lockBtn').onclick = lock;
   if ($('#closeBtn')) $('#closeBtn').onclick = closeSessionDialog;
   if ($('#openBtn')) $('#openBtn').onclick = openSessionDialog;
@@ -239,14 +245,28 @@ function renderProducts() {
   $$('[data-p]', $('#prods')).forEach(el => el.onclick = () => addProduct(S.catalog.products.find(p => p.id === Number(el.dataset.p))));
 }
 
+/** promotions: give every line without a manual discount its best price rule */
+function applyRules() {
+  const rules = (S.catalog && S.catalog.price_rules) || [];
+  const partner = S.order.partner_id ? { id: S.order.partner_id, tags: S.order.partner_tags || '' } : null;
+  const when = new Date();
+  for (const l of S.order.lines) {
+    const manual = l.manual_disc || (Number(l.discount_pct) > 0 && !l.rule_id && !l.auto);
+    if (!l.product_id || l.label_total || manual || (l.kitchen_status && l.kitchen_status !== 'pending' && l.id)) continue;
+    const p = S.catalog.products.find(x => x.id === l.product_id);
+    const b = rules.length && p ? bestRule(rules, { product: p, price: l.unit_price, qty: l.qty, partner, when, channel: 'pos' }) : { pct: 0 };
+    l.discount_pct = b.pct; l.auto = b.pct > 0; l.rule_id = b.rule ? b.rule.id : null; l.rule_name = b.rule ? b.rule.name : null;
+  }
+}
 function renderLines() {
+  applyRules();
   const L = S.order.lines;
   $('#lines').innerHTML = L.length ? L.map((l, i) => {
     const c = lineCalc(l);
     return `<div class="cart-line ${S.sel === i ? 'sel' : ''}" data-i="${i}">
       <div class="nm">${esc(l.name)}${l.kitchen_status && l.kitchen_status !== 'pending' ? `<span class="ks">${badge(l.kitchen_status)}</span>` : ''}</div>
       <div class="amt">${money(c.total)}</div>
-      <div class="meta">${fq(l.qty)}${l.uom && l.uom !== 'Unit' ? ' ' + esc(l.uom) : ''} × ${money(l.unit_price)}${l.label_total ? ' · scale label' : ''}${Number(l.discount_pct) ? ` · −${l.discount_pct}%` : ''}</div>
+      <div class="meta">${fq(l.qty)}${l.uom && l.uom !== 'Unit' ? ' ' + esc(l.uom) : ''} × ${money(l.unit_price)}${l.label_total ? ' · scale label' : ''}${Number(l.discount_pct) ? ` · −${l.discount_pct}%${l.rule_name ? ` <span class="promo-tag">🏷 ${esc(l.rule_name)}</span>` : ''}` : ''}</div>
       <div class="row" style="justify-content:flex-end;gap:4px">${isWeighed(l) ? `<button class="btn btn-sm" data-rw="${i}" title="Weigh again">⚖️</button>` : `<button class="btn btn-sm" data-m="${i}">−</button><button class="btn btn-sm" data-pl="${i}">＋</button>`}</div>
       ${l.note ? `<div class="note">✎ ${esc(l.note)}</div>` : ''}
     </div>`;
@@ -273,7 +293,7 @@ function addProduct(p, opts = {}) {
     L.push({ product_id: p.id, name: p.name, qty: opts.qty, unit_price: Number(p.price), tax_rate: Number(p.tax_rate || 0), discount_pct: 0, note: null, kitchen_status: 'pending', uom: p.uom, label_total: opts.label_total || null });
     S.sel = L.length - 1; S.dirty = true; renderLines(); return;
   }
-  const i = L.findIndex(l => l.product_id === p.id && !l.note && (!l.kitchen_status || l.kitchen_status === 'pending') && !Number(l.discount_pct) && Number(l.unit_price) === Number(p.price));
+  const i = L.findIndex(l => l.product_id === p.id && !l.note && (!l.kitchen_status || l.kitchen_status === 'pending') && !l.manual_disc && Number(l.unit_price) === Number(p.price));
   if (i >= 0) { L[i].qty = Number(L[i].qty) + 1; S.sel = i; }
   else { L.push({ product_id: p.id, name: p.name, qty: 1, unit_price: Number(p.price), tax_rate: Number(p.tax_rate || 0), discount_pct: 0, note: null, kitchen_status: 'pending' }); S.sel = L.length - 1; }
   if (Number(p.price) === 0) setTimeout(() => tool('price'), 10);
@@ -294,7 +314,7 @@ async function tool(t) {
   if (t === 'qty') { const v = await promptBox('Quantity', { value: l.qty, type: 'number' }); if (v !== null && Number(v) > 0) { l.qty = Number(v); S.dirty = true; } }
   if (t === 'disc') {
     if (!can('pos.discount')) return toast('Discounts need a manager', 'err');
-    const v = await promptBox('Discount %', { value: l.discount_pct || 0, type: 'number' }); if (v !== null) { l.discount_pct = Math.max(0, Math.min(100, Number(v))); S.dirty = true; }
+    const v = await promptBox('Discount %', { value: l.discount_pct || 0, type: 'number' }); if (v !== null) { l.discount_pct = Math.max(0, Math.min(100, Number(v))); l.manual_disc = true; l.auto = false; l.rule_id = null; l.rule_name = null; S.dirty = true; }
   }
   if (t === 'price') {
     const p = S.catalog.products.find(x => x.id === l.product_id);
@@ -365,7 +385,7 @@ function customerDialog() {
       const load = async () => {
         const rows = await GET('/partners?is_customer=1&q=' + encodeURIComponent(r.querySelector('#cq').value));
         r.querySelector('#clist').innerHTML = `<ul class="list-plain">${rows.map(p => `<li data-p="${p.id}" style="cursor:pointer"><span><b>${esc(p.name)}</b> <span class="muted">${esc(p.phone || '')}</span></span><span class="muted">${esc(p.email || '')}</span></li>`).join('') || '<li class="muted">No customers</li>'}</ul>`;
-        $$('[data-p]', r).forEach(li => li.onclick = () => { const p = rows.find(x => x.id === Number(li.dataset.p)); S.order.partner_id = p.id; S.order.partner_name = p.name; S.dirty = true; close(); renderOrder(); });
+        $$('[data-p]', r).forEach(li => li.onclick = () => { const p = rows.find(x => x.id === Number(li.dataset.p)); S.order.partner_id = p.id; S.order.partner_name = p.name; S.order.partner_tags = p.tags || ''; S.dirty = true; close(); renderOrder(); });
       };
       r.querySelector('#cq').oninput = debounce(load, 200); load();
       r.querySelector('#cnew').onclick = async () => {
@@ -373,7 +393,7 @@ function customerDialog() {
         const phone = await promptBox('Phone (optional)');
         try { const p = await POST('/partners', { name, phone, is_customer: 1 }); S.order.partner_id = p.id; S.order.partner_name = p.name; close(); renderOrder(); } catch (e) { err(e); }
       };
-      const cn = r.querySelector('#cnone'); if (cn) cn.onclick = () => { S.order.partner_id = null; S.order.partner_name = null; close(); renderOrder(); };
+      const cn = r.querySelector('#cnone'); if (cn) cn.onclick = () => { S.order.partner_id = null; S.order.partner_name = null; S.order.partner_tags = ''; close(); renderOrder(); };
     } });
 }
 
@@ -503,7 +523,7 @@ export function receiptHtml(o, company = state.company) {
   <div class="c big">${esc(company.name || '')}</div>
   <div class="c">${esc(company.address || '')}${company.phone ? '<br>Tel ' + esc(company.phone) : ''}${company.tax_number ? '<br>VAT No: ' + esc(company.tax_number) : ''}</div>
   <hr><div>${o.refund_of ? '<b>REFUND</b> ' : ''}${esc(o.number || 'Order #' + o.id)}<br>${dt(o.paid_at || o.created_at)}<br>Served by: ${esc(o.user_name || state.user.name)}${o.table_name ? '<br>Table: ' + esc(o.table_name) : ''}${o.tab_name ? '<br>Tab: ' + esc(o.tab_name) : ''}${o.partner_name ? '<br>Customer: ' + esc(o.partner_name) : ''}</div><hr>
-  <table>${o.lines.map(l => `<tr><td colspan="2">${esc(l.name)}</td></tr><tr><td>&nbsp;${fq(l.qty)} x ${m(l.unit_price)}${Number(l.discount_pct) ? ` -${l.discount_pct}%` : ''}</td><td class="r">${m(l.line_total)}</td></tr>`).join('')}</table>
+  <table>${o.lines.map(l => `<tr><td colspan="2">${esc(l.name)}</td></tr><tr><td>&nbsp;${fq(l.qty)} x ${m(l.unit_price)}${Number(l.discount_pct) ? ` -${l.discount_pct}%${l.rule_name ? ' ' + esc(l.rule_name) : ''}` : ''}</td><td class="r">${m(l.line_total)}</td></tr>`).join('')}</table>
   <hr><table><tr><td>Excl. VAT</td><td class="r">${m(o.subtotal)}</td></tr><tr><td>VAT</td><td class="r">${m(o.tax_total)}</td></tr>
   ${Number(o.discount_total) ? `<tr><td>Discount</td><td class="r">${m(o.discount_total)}</td></tr>` : ''}
   <tr class="big"><td>TOTAL</td><td class="r">${m(o.total)}</td></tr></table><hr>

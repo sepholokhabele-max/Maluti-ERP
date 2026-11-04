@@ -89,8 +89,8 @@ priv.post('/users', auth.requirePerm('users'), ah(async (req, res) => {
   if (!b.name || !b.username || !b.password) throw bad('Name, username and password are required');
   if (b.role === 'admin' && req.user.role !== 'admin') throw bad('Only an admin can create admins');
   if (b.pin && !/^\d{4,6}$/.test(String(b.pin))) throw bad('PIN must be 4–6 digits');
-  await db.query('INSERT INTO users (name, username, email, password_hash, pin_hash, role) VALUES (?, ?, ?, ?, ?, ?)',
-    [b.name, b.username, b.email || null, auth.hash(b.password), b.pin ? auth.hash(b.pin) : null, b.role || 'cashier']);
+  await db.query('INSERT INTO users (name, username, email, password_hash, pin_hash, role, location_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [b.name, b.username, b.email || null, auth.hash(b.password), b.pin ? auth.hash(b.pin) : null, b.role || 'cashier', b.location_id || null]);
   res.json({ ok: true });
 }));
 priv.put('/users/:id', auth.requirePerm('users'), ah(async (req, res) => {
@@ -99,6 +99,7 @@ priv.put('/users/:id', auth.requirePerm('users'), ah(async (req, res) => {
   if (!target) throw bad('User not found');
   if ((target.role === 'admin' || b.role === 'admin') && req.user.role !== 'admin') throw bad('Only an admin can change admins');
   for (const k of ['name', 'username', 'email', 'role', 'active']) if (b[k] !== undefined) { sets.push(`${k} = ?`); args.push(b[k]); }
+  if (b.location_id !== undefined) { sets.push('location_id = ?'); args.push(b.location_id || null); }
   if (b.password) { sets.push('password_hash = ?'); args.push(auth.hash(b.password)); }
   if (b.pin) { if (!/^\d{4,6}$/.test(String(b.pin))) throw bad('PIN must be 4–6 digits'); sets.push('pin_hash = ?'); args.push(auth.hash(b.pin)); }
   if (b.clear_pin) sets.push('pin_hash = NULL');

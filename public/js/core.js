@@ -84,6 +84,17 @@ export function receiptLogoHtml(company = state.company, { maxWidthMm = 72 } = {
   return `<div style="text-align:center;margin-bottom:4px"><img src="${state.logo}" alt="" style="width:${w}mm;max-width:100%;max-height:30mm;object-fit:contain;${bw ? 'filter:grayscale(1) contrast(1.35);' : ''}"></div>`;
 }
 
+/** module switched on for this business (Settings → Business & modules); `k` may be a list = any of them */
+export const hasMod = k => { const b = state.biz; if (!b || !Array.isArray(b.modules)) return true; return (Array.isArray(k) ? k : [k]).some(x => b.modules.includes(x)); };
+/** active stock locations (branches, warehouses, vans, in transit), cached per screen */
+export async function getLocations() { if (!state.locations) state.locations = await GET('/locations').catch(() => []); return state.locations; }
+/** <select> options of real (non-transit) locations; blank first when `blank` is a label */
+export async function locationOptions(blank) {
+  const l = (await getLocations()).filter(x => x.kind !== 'transit');
+  return [...(blank ? [{ value: '', label: blank }] : []), ...l.map(x => ({ value: x.id, label: x.name + (x.is_default ? ' (default)' : '') }))];
+}
+/** branches are only worth showing once the module is on and there is more than one place */
+export async function multiLocation() { return hasMod('locations') && (await getLocations()).filter(x => x.kind !== 'transit').length > 1; }
 export const can = perm => !!state.user && (state.user.permissions.includes('*') || state.user.permissions.includes(perm));
 
 export function money(n, sym = true) {

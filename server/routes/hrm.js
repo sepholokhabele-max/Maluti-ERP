@@ -57,8 +57,8 @@ r.delete('/departments/:id', requirePerm('hrm'), ah(async (req, res) => { await 
 // ---------- employees ----------
 const EMP_FIELDS = ['code', 'first_name', 'last_name', 'id_number', 'tin', 'gender', 'birth_date', 'phone', 'email', 'address', 'department_id', 'job_title',
   'employment_type', 'hire_date', 'termination_date', 'status', 'basic_salary', 'paye_applies', 'pay_method', 'bank_name', 'bank_account',
-  'mobile_money_number', 'emergency_contact', 'notes'];
-const clean = d => { for (const k of ['code', 'birth_date', 'hire_date', 'termination_date', 'gender', 'department_id']) if (d[k] === '') d[k] = null; return d; };
+  'mobile_money_number', 'emergency_contact', 'notes', 'user_id'];
+const clean = d => { for (const k of ['code', 'birth_date', 'hire_date', 'termination_date', 'gender', 'department_id', 'user_id']) if (d[k] === '') d[k] = null; return d; };
 
 r.get('/employees', requirePerm('hrm'), ah(async (req, res) => {
   const cond = [], args = [];

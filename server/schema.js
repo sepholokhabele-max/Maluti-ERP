@@ -810,4 +810,294 @@ module.exports = [
       `ALTER TABLE stock_batches ADD COLUMN live_weight DECIMAL(14,3) NULL`
     ]
   }
+  ,{
+    id: 8,
+    name: 'sales_pricing_bank_expenses_attendance',
+    sql: [
+      // ---- quotations & sales orders
+      `CREATE TABLE IF NOT EXISTS sale_orders (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        quote_number VARCHAR(40) NULL UNIQUE,
+        number VARCHAR(40) NULL UNIQUE,
+        status ENUM('quote','sent','confirmed','invoiced','declined','cancelled') NOT NULL DEFAULT 'quote',
+        partner_id INT NOT NULL,
+        order_date DATE NOT NULL,
+        valid_until DATE NULL,
+        delivery_date DATE NULL,
+        subtotal DECIMAL(14,2) NOT NULL DEFAULT 0,
+        tax_total DECIMAL(14,2) NOT NULL DEFAULT 0,
+        discount_total DECIMAL(14,2) NOT NULL DEFAULT 0,
+        total DECIMAL(14,2) NOT NULL DEFAULT 0,
+        customer_ref VARCHAR(80) NULL,
+        notes VARCHAR(500) NULL,
+        terms VARCHAR(1000) NULL,
+        invoice_id BIGINT NULL,
+        user_id INT NULL,
+        confirmed_at DATETIME NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (status), FOREIGN KEY (partner_id) REFERENCES partners(id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS sale_order_lines (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        order_id BIGINT NOT NULL,
+        product_id INT NULL,
+        description VARCHAR(200) NOT NULL,
+        qty DECIMAL(14,3) NOT NULL,
+        unit_price DECIMAL(14,4) NOT NULL,
+        discount_pct DECIMAL(6,3) NOT NULL DEFAULT 0,
+        tax_rate DECIMAL(6,3) NOT NULL DEFAULT 0,
+        net_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+        tax_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+        line_total DECIMAL(14,2) NOT NULL DEFAULT 0,
+        rule_id INT NULL,
+        FOREIGN KEY (order_id) REFERENCES sale_orders(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `ALTER TABLE invoices ADD COLUMN sale_order_id BIGINT NULL`,
+      `ALTER TABLE invoice_lines ADD COLUMN discount_pct DECIMAL(6,3) NOT NULL DEFAULT 0`,
+
+      // ---- pricing rules & promotions
+      `CREATE TABLE IF NOT EXISTS price_rules (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        kind ENUM('percent','fixed_price','amount_off','multibuy') NOT NULL DEFAULT 'percent',
+        value DECIMAL(14,4) NOT NULL DEFAULT 0,
+        applies_to ENUM('all','category','product') NOT NULL DEFAULT 'product',
+        product_id INT NULL,
+        category_id INT NULL,
+        min_qty DECIMAL(14,3) NOT NULL DEFAULT 0,
+        free_qty DECIMAL(14,3) NOT NULL DEFAULT 0,
+        customer_scope ENUM('all','partner','tag') NOT NULL DEFAULT 'all',
+        partner_id INT NULL,
+        partner_tag VARCHAR(40) NULL,
+        days VARCHAR(20) NULL,
+        time_from TIME NULL,
+        time_to TIME NULL,
+        date_from DATE NULL,
+        date_to DATE NULL,
+        on_pos TINYINT(1) NOT NULL DEFAULT 1,
+        on_invoice TINYINT(1) NOT NULL DEFAULT 1,
+        active TINYINT(1) NOT NULL DEFAULT 1,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `ALTER TABLE order_lines ADD COLUMN rule_id INT NULL`,
+
+      // ---- bank / mobile money statement reconciliation
+      `CREATE TABLE IF NOT EXISTS bank_statements (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        account_code VARCHAR(20) NOT NULL,
+        name VARCHAR(120) NOT NULL,
+        date_from DATE NULL,
+        date_to DATE NULL,
+        opening_balance DECIMAL(14,2) NULL,
+        closing_balance DECIMAL(14,2) NULL,
+        status ENUM('open','done') NOT NULL DEFAULT 'open',
+        user_id INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS bank_statement_lines (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        statement_id INT NOT NULL,
+        line_date DATE NOT NULL,
+        description VARCHAR(255) NULL,
+        reference VARCHAR(120) NULL,
+        amount DECIMAL(14,2) NOT NULL,
+        journal_line_id BIGINT NULL,
+        match_kind ENUM('auto','manual','created') NULL,
+        INDEX (statement_id), INDEX (journal_line_id),
+        FOREIGN KEY (statement_id) REFERENCES bank_statements(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `ALTER TABLE journal_lines ADD COLUMN reconciled TINYINT(1) NOT NULL DEFAULT 0`,
+      `INSERT IGNORE INTO accounts (code, name, type) VALUES ('6400', 'Bank Charges', 'expense'), ('4300', 'Interest Received', 'income'),
+        ('2250', 'Staff Expense Claims Payable', 'liability'), ('6500', 'Travel & Transport', 'expense'), ('6600', 'Repairs & Maintenance', 'expense'),
+        ('6700', 'Telephone & Airtime', 'expense'), ('6800', 'Fuel', 'expense')`,
+
+      // ---- expense claims & approvals
+      `CREATE TABLE IF NOT EXISTS expense_claims (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        number VARCHAR(30) NULL UNIQUE,
+        user_id INT NOT NULL,
+        claim_date DATE NOT NULL,
+        description VARCHAR(255) NOT NULL,
+        account_code VARCHAR(20) NOT NULL DEFAULT '6000',
+        amount DECIMAL(14,2) NOT NULL,
+        tax_rate DECIMAL(6,3) NOT NULL DEFAULT 0,
+        paid_by ENUM('own','company') NOT NULL DEFAULT 'own',
+        company_method_id INT NULL,
+        supplier VARCHAR(120) NULL,
+        receipt MEDIUMTEXT NULL,
+        status ENUM('submitted','approved','rejected','reimbursed') NOT NULL DEFAULT 'submitted',
+        approver_id INT NULL,
+        decided_at DATETIME NULL,
+        reject_reason VARCHAR(255) NULL,
+        reimbursed_method_id INT NULL,
+        reimbursed_at DATETIME NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (status), INDEX (user_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `ALTER TABLE purchase_orders MODIFY status ENUM('draft','to_approve','confirmed','partial','received','cancelled') NOT NULL DEFAULT 'draft',
+        ADD COLUMN approved_by INT NULL, ADD COLUMN approved_at DATETIME NULL`,
+
+      // ---- attendance
+      `CREATE TABLE IF NOT EXISTS attendance (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        check_in DATETIME NOT NULL,
+        check_out DATETIME NULL,
+        source ENUM('pin','manual') NOT NULL DEFAULT 'pin',
+        note VARCHAR(200) NULL,
+        edited_by INT NULL,
+        INDEX (user_id, check_in),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+    ]
+  }
+  ,{
+    id: 9,
+    name: 'locations_transfers_modules',
+    sql: [
+      // ---- branches / warehouses / stock locations
+      `CREATE TABLE IF NOT EXISTS locations (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        code VARCHAR(20) NOT NULL UNIQUE,
+        name VARCHAR(100) NOT NULL,
+        kind ENUM('shop','warehouse','branch','transit','van','farm','site') NOT NULL DEFAULT 'shop',
+        address VARCHAR(255) NULL,
+        phone VARCHAR(40) NULL,
+        is_default TINYINT(1) NOT NULL DEFAULT 0,
+        sellable TINYINT(1) NOT NULL DEFAULT 1,
+        active TINYINT(1) NOT NULL DEFAULT 1,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `INSERT IGNORE INTO locations (code, name, kind, is_default) VALUES ('MAIN', 'Main shop', 'shop', 1)`,
+      `INSERT IGNORE INTO locations (code, name, kind, is_default, sellable) VALUES ('TRANSIT', 'In transit', 'transit', 0, 0)`,
+      `CREATE TABLE IF NOT EXISTS product_locations (
+        product_id INT NOT NULL,
+        location_id INT NOT NULL,
+        qty DECIMAL(16,4) NOT NULL DEFAULT 0,
+        min_qty DECIMAL(16,4) NULL,
+        bin VARCHAR(40) NULL,
+        PRIMARY KEY (product_id, location_id),
+        INDEX (location_id),
+        FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+        FOREIGN KEY (location_id) REFERENCES locations(id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `INSERT IGNORE INTO product_locations (product_id, location_id, qty)
+        SELECT p.id, l.id, p.stock_qty FROM products p JOIN locations l ON l.code = 'MAIN' WHERE p.type = 'stock'`,
+      `ALTER TABLE stock_moves ADD COLUMN location_id INT NULL, ADD INDEX idx_moves_loc (location_id),
+         MODIFY move_type ENUM('sale','refund','purchase','adjustment','invoice','opening','waste','breakdown','production','count','transfer') NOT NULL`,
+      `UPDATE stock_moves SET location_id = (SELECT id FROM locations WHERE code = 'MAIN')`,
+      `ALTER TABLE stock_batches ADD COLUMN location_id INT NULL, ADD INDEX idx_batches_loc (location_id)`,
+      `UPDATE stock_batches SET location_id = (SELECT id FROM locations WHERE code = 'MAIN')`,
+      `ALTER TABLE pos_terminals ADD COLUMN location_id INT NULL`,
+      `ALTER TABLE purchase_orders ADD COLUMN location_id INT NULL`,
+      `ALTER TABLE invoices ADD COLUMN location_id INT NULL`,
+      `ALTER TABLE sale_orders ADD COLUMN location_id INT NULL`,
+      `ALTER TABLE journal_entries ADD COLUMN location_id INT NULL, ADD INDEX idx_je_loc (location_id)`,
+      `ALTER TABLE users ADD COLUMN location_id INT NULL`,
+
+      // ---- transfers between locations (stock sits in "In transit" until received)
+      `CREATE TABLE IF NOT EXISTS stock_transfers (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        number VARCHAR(40) NULL UNIQUE,
+        from_location_id INT NOT NULL,
+        to_location_id INT NOT NULL,
+        status ENUM('draft','sent','received','cancelled') NOT NULL DEFAULT 'draft',
+        notes VARCHAR(255) NULL,
+        user_id INT NULL,
+        sent_at DATETIME NULL,
+        received_at DATETIME NULL,
+        received_by INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (status),
+        FOREIGN KEY (from_location_id) REFERENCES locations(id),
+        FOREIGN KEY (to_location_id) REFERENCES locations(id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS stock_transfer_lines (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        transfer_id INT NOT NULL,
+        product_id INT NOT NULL,
+        qty DECIMAL(16,4) NOT NULL,
+        qty_received DECIMAL(16,4) NULL,
+        unit_cost DECIMAL(14,4) NULL,
+        FOREIGN KEY (transfer_id) REFERENCES stock_transfers(id) ON DELETE CASCADE,
+        FOREIGN KEY (product_id) REFERENCES products(id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `INSERT IGNORE INTO accounts (code, name, type) VALUES ('5150', 'Transfer Shortages', 'expense')`
+    ]
+  }
+  ,{
+    id: 10,
+    name: 'manufacturing_bom_work_orders',
+    sql: [
+      `CREATE TABLE IF NOT EXISTS boms (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        product_id INT NOT NULL,
+        name VARCHAR(120) NOT NULL,
+        code VARCHAR(40) NULL,
+        output_qty DECIMAL(14,4) NOT NULL DEFAULT 1,
+        labour_cost DECIMAL(14,2) NOT NULL DEFAULT 0,
+        overhead_cost DECIMAL(14,2) NOT NULL DEFAULT 0,
+        minutes INT NULL,
+        shelf_life_days INT NULL,
+        instructions TEXT NULL,
+        active TINYINT(1) NOT NULL DEFAULT 1,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (product_id),
+        FOREIGN KEY (product_id) REFERENCES products(id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS bom_lines (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        bom_id INT NOT NULL,
+        product_id INT NOT NULL,
+        qty DECIMAL(14,4) NOT NULL,
+        scrap_pct DECIMAL(6,2) NOT NULL DEFAULT 0,
+        notes VARCHAR(120) NULL,
+        FOREIGN KEY (bom_id) REFERENCES boms(id) ON DELETE CASCADE,
+        FOREIGN KEY (product_id) REFERENCES products(id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS work_orders (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        number VARCHAR(40) NULL UNIQUE,
+        bom_id INT NULL,
+        product_id INT NOT NULL,
+        qty_planned DECIMAL(14,4) NOT NULL,
+        qty_produced DECIMAL(14,4) NULL,
+        qty_rejected DECIMAL(14,4) NULL,
+        status ENUM('draft','confirmed','in_progress','done','cancelled') NOT NULL DEFAULT 'draft',
+        location_id INT NULL,
+        planned_date DATE NULL,
+        started_at DATETIME NULL,
+        finished_at DATETIME NULL,
+        labour_cost DECIMAL(14,2) NOT NULL DEFAULT 0,
+        overhead_cost DECIMAL(14,2) NOT NULL DEFAULT 0,
+        material_cost DECIMAL(14,2) NOT NULL DEFAULT 0,
+        unit_cost DECIMAL(14,4) NULL,
+        batch_no VARCHAR(60) NULL,
+        expiry_date DATE NULL,
+        output_batch_id INT NULL,
+        qc_status ENUM('none','passed','failed') NOT NULL DEFAULT 'none',
+        qc_notes VARCHAR(255) NULL,
+        sale_order_id BIGINT NULL,
+        notes VARCHAR(255) NULL,
+        user_id INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (status), INDEX (product_id),
+        FOREIGN KEY (product_id) REFERENCES products(id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS work_order_lines (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        wo_id INT NOT NULL,
+        product_id INT NOT NULL,
+        qty_planned DECIMAL(14,4) NOT NULL,
+        qty_used DECIMAL(14,4) NULL,
+        unit_cost DECIMAL(14,4) NULL,
+        cost_total DECIMAL(14,2) NULL,
+        batches VARCHAR(255) NULL,
+        FOREIGN KEY (wo_id) REFERENCES work_orders(id) ON DELETE CASCADE,
+        FOREIGN KEY (product_id) REFERENCES products(id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `INSERT IGNORE INTO accounts (code, name, type) VALUES ('5210', 'Labour & overhead absorbed into production', 'expense')`,
+      `INSERT IGNORE INTO accounts (code, name, type) VALUES ('5220', 'Production rejects & scrap', 'expense')`
+    ]
+  }
 ];

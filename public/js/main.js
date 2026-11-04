@@ -1,4 +1,4 @@
-import { state, api, GET, POST, PUT, setToken, esc, $, $$, toast, err, can, formHtml, readForm, ensureLogo, imageFileToDataUrl, closeModals } from './core.js';
+import { state, api, GET, POST, PUT, setToken, esc, $, $$, toast, err, can, hasMod, formHtml, readForm, ensureLogo, imageFileToDataUrl, closeModals } from './core.js';
 import * as pos from './pos.js';
 import * as kitchen from './kitchen.js';
 import * as bo from './backoffice.js';
@@ -10,33 +10,48 @@ import * as hr from './hrm.js';
 import * as bu from './butchery.js';
 import * as barm from './bar.js';
 import * as guide from './guide.js';
+import * as salesm from './sales.js';
+import * as fin from './finance.js';
+import * as att from './attendance.js';
+import * as locm from './locations.js';
+import * as mrpm from './mrp.js';
 
 const APPS = [
-  { href: '#/pos', label: 'Point of Sale', ico: '🛒', color: '#ea580c', perm: 'pos' },
-  { href: '#/kitchen', label: 'Kitchen / Bar Display', ico: '👨‍🍳', color: '#dc2626', perm: 'kitchen' },
+  { href: '#/pos', label: 'Point of Sale', ico: '🛒', color: '#ea580c', perm: 'pos', mod: 'pos' },
+  { href: '#/kitchen', label: 'Kitchen / Bar Display', ico: '👨‍🍳', color: '#dc2626', perm: 'kitchen', mod: 'restaurant' },
   { href: '#/dashboard', label: 'Dashboard', ico: '📊', color: '#4f46e5', perm: 'dashboard' },
   { href: '#/products', label: 'Products', ico: '📦', color: '#0891b2', perm: 'catalog' },
-  { href: '#/inventory', label: 'Inventory', ico: '🏷️', color: '#0d9488', perm: 'inventory' },
-  { href: '#/crm', label: 'CRM', ico: '🤝', color: '#2563eb', perm: 'crm' },
+  { href: '#/inventory', label: 'Inventory', ico: '🏷️', color: '#0d9488', perm: 'inventory', mod: 'inventory' },
+  { href: '#/crm', label: 'CRM', ico: '🤝', color: '#2563eb', perm: 'crm', mod: 'crm' },
   { href: '#/partners?type=supplier', label: 'Contacts', ico: '👥', color: '#0369a1', perm: 'partners' },
-  { href: '#/purchases', label: 'Purchasing', ico: '🚚', color: '#7c3aed', perm: 'purchasing' },
+  { href: '#/purchases', label: 'Purchasing', ico: '🚚', color: '#7c3aed', perm: 'purchasing', mod: 'purchasing' },
   { href: '#/invoices?kind=customer_invoice', label: 'Invoicing', ico: '🧾', color: '#c026d3', perm: 'invoicing' },
   { href: '#/accounting', label: 'Accounting', ico: '📒', color: '#16a34a', perm: 'accounting' },
   { href: '#/reports', label: 'Reports', ico: '📈', color: '#ca8a04', perm: 'reports' },
-  { href: '#/sales', label: 'Sales & Sessions', ico: '💳', color: '#db2777', perm: 'reports' },
-  { href: '#/recon', label: 'Sales Recon', ico: '⚖️', color: '#0f766e', perm: 'recon' },
-  { href: '#/hrm', label: 'HR & Payroll', ico: '🧑‍💼', color: '#9333ea', perm: 'hrm', hrm: 1 },
-  { href: '#/butchery', label: 'Butchery', ico: '🥩', color: '#b91c1c', perm: 'inventory', butchery: 1 },
-  { href: '#/bar', label: 'Bar stock', ico: '🍸', color: '#a16207', perm: 'inventory' },
-  { href: '#/vas', label: 'VAS (Airtime / Power)', ico: '⚡', color: '#f59e0b', perm: 'vas' },
+  { href: '#/sales', label: 'Sales & Sessions', ico: '💳', color: '#db2777', perm: 'reports', mod: 'pos' },
+  { href: '#/recon', label: 'Sales Recon', ico: '⚖️', color: '#0f766e', perm: 'recon', mod: 'pos' },
+  { href: '#/hrm', label: 'HR & Payroll', ico: '🧑‍💼', color: '#9333ea', perm: 'hrm', hrm: 1, mod: 'hrm' },
+  { href: '#/butchery', label: 'Butchery', ico: '🥩', color: '#b91c1c', perm: 'inventory', butchery: 1, mod: 'butchery' },
+  { href: '#/bar', label: 'Bar stock', ico: '🍸', color: '#a16207', perm: 'inventory', mod: 'bar' },
+  { href: '#/vas', label: 'VAS (Airtime / Power)', ico: '⚡', color: '#f59e0b', perm: 'vas', mod: 'vas' },
+  { href: '#/quotes', label: 'Quotations & orders', ico: '📝', color: '#2563eb', perm: 'sales', mod: 'sales' },
+  { href: '#/promotions', label: 'Promotions', ico: '🏷️', color: '#d97706', perm: 'catalog', mod: 'promotions' },
+  { href: '#/bank', label: 'Bank & M-Pesa recon', ico: '🏦', color: '#0e7490', perm: 'accounting', mod: 'bank' },
+  { href: '#/claims', label: 'Expense claims', ico: '🧾', color: '#be123c', perm: 'dashboard', mod: 'expenses' },
+  { href: '#/approvals', label: 'Approvals', ico: '✅', color: '#15803d', perm: 'dashboard', mod: ['purchasing', 'expenses'] },
+  { href: '#/attendance', label: 'Attendance', ico: '🕐', color: '#7c3aed', perm: 'attendance', mod: 'attendance' },
+  { href: '#/mrp', label: 'Manufacturing', ico: '🏭', color: '#b45309', perm: 'inventory', mod: 'manufacturing' },
+  { href: '#/locations', label: 'Branches & warehouses', ico: '🏬', color: '#0369a1', perm: 'inventory', mod: 'locations' },
+  { href: '#/transfers', label: 'Stock transfers', ico: '🔁', color: '#0891b2', perm: 'inventory', mod: 'locations' },
   { href: '#/guide', label: 'Setup guide', ico: '🧭', color: '#0d9488', perm: 'settings' },
   { href: '#/settings', label: 'Settings', ico: '⚙️', color: '#475569', perm: 'settings' }
 ];
 
 const NAV = [
-  ['#/dashboard', 'Dashboard', 'dashboard'], ['#/pos', 'POS', 'pos'], ['#/products', 'Products', 'catalog'], ['#/inventory', 'Inventory', 'inventory'],
-  ['#/crm', 'CRM', 'crm'], ['#/partners?type=customer', 'Contacts', 'partners'], ['#/purchases', 'Purchasing', 'purchasing'], ['#/invoices?kind=customer_invoice', 'Invoicing', 'invoicing'],
-  ['#/accounting', 'Accounting', 'accounting'], ['#/recon', 'Recon', 'recon'], ['#/hrm', 'HR', 'hrm'], ['#/butchery', 'Butchery', 'inventory'], ['#/bar', 'Bar', 'inventory'], ['#/reports', 'Reports', 'reports'], ['#/settings', 'Settings', 'settings']
+  ['#/dashboard', 'Dashboard', 'dashboard'], ['#/pos', 'POS', 'pos', 'pos'], ['#/products', 'Products', 'catalog'], ['#/inventory', 'Inventory', 'inventory', 'inventory'],
+  ['#/locations', 'Branches', 'inventory', 'locations'], ['#/mrp', 'Manufacturing', 'inventory', 'manufacturing'],
+  ['#/crm', 'CRM', 'crm', 'crm'], ['#/partners?type=customer', 'Contacts', 'partners'], ['#/purchases', 'Purchasing', 'purchasing', 'purchasing'], ['#/quotes', 'Sales', 'sales', 'sales'], ['#/invoices?kind=customer_invoice', 'Invoicing', 'invoicing'],
+  ['#/accounting', 'Accounting', 'accounting'], ['#/recon', 'Recon', 'recon', 'pos'], ['#/hrm', 'HR', 'hrm', 'hrm'], ['#/butchery', 'Butchery', 'inventory', 'butchery'], ['#/bar', 'Bar', 'inventory', 'bar'], ['#/reports', 'Reports', 'reports'], ['#/settings', 'Settings', 'settings']
 ];
 
 function shell(html) {
@@ -45,7 +60,7 @@ function shell(html) {
   $('#app').innerHTML = `
   <div class="topbar">
     <a class="brand" href="#/">${state.logo ? `<span class="brand-logo"><img src="${state.logo}" alt=""></span>` : '<span class="home-ico">▦</span>'} ${esc(state.company.name || 'Maluti ERP')}</a>
-    <nav>${NAV.filter(n => can(n[2]) && (n[2] !== 'hrm' || (state.hrm && state.hrm.enabled)) && (n[0] !== '#/butchery' || (state.butchery && state.butchery.enabled))).map(n => `<a href="${n[0]}" class="${h === n[0].split('?')[0] ? 'active' : ''}">${n[1]}</a>`).join('')}</nav>
+    <nav>${NAV.filter(n => can(n[2]) && (!n[3] || hasMod(n[3])) && (n[2] !== 'hrm' || (state.hrm && state.hrm.enabled)) && (n[0] !== '#/butchery' || (state.butchery && state.butchery.enabled))).map(n => `<a href="${n[0]}" class="${h === n[0].split('?')[0] ? 'active' : ''}">${n[1]}</a>`).join('')}</nav>
     <div class="user"><span>${esc(state.user.name)}</span><div class="avatar" title="${esc(state.user.role)}">${initials}</div>
       <button class="icon-btn" style="color:#fff" id="logout" title="Log out">⏻</button></div>
   </div>
@@ -60,7 +75,7 @@ async function logout() {
 }
 
 function home(view) {
-  const apps = APPS.filter(a => can(a.perm) && (!a.hrm || (state.hrm && state.hrm.enabled) || can('settings')) && (!a.butchery || (state.butchery && state.butchery.enabled) || can('settings')));
+  const apps = APPS.filter(a => can(a.perm) && (!a.mod || hasMod(a.mod)) && (!a.hrm || (state.hrm && state.hrm.enabled) || can('settings')) && (!a.butchery || (state.butchery && state.butchery.enabled) || can('settings')));
   view.innerHTML = `<div class="home"><h1>Welcome, ${esc(state.user.name.split(' ')[0])}</h1>
     <div class="sub">${esc(state.company.name || '')} · ${new Date().toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div>
     <div id="guideBanner"></div>
@@ -89,7 +104,9 @@ async function loginScreen() {
         <form id="lf"><label class="field"><span>Username</span><input name="username" autocomplete="username" required></label>
         <label class="field" style="margin-top:10px"><span>Password</span><input name="password" type="password" autocomplete="current-password" required></label>
         <button class="btn btn-primary btn-block btn-lg" style="margin-top:16px">Sign in</button></form>`}
+      ${users.length ? '<button class="btn btn-block" id="clockBtn" style="margin-top:16px">🕐 Clock in / out (start or end your shift)</button>' : ''}
     </div></div>`;
+    const cb = $('#clockBtn'); if (cb) cb.onclick = () => { document.onkeydown = null; att.clockDialog(users); };
     $$('[data-m]').forEach(a => a.onclick = () => { mode = a.dataset.m; render(); });
     $$('[data-u]').forEach(a => a.onclick = () => { sel = Number(a.dataset.u); pin = ''; render(); });
     $$('[data-k]').forEach(b => b.onclick = () => keyPress(b.dataset.k));
@@ -153,14 +170,13 @@ async function dbScreen() {
 }
 
 async function setupScreen() {
+  const types = await fetch('/api/business-types').then(r => r.json()).catch(() => [{ key: 'retail', name: 'Retail shop', icon: '🛍️', desc: '' }]);
   $('#app').innerHTML = `<div class="auth"><div class="auth-card wide">
     <div class="logo">M</div><h1>Set up your business</h1><div class="sub">This runs once. You can change everything later in Settings. The yellow notes under each box explain what to enter.</div>
     <form id="sf">
       <h4 style="margin:6px 0 6px">What kind of business is this?</h4>
-      <div class="biz-types">${[['retail', '🛍️', 'Retail shop', 'Supermarket, spaza, hardware, pharmacy – scan and pay'], ['butchery', '🥩', 'Butchery', 'Meat sold by weight, carcasses, scale labels'],
-        ['restaurant', '🍽️', 'Restaurant / café', 'Tables, waiters, kitchen tickets'], ['bar', '🍺', 'Bar / tavern', 'Tabs, tots & glasses from bottles']]
-        .map(([k, i, n, d]) => `<label class="biz-type"><input type="checkbox" name="bt_${k}" ${k === 'retail' ? 'checked' : ''}><span class="bi">${i}</span><span><b>${n}</b><small>${d}</small></span></label>`).join('')}</div>
-      <small class="help-note" style="margin-bottom:14px">Tick everything you do – e.g. Butchery + Retail, or Restaurant + Bar. A step-by-step setup guide for exactly these will open after this page.</small>
+      <div class="biz-types">${types.map(t => `<label class="biz-type"><input type="checkbox" name="bt_${t.key}" ${t.key === 'retail' ? 'checked' : ''}><span class="bi">${t.icon}</span><span><b>${esc(t.name)}</b><small>${esc(t.desc)}</small></span></label>`).join('')}</div>
+      <small class="help-note" style="margin-bottom:14px">Tick everything you do – e.g. Butchery + Retail, Lodge + Bar, or Wholesale with branches. Only the apps these need are switched on (change them later under Settings → Business & modules). A step-by-step setup guide for exactly these will open after this page.</small>
       <h4 style="margin:6px 0 10px">Company</h4>
       ${formHtml([
         { key: 'name', label: 'Business name', required: true }, { key: 'phone', label: 'Phone' },
@@ -193,7 +209,7 @@ async function setupScreen() {
       const r = await POST('/setup', {
         company: { name: v.name, phone: v.phone, address: v.address, email: v.email, tax_number: v.tax_number, currency_code: v.currency_code, currency_symbol: v.currency_symbol, vat_rate: Number(v.vat_rate), receipt_footer: v.receipt_footer },
         admin: { name: v.a_name, username: v.a_username, password: v.a_password, pin: v.a_pin || undefined }, demo: f.demo.checked,
-        business_types: ['retail', 'butchery', 'restaurant', 'bar'].filter(k => f['bt_' + k].checked)
+        business_types: types.map(t => t.key).filter(k => f['bt_' + k] && f['bt_' + k].checked)
       });
       setToken(r.token);
       if (logoData) await PUT('/settings-logo', { data_url: logoData }).catch(err);
@@ -227,6 +243,19 @@ const ROUTES = {
   '#/payrun': hr.payrun,
   '#/butchery': bu.butchery,
   '#/guide': guide.guidePage,
+  '#/quotes': salesm.quotes,
+  '#/quote': salesm.quoteForm,
+  '#/promotions': salesm.promotions,
+  '#/bank': fin.bank,
+  '#/claims': fin.claims,
+  '#/approvals': fin.approvals,
+  '#/attendance': att.attendance,
+  '#/locations': locm.locations,
+  '#/transfers': locm.transfers,
+  '#/transfer': locm.transferForm,
+  '#/mrp': mrpm.mrp,
+  '#/bom': mrpm.bomForm,
+  '#/wo': mrpm.woForm,
   '#/bar': barm.bar
 };
 
@@ -248,6 +277,8 @@ export async function route() {
   }
   state.hrm = can('hrm') ? await GET('/hrm/status').catch(() => null) : null;
   state.butchery = await GET('/butchery/status').catch(() => null);
+  state.biz = await GET('/business').catch(() => null);
+  state.locations = null;
   if (seq !== routeSeq) return; // a newer navigation started while we were loading
   const [path] = location.hash.split('?');
   if (path === '#/login') { location.hash = '#/'; return; }

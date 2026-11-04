@@ -28,6 +28,9 @@ async function start({ port = 8069, host = '0.0.0.0', dbConfig, configStore, emb
   });
 
   app.use('/api', admin.pub);
+  app.use('/api', require('./routes/attendance').pub);
+  // list of business types for the first-run setup screen (no login yet)
+  app.get('/api/business-types', (req, res) => res.json(require('./services/modules').TYPES.map(({ key, name, icon, desc }) => ({ key, name, icon, desc }))));
   app.use('/api', (req, res, next) => db.isConnected() ? next() : next(new HttpError(503, 'Database not configured')));
   app.use('/api', auth.requireAuth);
   app.use('/api', admin.priv);
@@ -43,6 +46,11 @@ async function start({ port = 8069, host = '0.0.0.0', dbConfig, configStore, emb
   app.use('/api/hrm', require('./routes/hrm'));
   app.use('/api/butchery', require('./routes/butchery'));
   app.use('/api/bar', require('./routes/bar'));
+  app.use('/api', require('./routes/sales'));
+  app.use('/api', require('./routes/finance').router);
+  app.use('/api', require('./routes/attendance').router);
+  app.use('/api', require('./routes/locations'));
+  app.use('/api', require('./routes/mrp'));
   app.use('/api', require('./routes/master'));
   app.use('/api', require('./routes/business'));
 
@@ -67,6 +75,7 @@ async function start({ port = 8069, host = '0.0.0.0', dbConfig, configStore, emb
     try {
       await db.connect(dbConfig);
       await db.migrate();
+      await require('./services/stock').syncLocations(db).catch(e => console.error('[stock] location sync:', e.message));
       await mailer.schedule();
       console.log(`[db] connected to ${dbConfig.host}/${dbConfig.database}`);
     } catch (e) {

@@ -64,7 +64,8 @@ export const HELP = {
   },
   till: {
     name: 'Name of the till / computer, e.g. "Front counter" or "Bar 1". Each till has its own cashier sessions.',
-    mode: 'Retail: scan and pay. Restaurant: tables, floors and kitchen tickets. Bar: open tabs. Butchery tills use Retail.'
+    mode: 'Retail: scan and pay. Restaurant: tables, floors and kitchen tickets. Bar: open tabs. Butchery tills use Retail.',
+    location_id: 'The branch this till is in. Sales here take stock from that branch and count towards its profit. Blank = the default location.'
   },
   floor: {
     name: 'An area of the restaurant, e.g. "Inside", "Patio", "VIP".',
@@ -82,6 +83,7 @@ export const HELP = {
     sort_order: 'Order of the category buttons on the till.'
   },
   user: {
+    location_id: 'Home branch of this person. Purchase orders and invoices they create are booked to this branch, and they receive transfers sent to it.',
     name: 'Staff member\'s full name – shown on receipts, sessions and reports.',
     username: 'Login name, no spaces, e.g. "thabo".',
     email: 'Optional – for sending them reports.',
@@ -192,6 +194,7 @@ export const HELP = {
     mobile_money_number: 'Number for salary paid by M-Pesa or EcoCash.',
     paye_applies: 'Untick only for people exempt from PAYE (e.g. some interns) – you remain responsible for compliance.',
     emergency_contact: 'Name and number of someone to call in an emergency.',
+    user_id: 'The till login this employee uses. Links their clock-ins to payroll so overtime can be paid.',
     notes: 'Private HR notes.'
   },
   payitem: {
@@ -207,7 +210,106 @@ export const HELP = {
     days_per_year: 'Days each employee gets per year. 0 = not tracked.',
     paid: 'Paid leave does not reduce salary; unpaid leave is deducted in payroll.'
   },
-  department: { name: 'e.g. Butchery, Front shop, Kitchen, Admin.' }
+  quote: {
+    partner_id: 'Who the quotation is for. Add new customers under Contacts first.',
+    customer_ref: 'Their order or requisition number – printed on the order and invoice so they can match it.',
+    order_date: 'Date of the quotation.',
+    valid_until: 'Prices are guaranteed until this date. After it the quotation shows as expired.',
+    delivery_date: 'When you will deliver or when the event is (weddings, funerals, functions).',
+    notes: 'Short note printed on the document, e.g. "Delivery to Mafeteng included".',
+    terms: 'Payment and delivery terms printed at the bottom, e.g. deposit, validity, delivery.'
+  },
+  rule: {
+    name: 'What staff and customers see on the till slip, e.g. "Happy hour", "Meat Monday", "Wholesale price".',
+    kind: '% off, an amount off each item, a special price (incl. VAT), or multi-buy such as "buy 3, 1 free".',
+    value: '% off: the percentage. Amount off: maloti off each item. Special price: the new shelf price incl. VAT.',
+    min_qty: 'Only applies when at least this many are bought (e.g. bulk price from 10). For multi-buy: how many make up the deal (3 in "3 for 2").',
+    free_qty: 'Multi-buy only: how many of those are free (1 in "3 for 2").',
+    applies_to: 'One product, a whole category (e.g. all Beers), or everything in the shop.',
+    product_id: 'The product on promotion.', category_id: 'Every product in this category gets the deal.',
+    customer_scope: 'Everyone, only customers with a tag (e.g. wholesale, staff, vip – set tags in Contacts), or one specific customer.',
+    partner_tag: 'Customers with this tag in Contacts get the deal, e.g. wholesale.',
+    partner_id: 'Only this customer gets the deal – choose the customer on the till.',
+    time_from: 'Happy hour start. Leave both times empty for all day.', time_to: 'Happy hour end (can pass midnight, e.g. 22:00 → 02:00).',
+    date_from: 'First day of the promotion (blank = from now).', date_to: 'Last day (blank = no end).',
+    on_pos: 'Apply automatically at the till.', on_invoice: 'Apply automatically on quotations and orders.',
+    active: 'Untick to pause the promotion without deleting it.'
+  },
+  statement: {
+    account_code: 'Which account the statement is for: your bank account, the M-Pesa/EcoCash merchant wallet, card settlements, or the cash drawer.',
+    name: 'A name to find it again, e.g. "SLB current – October 2026".',
+    opening_balance: 'Balance at the start of the statement (optional – for checking).',
+    closing_balance: 'Balance at the end of the statement. When everything is matched, the books should show the same.',
+    partner_id: 'For customer payments and supplier payments: who paid or was paid.',
+    description: 'What appears in the ledger for this entry.'
+  },
+  claim: {
+    description: 'What was bought and why, e.g. "Taxi to bank with takings", "Cleaning materials".',
+    amount: 'Total on the slip including VAT.',
+    claim_date: 'Date printed on the slip.',
+    account_code: 'Expense category for the books – fuel, transport, repairs, airtime, general.',
+    tax_rate: '15 if the slip is a tax invoice showing VAT from a VAT-registered supplier; otherwise 0.',
+    supplier: 'Where it was bought.',
+    paid_by: 'Your own money: the shop pays you back after approval. Shop money: petty cash or the business card was used.',
+    company_method_id: 'Which of the shop\'s money paid – cash drawer, bank card, M-Pesa…'
+  },
+  approvals: { po_limit: 'Staff can still create bigger orders, but a manager must approve them before goods are received. 0 switches this off.' },
+  attendance: {
+    user_id: 'The staff member whose shift this is.',
+    check_in: 'Date and time the shift started.', check_out: 'Date and time it ended. Leave empty if they are still at work.',
+    note: 'Why it was added or changed – kept for the record.',
+    weekly_hours: 'Normal working hours per week before overtime. Lesotho Labour Code: 45.',
+    daily_hours: 'Normal hours per day before overtime (9 for a 5-day week, 8 for a 6-day week).',
+    overtime_rate: 'Overtime pay as a multiple of the normal hourly rate (Labour Code: at least 1.25).',
+    max_shift_hours: 'If someone forgets to clock out, the shift is closed after this many hours and flagged for correction.'
+  },
+  department: { name: 'e.g. Butchery, Front shop, Kitchen, Admin.' },
+  bom: {
+    product_id: 'The finished product this recipe makes. It must be a stocked product so made goods are counted.',
+    name: 'e.g. "Standard 50-loaf mix" or "Version 2". Keep the old one when a recipe changes – archive it instead of deleting.',
+    output_qty: 'How much one batch makes, in the finished product\'s unit – e.g. 50 loaves, 1 000 bricks, 20 kg of sausage.',
+    code: 'Your own reference, e.g. a drawing or recipe number.',
+    labour_cost: 'Wages for one batch: people × hours × hourly rate. Moved from expenses into the stock value when the batch is finished.',
+    overhead_cost: 'Electricity, gas, machine wear and packaging not listed as components – an estimate per batch.',
+    minutes: 'How long one batch takes – used for planning.',
+    shelf_life_days: 'Fills the best-before date of each batch automatically. Leave blank for goods that do not expire.',
+    instructions: 'Method, mixing times, oven temperature, safety notes – printed on the job card.'
+  },
+  wo: {
+    bom_id: 'The product and recipe to make. Component quantities are scaled to the quantity below.',
+    qty: 'How much to make. Materials needed = recipe quantity × (this ÷ batch size) + expected waste.',
+    planned_date: 'When production should happen – the open list is sorted by this date.',
+    location_id: 'Where it is made: materials are taken from, and finished goods go into, this location.',
+    notes: 'Customer order, special instructions, machine to use…',
+    qty_produced: 'Good units that can be sold. They go into stock now.',
+    qty_rejected: 'Spoilt or failed units. Their share of the cost is written off as production rejects.',
+    batch_no: 'Printed on labels for traceability. Leave blank to number it automatically.',
+    expiry_date: 'Best-before date. Filled from the recipe\'s shelf life when left blank.',
+    qc_status: 'Result of the quality check. "Failed" means nothing may be put into stock – record everything as rejected.',
+    qc_notes: 'What was checked: weight, colour, strength, taste, measurements…',
+    labour_cost: 'Actual wages for this run (planned amount filled in).',
+    overhead_cost: 'Actual overhead for this run (planned amount filled in).'
+  },
+  location: {
+    name: 'How staff know this place, e.g. "Maseru main shop", "TY branch", "Ha Hoohlo warehouse", "Van 1 (A 1234)".',
+    code: 'Short code printed on transfers and reports, e.g. MSU, TY, WH1. Letters and numbers only; made from the name if left blank.',
+    kind: 'Shop / branch = sells to customers. Warehouse = store room that supplies shops. Van = mobile stock for deliveries or route sales. Farm / site = a farm store or a building site that uses materials.',
+    address: 'Physical address – printed on transfer notes so drivers know where to deliver.',
+    phone: 'Phone number of the person in charge here.',
+    sellable: 'Untick for store rooms that never sell directly; their stock is then not offered at tills.',
+    is_default: 'Stock is booked here when no other place is chosen (opening stock, purchases without a branch, older tills). Exactly one location is the default.',
+    active: 'Untick to close a location. Only possible once it has no stock left and no tills linked to it.'
+  },
+  transfer: {
+    from_location_id: 'Where the goods leave from. The stock goes down here as soon as you click Send.',
+    to_location_id: 'Where the goods are going. The stock only goes up here once the receiving branch clicks Receive.',
+    notes: 'Driver, vehicle registration or reason – printed on the transfer note.',
+    allow_negative: 'Send even if the system thinks there is not enough stock at the source (for example when stock was not counted in yet). The source goes negative until it is corrected.'
+  },
+  locstock: {
+    min_qty: 'Re-order level for this branch: when stock here falls below it, it shows as "low" so a transfer or purchase can be made.',
+    bin: 'Shelf, aisle or bin where it is kept at this location, e.g. "A3" – printed on transfer notes to speed up picking.'
+  },
 };
 
 // Plugin settings – keyed by config key (shared by the plugins that use the same key)

@@ -5,8 +5,12 @@ const stock = require('./stock');
 const { can } = require('../auth');
 
 /** Turn raw lines from the client into fully priced lines (server is the source of truth for prices). */
-async function buildLines(conn, rawLines, user) {
+async function buildLines(conn, rawLines, user, ctx = {}) {
   const out = [];
+  const pricing = require('./pricing');
+  const rules = await pricing.activeRules(conn);
+  const partner = ctx.partner_id ? await conn.one('SELECT id, tags FROM partners WHERE id = ?', [ctx.partner_id]) : null;
+  const when = new Date();
   for (const raw of rawLines || []) {
     const qty = Number(raw.qty);
     if (!qty || !isFinite(qty)) continue;
@@ -25,7 +29,7 @@ async function buildLines(conn, rawLines, user) {
       line = {
         id: raw.id || null, product_id: p.id, name: p.name, qty, unit_price,
         tax_rate: Number(p.tax_rate || 0), price_includes_tax: p.price_includes_tax == null ? 1 : p.price_includes_tax,
-        unit_cost: Number(p.cost), station: p.station || 'none', type: p.type, uom: p.uom
+        unit_cost: Number(p.cost), station: p.station || 'none', type: p.type, uom: p.uom, category_id: p.category_id
       };
       // bar measure (tot / glass) poured from a bottle: costed as its share of the bottle
       if (p.pour_from_id && Number(p.pour_ml) > 0) {
@@ -39,9 +43,17 @@ async function buildLines(conn, rawLines, user) {
         tax_rate: Number(raw.tax_rate || 0), price_includes_tax: 1, unit_cost: 0, station: 'none', type: 'service' };
     }
     const disc = Number(raw.discount_pct || 0);
-    if (disc && !can(user, 'pos.discount')) throw new HttpError(403, 'Discounts need manager permission');
-    if (disc < 0 || disc > 100) throw bad('Discount must be 0–100%');
-    line.discount_pct = disc;
+    // promotions / price rules apply automatically; a different (manual) discount needs permission
+    const auto = line.product_id && rules.length && (raw.label_total === undefined || raw.label_total === null)
+      ? pricing.best(rules, { product: { id: line.product_id, category_id: line.category_id, price: line.unit_price }, price: line.unit_price, qty, partner, when, channel: 'pos' })
+      : { pct: 0, rule: null };
+    if (auto.pct > 0 && (disc === 0 || Math.abs(disc - auto.pct) < 0.0015)) {
+      line.discount_pct = auto.pct; line.rule_id = auto.rule.id; line.rule_name = auto.rule.name;
+    } else {
+      if (disc && !can(user, 'pos.discount')) throw new HttpError(403, 'Discounts need manager permission');
+      if (disc < 0 || disc > 100) throw bad('Discount must be 0–100%');
+      line.discount_pct = disc;
+    }
     line.note = raw.note ? String(raw.note).slice(0, 250) : null;
     const a = lineAmounts(line);
     line.net_amount = a.net; line.tax_amount = a.tax; line.line_total = a.total;
@@ -78,21 +90,21 @@ async function insertLines(conn, orderId, lines) {
   for (const l of lines) {
     await conn.query(
       `INSERT INTO order_lines (order_id, product_id, name, qty, unit_price, discount_pct, tax_rate, price_includes_tax,
-        net_amount, tax_amount, line_total, unit_cost, note, station, kitchen_status, vas_transaction_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        net_amount, tax_amount, line_total, unit_cost, note, station, kitchen_status, vas_transaction_id, rule_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [orderId, l.product_id, l.name, l.qty, l.unit_price, l.discount_pct || 0, l.tax_rate, l.price_includes_tax,
         l.net_amount, l.tax_amount, l.line_total, l.unit_cost, l.note, l.station || 'none', l.kitchen_status || 'pending',
-        l.vas_transaction_id || null]);
+        l.vas_transaction_id || null, l.rule_id || null]);
   }
 }
 
 async function getOrder(conn, id) {
   const o = await conn.one(
-    `SELECT o.*, u.name user_name, t.name table_name, p.name partner_name, pt.name terminal_name
+    `SELECT o.*, u.name user_name, t.name table_name, p.name partner_name, p.tags partner_tags, pt.name terminal_name
      FROM orders o LEFT JOIN users u ON u.id = o.user_id LEFT JOIN restaurant_tables t ON t.id = o.table_id
      LEFT JOIN partners p ON p.id = o.partner_id LEFT JOIN pos_terminals pt ON pt.id = o.terminal_id WHERE o.id = ?`, [id]);
   if (!o) throw notFound('Order');
-  o.lines = await conn.query('SELECT * FROM order_lines WHERE order_id = ? ORDER BY id', [id]);
+  o.lines = await conn.query('SELECT l.*, r.name rule_name FROM order_lines l LEFT JOIN price_rules r ON r.id = l.rule_id WHERE l.order_id = ? ORDER BY l.id', [id]);
   o.payments = await conn.query(
     `SELECT p.*, m.name method_name, m.kind FROM payments p JOIN payment_methods m ON m.id = p.method_id WHERE p.order_id = ? ORDER BY p.id`, [id]);
   o.vas = await conn.query('SELECT * FROM vas_transactions WHERE order_id = ?', [id]);
@@ -107,6 +119,11 @@ async function getOrder(conn, id) {
   return o;
 }
 
+async function terminalLocation(conn, terminalId) {
+  const t = terminalId ? await conn.one('SELECT location_id FROM pos_terminals WHERE id = ?', [terminalId]) : null;
+  return (t && t.location_id) || null;
+}
+
 async function requireOpenSession(conn, sessionId) {
   const s = await conn.one(`SELECT * FROM pos_sessions WHERE id = ? AND status = 'open'`, [sessionId]);
   if (!s) throw bad('No open cashier session. Open a session first.');
@@ -115,7 +132,9 @@ async function requireOpenSession(conn, sessionId) {
 
 /** Create or update an open (unpaid) order — used by restaurant tables and bar tabs. */
 async function saveOrder(conn, user, body, orderId = null) {
-  const lines = await buildLines(conn, body.lines, user);
+  let partnerId = body.partner_id;
+  if (partnerId === undefined && orderId) partnerId = (await conn.one('SELECT partner_id FROM orders WHERE id = ?', [orderId]) || {}).partner_id;
+  const lines = await buildLines(conn, body.lines, user, { partner_id: partnerId });
   if (orderId) {
     const o = await conn.one('SELECT * FROM orders WHERE id = ? FOR UPDATE', [orderId]);
     if (!o) throw notFound('Order');
@@ -217,18 +236,19 @@ async function payOrder(conn, user, orderId, { payments, partner_id }) {
       [orderId, o.partner_id, p.m.id, applied, p.reference || null, p.phone || null, sessionId, user.id]);
   }
 
-  // Stock & COGS
+  // Stock & COGS (from the terminal's branch / location)
+  const loc = await terminalLocation(conn, o.terminal_id);
   const number = `POS/${new Date().getFullYear()}/${pad(orderId)}`;
   let cogs = 0;
   for (const l of lines) {
     const pourQty = pourBottles(l);
     if (pourQty !== null) {
-      const cost = await stock.move(conn, { product_id: l.pour_from_id, qty: -pourQty, move_type: 'sale', reference: number, user_id: user.id, reason: `${l.qty} × ${Number(l.pour_ml)} ml` });
+      const cost = await stock.move(conn, { product_id: l.pour_from_id, qty: -pourQty, move_type: 'sale', reference: number, user_id: user.id, location_id: loc, reason: `${l.qty} × ${Number(l.pour_ml)} ml` });
       const uc = cost * Number(l.pour_ml) / Number(l.pour_bottle_ml);
       cogs += Number(l.qty) * uc;
       await conn.query('UPDATE order_lines SET unit_cost = ? WHERE id = ?', [uc, l.id]);
     } else if (l.product_id && l.type === 'stock') {
-      const cost = await stock.move(conn, { product_id: l.product_id, qty: -Number(l.qty), move_type: 'sale', reference: number, user_id: user.id });
+      const cost = await stock.move(conn, { product_id: l.product_id, qty: -Number(l.qty), move_type: 'sale', reference: number, user_id: user.id, location_id: loc });
       cogs += Number(l.qty) * cost;
       await conn.query('UPDATE order_lines SET unit_cost = ? WHERE id = ?', [cost, l.id]);
     } else if (l.product_id && l.type === 'consumable') {
@@ -249,7 +269,7 @@ async function payOrder(conn, user, orderId, { payments, partner_id }) {
   jl.push({ code: '4000', credit: round2(o.subtotal), description: 'POS sales' });
   jl.push({ code: '2100', credit: round2(o.tax_total), description: 'VAT on sales' });
   if (cogs) { jl.push({ code: '5000', debit: cogs }); jl.push({ code: '1200', credit: cogs }); }
-  await accounting.post(conn, { reference: number, memo: `POS order ${number}`, source_type: 'pos_order', source_id: orderId, user_id: user.id, lines: jl });
+  await accounting.post(conn, { reference: number, memo: `POS order ${number}`, source_type: 'pos_order', source_id: orderId, user_id: user.id, location_id: loc, lines: jl });
 
   return { order_id: orderId, number, change };
 }
@@ -291,14 +311,15 @@ async function refundOrder(conn, user, orderId, { lines: reqLines, method_id, re
   const number = `RF/${new Date().getFullYear()}/${pad(rid)}`;
   await insertLines(conn, rid, refundLines);
   let cost = 0;
+  const loc = await terminalLocation(conn, o.terminal_id);
   for (const l of refundLines) {
     const pourQty = pourBottles(l);
     if (pourQty !== null) {
       const bc = Number(l.unit_cost) * Number(l.pour_bottle_ml) / Number(l.pour_ml);
-      await stock.move(conn, { product_id: l.pour_from_id, qty: -pourQty, unit_cost: bc, move_type: 'refund', reference: number, user_id: user.id });
+      await stock.move(conn, { product_id: l.pour_from_id, qty: -pourQty, unit_cost: bc, move_type: 'refund', reference: number, user_id: user.id, location_id: loc });
       cost += -l.qty * Number(l.unit_cost);
     } else if (l.product_id && l.type === 'stock') {
-      await stock.move(conn, { product_id: l.product_id, qty: -l.qty, unit_cost: l.unit_cost, move_type: 'refund', reference: number, user_id: user.id });
+      await stock.move(conn, { product_id: l.product_id, qty: -l.qty, unit_cost: l.unit_cost, move_type: 'refund', reference: number, user_id: user.id, location_id: loc });
       cost += -l.qty * Number(l.unit_cost);
     }
   }
@@ -311,7 +332,7 @@ async function refundOrder(conn, user, orderId, { lines: reqLines, method_id, re
     `SELECT COALESCE(SUM(-total),0) refunded FROM orders WHERE refund_of = ?`, [orderId])).refunded >= Number(o.total) - 0.009;
   if (fully) await conn.query(`UPDATE orders SET status = 'refunded' WHERE id = ?`, [orderId]);
   await accounting.post(conn, {
-    reference: number, memo: `Refund of ${o.number}`, source_type: 'pos_refund', source_id: rid, user_id: user.id,
+    reference: number, memo: `Refund of ${o.number}`, source_type: 'pos_refund', source_id: rid, user_id: user.id, location_id: loc,
     lines: [
       { code: '4900', debit: -t.subtotal }, { code: '2100', debit: -t.tax_total },
       { code: method.account_code, credit: -t.total, partner_id: method.kind === 'account' ? o.partner_id : null },

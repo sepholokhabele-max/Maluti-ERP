@@ -79,6 +79,7 @@ async function seedDemo(c, vatId) {
       [sku, bc, name, ids[cat], type, price, cost, vatId, type === 'stock' ? 48 : 0, type === 'stock' ? 12 : 0]);
     if (type === 'stock') await c.query(`INSERT INTO stock_moves (product_id, qty, unit_cost, move_type, reference) VALUES (?, 48, ?, 'opening', 'Opening stock')`, [r.insertId, cost]);
   }
+  await require('./stock').syncLocations(c);
   // Opening balances so books balance: inventory & cash funded by equity
   const inv = await c.one(`SELECT COALESCE(SUM(stock_qty*cost),0) v FROM products WHERE type='stock'`);
   const je = await c.query(`INSERT INTO journal_entries (entry_date, reference, memo, source_type) VALUES (CURDATE(), 'OPENING', 'Opening balances (demo)', 'opening')`);

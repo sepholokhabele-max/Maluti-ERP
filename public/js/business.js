@@ -1,6 +1,7 @@
 // Purchasing, invoicing, accounting and reports
 import { attachScale } from './scale.js';
-import { state, GET, POST, PUT, esc, $, $$, toast, err, can, money, qty, modal, confirmBox, formHtml, readForm, tableHtml, badge, page, dt, d, today, plusDays, query, round2, printHtml } from './core.js';
+import { multiLocation, locationOptions } from './core.js';
+import { state, GET, POST, PUT, esc, $, $$, toast, err, can, money, qty, modal, confirmBox, promptBox, formHtml, readForm, tableHtml, badge, page, dt, d, today, plusDays, query, round2, printHtml } from './core.js';
 
 // ---------------------------------------------------------------- shared line editor
 function lineEditor(root, { products, lines, priceKey, defaultTax, readOnly, onChange }) {
@@ -53,7 +54,9 @@ export async function purchases(view) {
 export async function purchaseForm(view, [id]) {
   const [suppliers, products] = await Promise.all([GET('/partners?is_supplier=1'), GET('/products')]);
   const isNew = id === 'new';
-  const po = isNew ? { supplier_id: suppliers[0] && suppliers[0].id, order_date: today(), status: 'draft', lines: [] } : await GET('/purchases/' + id);
+  const po = isNew ? { supplier_id: suppliers[0] && suppliers[0].id, order_date: today(), status: 'draft', lines: [], location_id: state.user.location_id || '' } : await GET('/purchases/' + id);
+  const locF = await multiLocation() ? [{ key: 'location_id', label: 'Deliver to (branch / warehouse)', type: 'select', numeric: true, options: await locationOptions('Default location'),
+    help: 'Where the goods will be received. Stock goes up at this location when you click Receive goods.' }] : [];
   const dv = Number(state.company.default_vat ?? 15);
   const lines = po.lines.map(l => ({ ...l }));
   if (isNew) lines.push({ product_id: null, description: '', qty: 1, unit_cost: 0, tax_rate: dv });
@@ -63,21 +66,24 @@ export async function purchaseForm(view, [id]) {
   if (!isNew && draft) acts.push('<button class="btn btn-ok" id="confirm">Confirm order</button>');
   if (['confirmed', 'partial'].includes(po.status)) acts.push('<button class="btn btn-ok" id="receive">Receive goods</button>');
   if (!isNew && !po.billed && ['confirmed', 'partial', 'received'].includes(po.status)) acts.push('<button class="btn" id="bill">Create bill</button>');
-  if (!isNew && ['draft', 'confirmed'].includes(po.status)) acts.push('<button class="btn btn-danger" id="cancel">Cancel</button>');
+  if (po.status === 'to_approve' && can('purchase.approve')) acts.push('<button class="btn btn-ok" id="approve">✓ Approve</button><button class="btn" id="sendback">Send back</button>');
+  if (!isNew && ['draft', 'to_approve', 'confirmed'].includes(po.status)) acts.push('<button class="btn btn-danger" id="cancel">Cancel</button>');
   if (!isNew) acts.push('<button class="btn" id="print">Print</button>');
   view.innerHTML = page(isNew ? 'New purchase order' : `${po.number}`, acts.join(''), `
-    <div class="card"><div class="row" style="margin-bottom:12px">${!isNew ? badge(po.status) : ''}${po.bills && po.bills.length ? po.bills.map(b => `<a href="#/invoice/${b.id}" class="btn btn-sm">🧾 ${esc(b.number || 'Draft bill')} ${badge(b.status)}</a>`).join('') : ''}</div>
+    <div class="card"><div class="row" style="margin-bottom:12px">${!isNew ? (po.status === 'to_approve' ? badge('waiting for approval', 'draft') : badge(po.status)) : ''}${po.bills && po.bills.length ? po.bills.map(b => `<a href="#/invoice/${b.id}" class="btn btn-sm">🧾 ${esc(b.number || 'Draft bill')} ${badge(b.status)}</a>`).join('') : ''}</div>
       <div id="hdr">${formHtml([
         { key: 'supplier_id', label: 'Supplier', type: 'select', options: suppliers.map(s => ({ value: s.id, label: s.name })) },
-        { key: 'order_date', label: 'Order date', type: 'date' }, { key: 'expected_date', label: 'Expected delivery', type: 'date' }, { key: 'notes', label: 'Notes' }
+        { key: 'order_date', label: 'Order date', type: 'date' }, { key: 'expected_date', label: 'Expected delivery', type: 'date' }, { key: 'notes', label: 'Notes' }, ...locF
       ], { ...po, order_date: d(po.order_date), expected_date: d(po.expected_date) })}</div>
       <h3 style="margin:16px 0 8px">Lines</h3><div id="le"></div></div>`, { back: '#/purchases' });
   if (!draft) $$('#hdr input, #hdr select').forEach(i => i.disabled = true);
   lineEditor($('#le'), { products, lines, priceKey: 'unit_cost', defaultTax: dv, readOnly: !draft });
-  const body = () => ({ ...readForm($('#hdr'), [{ key: 'supplier_id', type: 'select', numeric: true }, { key: 'order_date' }, { key: 'expected_date' }, { key: 'notes' }]), lines });
+  const body = () => ({ ...readForm($('#hdr'), [{ key: 'supplier_id', type: 'select', numeric: true }, { key: 'order_date' }, { key: 'expected_date' }, { key: 'notes' }, ...locF]), lines });
   const on = (sel, fn) => { const el = $(sel); if (el) el.onclick = async () => { el.disabled = true; try { await fn(); } catch (e) { err(e); } el.disabled = false; }; };
   on('#save', async () => { const r = isNew ? await POST('/purchases', body()) : await PUT('/purchases/' + id, body()); toast('Saved'); location.hash = '#/purchase/' + r.id; if (!isNew) purchaseForm(view, [id]); });
-  on('#confirm', async () => { await PUT('/purchases/' + id, body()); await POST(`/purchases/${id}/confirm`); toast('Order confirmed'); purchaseForm(view, [id]); });
+  on('#confirm', async () => { await PUT('/purchases/' + id, body()); const x = await POST(`/purchases/${id}/confirm`); toast(x.message || 'Order confirmed', x.status === 'to_approve' ? 'err' : 'ok', 6000); purchaseForm(view, [id]); });
+  on('#approve', async () => { await POST(`/purchases/${id}/approve`); toast('Approved – the order can now be received'); purchaseForm(view, [id]); });
+  on('#sendback', async () => { const why = await promptBox('Why is it sent back?'); if (why === null) return; await POST(`/purchases/${id}/reject`, { reason: why }); purchaseForm(view, [id]); });
   on('#cancel', async () => { if (await confirmBox('Cancel this order?', { danger: true })) { await POST(`/purchases/${id}/cancel`); purchaseForm(view, [id]); } });
   on('#bill', async () => { const r = await POST(`/purchases/${id}/bill`); toast('Draft bill created'); location.hash = '#/invoice/' + r.id; });
   on('#print', async () => printHtml(docHtml('PURCHASE ORDER', po.number, { name: po.supplier_name, address: po.supplier_address, email: po.supplier_email, phone: po.supplier_phone }, po.order_date, po.lines.map(l => ({ ...l, unit_price: l.unit_cost })), po)));
@@ -168,18 +174,20 @@ export async function invoiceForm(view, [idq]) {
   if (!isNew && inv.status !== 'cancelled' && !Number(inv.amount_paid)) acts.push('<button class="btn btn-danger" id="cancel">Cancel</button>');
   if (!isNew) acts.push('<button class="btn" id="print">Print / PDF</button>');
   const title = isNew ? `New ${cust ? 'invoice' : 'bill'}` : `${inv.number || 'Draft ' + (cust ? 'invoice' : 'bill')}`;
+  const locF = await multiLocation() ? [{ key: 'location_id', label: 'Branch', type: 'select', numeric: true, options: await locationOptions('Default location'),
+    help: cust ? 'Stock on this invoice leaves this branch, and the sale counts towards its profit.' : 'The branch this bill belongs to (and where stock arrives when there is no purchase order).' }] : [];
   view.innerHTML = page(title, acts.join(''), `<div class="card">
     <div class="row" style="margin-bottom:12px">${!isNew ? badge(inv.status) : ''}${!isNew && !draft ? `<span class="muted">Paid ${money(inv.amount_paid)} of ${money(inv.total)}</span>` : ''}</div>
     <div id="hdr">${formHtml([
       { key: 'partner_id', label: cust ? 'Customer' : 'Supplier', type: 'select', options: partners.map(p => ({ value: p.id, label: p.name })) },
-      { key: 'invoice_date', label: 'Date', type: 'date' }, { key: 'due_date', label: 'Due date', type: 'date' }, { key: 'notes', label: 'Notes' }
-    ], { ...inv, invoice_date: d(inv.invoice_date), due_date: d(inv.due_date) })}</div>
+      { key: 'invoice_date', label: 'Date', type: 'date' }, { key: 'due_date', label: 'Due date', type: 'date' }, { key: 'notes', label: 'Notes' }, ...locF
+    ], { ...inv, invoice_date: d(inv.invoice_date), due_date: d(inv.due_date), location_id: inv.location_id ?? (isNew ? state.user.location_id || '' : '') })}</div>
     <h3 style="margin:16px 0 8px">Lines</h3><div id="le"></div>
     ${inv.payments && inv.payments.length ? `<h3 style="margin:16px 0 8px">Payments</h3>${tableHtml([{ key: 'created_at', label: 'Date', fmt: dt }, { key: 'method_name', label: 'Method' }, { key: 'reference', label: 'Reference' }, { key: 'amount', label: 'Amount', right: 1, fmt: money }], inv.payments)}` : ''}
     </div>`, { back: `#/invoices?kind=${inv.kind}` });
   if (!draft) $$('#hdr input, #hdr select').forEach(i => i.disabled = true);
   lineEditor($('#le'), { products, lines, priceKey: 'unit_price', defaultTax: dv, readOnly: !draft });
-  const body = () => ({ kind: inv.kind, ...readForm($('#hdr'), [{ key: 'partner_id', type: 'select', numeric: true }, { key: 'invoice_date' }, { key: 'due_date' }, { key: 'notes' }]), lines });
+  const body = () => ({ kind: inv.kind, ...readForm($('#hdr'), [{ key: 'partner_id', type: 'select', numeric: true }, { key: 'invoice_date' }, { key: 'due_date' }, { key: 'notes' }, ...locF]), lines });
   const on = (sel, fn) => { const el = $(sel); if (el) el.onclick = async () => { el.disabled = true; try { await fn(); } catch (e) { err(e); } el.disabled = false; }; };
   on('#save', async () => { const r = isNew ? await POST('/invoices', body()) : await PUT('/invoices/' + id, body()); toast('Saved'); if (isNew) location.hash = '#/invoice/' + r.id; else invoiceForm(view, [id]); });
   on('#post', async () => { await PUT('/invoices/' + id, body()); const r = await POST(`/invoices/${id}/post`); toast('Posted ' + r.number); invoiceForm(view, [id]); });
@@ -200,7 +208,7 @@ export async function invoiceForm(view, [idq]) {
 // ---------------------------------------------------------------- accounting
 export async function accounting(view) {
   const tab = query().tab || 'accounts';
-  view.innerHTML = page('Accounting', `<button class="btn" id="exp">＋ Record expense</button><button class="btn btn-primary" id="je">＋ Journal entry</button>`, `
+  view.innerHTML = page('Accounting', `<a class="btn" href="#/bank">🏦 Bank &amp; M-Pesa recon</a><a class="btn" href="#/claims">🧾 Expense claims</a><button class="btn" id="exp">＋ Record expense</button><button class="btn btn-primary" id="je">＋ Journal entry</button>`, `
     <div class="tabs"><a href="#/accounting?tab=accounts" class="${tab === 'accounts' ? 'active' : ''}">Chart of accounts</a><a href="#/accounting?tab=journal" class="${tab === 'journal' ? 'active' : ''}">Journal</a></div><div id="ab"></div>`);
   const ab = $('#ab');
   const accounts = await GET('/accounts');
@@ -280,10 +288,15 @@ export async function reports(view) {
     const f = $('#eodf'); f.contentDocument.open(); f.contentDocument.write(html); f.contentDocument.close();
     $('#send').onclick = async () => { try { const extra = $('#eodTo').value.split(/[,;\s]+/).filter(Boolean); const r = await POST('/email/eod', { date: from, recipients: extra.length ? extra : undefined }); toast('Sent to ' + r.recipients.join(', ')); } catch (e) { err(e); } };
   } else if (tab === 'pl') {
-    const p = await GET(`/reports/pl?from=${from}&to=${to}`);
-    rb.innerHTML = `<h3>Profit & loss · ${from} → ${to}</h3><h4 style="margin:12px 0 4px">Income</h4>${rt(p.income.map(a => [`${a.code} ${a.name}`, money(a.amount)]), ['Total income', money(p.total_income)])}
+    const loc = q.location_id || '';
+    const p = await GET(`/reports/pl?from=${from}&to=${to}${loc ? '&location_id=' + loc : ''}`);
+    const lopts = await multiLocation() ? await locationOptions('All branches') : null;
+    rb.innerHTML = `${lopts ? `<div class="row no-print" style="margin-bottom:8px"><label>Branch <select id="plLoc">${lopts.map(o => `<option value="${o.value}" ${String(o.value) === String(loc) ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}</select></label>
+      <a class="btn btn-sm" href="#/locations?tab=profit&from=${from}&to=${to}">Compare branches</a></div>` : ''}
+      <h3>Profit & loss${loc && lopts ? ' · ' + esc((lopts.find(o => String(o.value) === String(loc)) || {}).label || '') : ''} · ${from} → ${to}</h3><h4 style="margin:12px 0 4px">Income</h4>${rt(p.income.map(a => [`${a.code} ${a.name}`, money(a.amount)]), ['Total income', money(p.total_income)])}
       <h4 style="margin:16px 0 4px">Expenses</h4>${rt(p.expense.map(a => [`${a.code} ${a.name}`, money(a.amount)]), ['Total expenses', money(p.total_expense)])}
       <div class="kpi" style="margin-top:16px;max-width:320px"><div class="label">Net profit</div><div class="value" style="color:${p.net_profit < 0 ? 'var(--bad)' : 'var(--ok)'}">${money(p.net_profit)}</div></div>`;
+    if ($('#plLoc')) $('#plLoc').onchange = () => { location.hash = `#/reports?tab=pl&from=${from}&to=${to}${$('#plLoc').value ? '&location_id=' + $('#plLoc').value : ''}`; };
   } else if (tab === 'bs') {
     const b = await GET(`/reports/bs?to=${to}`);
     rb.innerHTML = `<h3>Balance sheet as of ${to}</h3><div class="cols cols-2"><div><h4 style="margin:12px 0 4px">Assets</h4>${rt(b.assets.map(a => [`${a.code} ${a.name}`, money(a.amount)]), ['Total assets', money(b.total_assets)])}</div>

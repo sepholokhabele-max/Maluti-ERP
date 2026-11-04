@@ -2,14 +2,17 @@ import { ensureLogo, imageFileToDataUrl, receiptLogoHtml, DEL, confirmBox } from
 import { state, GET, POST, PUT, esc, $, $$, toast, err, can, money, modal, formHtml, readForm, tableHtml, badge, page, dt, query } from './core.js';
 import { crudSection } from './backoffice.js';
 import { PLUGIN_HELP } from './help.js';
+import { businessTab } from './locations.js';
+import { hasMod, locationOptions } from './core.js';
 
 export async function settings(view) {
   const tab = query().tab || 'company';
-  const tabs = [['company', 'Company'], ['pos', 'POS'], ['payments', 'Payment methods'], ['taxes', 'Taxes'], ['terminals', 'Tills'], ['restaurant', 'Restaurant floors'],
+  const tabs = [['company', 'Company'], ['business', 'Business & modules'], ['pos', 'POS'], ['payments', 'Payment methods'], ['taxes', 'Taxes'], ['terminals', 'Tills'], ['restaurant', 'Restaurant floors'],
     ['users', 'Users'], ['email', 'Email & EOD reports'], ['plugins', 'Plugins (VAS / payments)'], ['hrm', 'HR & Payroll'], ['updates', 'Updates & backup'], ['logs', 'Logs']];
   view.innerHTML = page('Settings', '', `<div class="tabs">${tabs.map(([k, l]) => `<a href="#/settings?tab=${k}" class="${k === tab ? 'active' : ''}">${l}</a>`).join('')}</div><div id="sb"></div>`);
   const sb = $('#sb');
   if (tab === 'hrm') { location.hash = '#/hrm?tab=settings'; return; }
+  if (tab === 'business') return businessTab(sb);
   const s = await GET('/settings');
 
   if (tab === 'company') {
@@ -97,8 +100,11 @@ export async function settings(view) {
   }
   if (tab === 'terminals') {
     sb.innerHTML = '<div class="card"><div id="c"></div><p class="muted" style="margin-top:10px">Retail = barcode scanning & quick checkout. Restaurant = floor plan, tables, kitchen tickets. Bar = named tabs with bar tickets. Any till can also sell airtime/electricity when a VAS plugin is enabled.</p></div>';
-    crudSection($('#c'), { help: 'till', endpoint: '/terminals', title: 'Till', newLabel: 'New till', columns: [{ key: 'name', label: 'Name' }, { key: 'mode', label: 'Business type' }],
-      fields: [{ key: 'name', label: 'Name', required: true }, { key: 'mode', label: 'Business type', type: 'select', options: [{ value: 'retail', label: 'Retail store' }, { value: 'restaurant', label: 'Restaurant' }, { value: 'bar', label: 'Bar' }] }] });
+    const lo = hasMod('locations') ? await locationOptions('Default location') : null;
+    crudSection($('#c'), { help: 'till', endpoint: '/terminals', title: 'Till', newLabel: 'New till', columns: [{ key: 'name', label: 'Name' }, { key: 'mode', label: 'Business type' },
+        ...(lo ? [{ key: 'location_id', label: 'Branch', fmt: v => (lo.find(o => o.value === v) || lo[0]).label }] : [])],
+      fields: [{ key: 'name', label: 'Name', required: true }, { key: 'mode', label: 'Business type', type: 'select', options: [{ value: 'retail', label: 'Retail store' }, { value: 'restaurant', label: 'Restaurant' }, { value: 'bar', label: 'Bar' }] },
+        ...(lo ? [{ key: 'location_id', label: 'Branch', type: 'select', numeric: true, options: lo }] : [])] });
   }
   if (tab === 'restaurant') {
     const floors = await GET('/floors');
@@ -110,6 +116,7 @@ export async function settings(view) {
   }
   if (tab === 'users') {
     const roles = ['admin', 'manager', 'accountant', 'cashier', 'waiter', 'bartender', 'kitchen'];
+    const lo = hasMod('locations') ? await locationOptions('Default location') : null;
     const load = async () => {
       const users = await GET('/users');
       sb.innerHTML = `<div class="card"><div class="row" style="margin-bottom:10px"><h3 style="flex:1">Users</h3><button class="btn btn-primary" id="nu">＋ New user</button></div>
@@ -118,7 +125,8 @@ export async function settings(view) {
       const edit = u => {
         const f = [{ key: 'name', label: 'Full name', required: true }, { key: 'username', label: 'Username', required: true }, { key: 'email', label: 'Email' },
           { key: 'role', label: 'Role', type: 'select', options: roles.map(r => ({ value: r, label: r })) }, { key: 'password', label: u ? 'New password (leave blank to keep)' : 'Password', type: 'password', required: !u },
-          { key: 'pin', label: u ? 'New POS PIN (4–6 digits, blank = keep)' : 'POS PIN (4–6 digits)', type: 'password' }, ...(u ? [{ key: 'active', label: 'Active', type: 'checkbox' }] : [])];
+          { key: 'pin', label: u ? 'New POS PIN (4–6 digits, blank = keep)' : 'POS PIN (4–6 digits)', type: 'password' },
+          ...(lo ? [{ key: 'location_id', label: 'Home branch', type: 'select', numeric: true, options: lo }] : []), ...(u ? [{ key: 'active', label: 'Active', type: 'checkbox' }] : [])];
         modal({ title: u ? u.name : 'New user', size: 'lg', body: formHtml(f, u ? { ...u, password: '' } : { role: 'cashier' }, { ctx: 'user' }), actions: [{ label: 'Cancel' },
           { label: 'Save', cls: 'btn-primary', onClick: async (c, r) => { const v = readForm(r, f); if (!v.password) delete v.password; if (!v.pin) delete v.pin; if (u) await PUT('/users/' + u.id, v); else await POST('/users', v); c(); toast('Saved'); load(); } }] });
       };

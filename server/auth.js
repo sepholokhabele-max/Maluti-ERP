@@ -6,8 +6,10 @@ const { HttpError } = require('./util');
 const ROLE_PERMS = {
   admin: ['*'],
   manager: ['dashboard', 'pos', 'pos.refund', 'pos.discount', 'pos.void', 'catalog', 'inventory', 'partners', 'purchasing',
-    'invoicing', 'accounting', 'reports', 'vas', 'kitchen', 'users', 'sessions', 'crm', 'recon', 'recon.approve', 'hrm', 'payroll'],
-  accountant: ['dashboard', 'partners', 'purchasing', 'invoicing', 'accounting', 'reports', 'inventory', 'crm', 'recon', 'recon.approve', 'hrm', 'payroll'],
+    'invoicing', 'accounting', 'reports', 'vas', 'kitchen', 'users', 'sessions', 'crm', 'recon', 'recon.approve', 'hrm', 'payroll',
+    'sales', 'expenses.approve', 'purchase.approve', 'attendance'],
+  accountant: ['dashboard', 'partners', 'purchasing', 'invoicing', 'accounting', 'reports', 'inventory', 'crm', 'recon', 'recon.approve', 'hrm', 'payroll',
+    'sales', 'expenses.approve', 'attendance'],
   cashier: ['pos', 'vas'],
   waiter: ['pos'],
   bartender: ['pos', 'vas'],
@@ -40,7 +42,7 @@ async function pinLogin(userId, pin) {
 
 function publicUser(u) {
   return { id: u.id, name: u.name, username: u.username, email: u.email, role: u.role, active: u.active,
-    permissions: ROLE_PERMS[u.role] || [], has_pin: !!u.pin_hash };
+    permissions: ROLE_PERMS[u.role] || [], has_pin: !!u.pin_hash, location_id: u.location_id || null };
 }
 
 /** Express middleware: attaches req.user, rejects if not logged in */

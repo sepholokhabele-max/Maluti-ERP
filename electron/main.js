@@ -131,7 +131,7 @@ function buildMenu() {
 ipcMain.handle('maluti:update-settings', (e, s) => s ? updater.save(s) : updater.publicSettings());
 ipcMain.handle('maluti:update-check', async () => { try { return await updater.check(); } catch (err) { return { status: 'error', error: err.message }; } });
 ipcMain.handle('maluti:update-apply', async () => {
-  try { return await updater.apply(p => { if (win) win.webContents.send('maluti:update-progress', p); }, () => app.quit()); }
+  try { return await updater.apply(p => { if (win) win.webContents.send('maluti:update-progress', p); }, () => { app.quit(); setTimeout(() => app.exit(0), 4000); }); }
   catch (err) { return { error: err.message }; }
 });
 ipcMain.handle('maluti:info', () => ({ desktop: true, version: app.getVersion(), arch: process.arch, baseUrl, remote: !!store.load().remote_url, embedded_db: !!(store.load().db || {}).embedded }));

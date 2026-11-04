@@ -98,24 +98,34 @@ class Updater {
     this.state = { ...this.state, status: 'downloading', progress: 0 };
     const prog = p => { this.state.progress = p; onProgress && onProgress(p); };
     if (R.mode === 'asar') {
-      const file = path.join(this.dir, `app-${R.version}.asar`);
+      const file = path.join(this.dir, `app-${R.version}.update`); // not ".asar": Electron would treat that file as an archive
       const sha = await this.download(R.asarAsset, file, prog);
       if (R.manifest.sha256 && sha !== String(R.manifest.sha256).toLowerCase()) { fs.unlinkSync(file); throw new Error('The downloaded update is damaged (checksum mismatch). Try again.'); }
       const target = path.join(process.resourcesPath, 'app.asar');
       try { fs.accessSync(path.dirname(target), fs.constants.W_OK); } catch (_) { throw new Error('Maluti ERP is installed in a protected folder. Download the full installer from the release page instead.'); }
-      // a small script waits for the app to close, swaps the code file and starts the app again
+      // a small script waits for the app to close (at most ~30 s, then ends it), swaps the code file and starts the app again.
+      // It runs fully hidden through wscript so no console windows flash (Windows Terminal ignores windowsHide).
       const script = path.join(this.dir, 'apply-update.cmd');
+      const pid = process.pid;
       fs.writeFileSync(script, [
         '@echo off',
+        'set n=0',
         ':wait',
-        `tasklist /FI "PID eq ${process.pid}" 2>nul | find "${process.pid}" >nul && (ping -n 2 127.0.0.1 >nul & goto wait)`,
+        `tasklist /FI "PID eq ${pid}" /NH 2>nul | find " ${pid} " >nul || goto swap`,
+        'set /a n+=1',
+        `if %n% GEQ 15 (taskkill /F /T /PID ${pid} >nul 2>nul & ping -n 3 127.0.0.1 >nul & goto swap)`,
+        'ping -n 3 127.0.0.1 >nul',
+        'goto wait',
+        ':swap',
         `copy /y "${target}" "${target}.bak" >nul`,
         `copy /y "${file}" "${target}" >nul || (copy /y "${target}.bak" "${target}" >nul)`,
         `start "" "${process.execPath}"`,
         ''
       ].join('\r\n'));
+      const vbs = path.join(this.dir, 'apply-update.vbs');
+      fs.writeFileSync(vbs, `CreateObject("WScript.Shell").Run "cmd /c """"${script}""""", 0, False\r\n`);
       this.log('[update] restarting into', R.version);
-      spawn('cmd.exe', ['/c', script], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+      spawn('wscript.exe', [vbs], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
       this.state = { ...this.state, status: 'restarting' };
       setTimeout(quit, 500);
       return { restarting: true, version: R.version };

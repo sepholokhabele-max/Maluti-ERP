@@ -1,4 +1,8 @@
-## Maluti ERP 1.7.0
+## Maluti ERP 1.7.1
+
+- **Smoother updates:** the update now installs in the background without flashing command windows, and if the old copy of Maluti ERP does not close by itself within about 30 seconds it is ended automatically, so the update can no longer get stuck.
+
+### Also in 1.7.0
 
 **For every kind of business – not only shops.**
 

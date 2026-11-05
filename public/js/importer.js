@@ -396,7 +396,7 @@ export function template(k) {
   const ex = { name: 'Example', first_name: 'Palesa', last_name: 'Mokoena', phone: '58123456', date: today(), price: 25, qty: 10, amount: 1500, rent: 3500, building: 'Mokhele Flats', unit: 'Flat 1', class: 'Grade 1A', customer: 'Thabo Mokoena', tenant: 'Thabo Mokoena', supplier: 'Maseru Wholesalers', code: '1000', debit: 5000, start_date: '2025-02-01', hire_date: '2024-03-01', basic_salary: 4500, reg_no: 'A 123 BCD', rate_day: 50, room_type: 'Double', title: 'Office cleaning contract', client: 'LNDC', guardian_name: 'Mme Mokoena', guardian_phone: '58123456' };
   const row = k.fields.map(f => ex[f.key] !== undefined ? ex[f.key] : f.t === 'enum' ? f.values[0][0] : '');
   const help = k.fields.map(f => f.t === 'enum' ? f.values.map(v => v[0]).join(' / ') : f.t === 'date' ? 'yyyy-mm-dd or dd/mm/yyyy' : f.t === 'bool' ? 'yes / no' : f.t === 'num' ? 'number' : '');
-  download(workbook([{ name: k.title[0].slice(0, 28).replace(/[\\/?*[\]:]/g, ''), rows: [head, row, help.map(h => h ? `(${h})` : '')] }]), `Maluti import – ${k.title[0].replace(/[\\/:*?"<>|]+/g, '-')}.xlsx`);
+  download(workbook([{ name: k.title[0].slice(0, 28).replace(/[\\/?*[\]:]/g, ''), rows: [head, row, help.map(h => h ? `(${h})` : '')] }]), `S-ERP import – ${k.title[0].replace(/[\\/:*?"<>|]+/g, '-')}.xlsx`);
 }
 
 /* ---------------------------------------------------------------- the screen */

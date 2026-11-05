@@ -20,8 +20,8 @@ export async function api(method, url, body) {
     });
   } catch (_) {
     // plain words instead of "Failed to fetch"
-    throw new Error(L('Cannot reach Maluti ERP. Check that the shop computer is switched on and this device is on the same Wi-Fi or network, then try again. Nothing was saved.',
-      'Ha e khone ho fihlela Maluti ERP. Hlahloba hore khomputara ea lebenkele e butsoe ’me sesebelisoa sena se Wi-Fi kapa marang-rang a tšoanang, ebe u leka hape. Ha ho letho le bolokiloeng.'));
+    throw new Error(L('Cannot reach S-ERP. Check that the shop computer is switched on and this device is on the same Wi-Fi or network, then try again. Nothing was saved.',
+      'Ha e khone ho fihlela S-ERP. Hlahloba hore khomputara ea lebenkele e butsoe ’me sesebelisoa sena se Wi-Fi kapa marang-rang a tšoanang, ebe u leka hape. Ha ho letho le bolokiloeng.'));
   }
   if (res.status === 413) throw new Error(L('That is too big to send – use a smaller file or photo.', 'Ke e kholo haholo – sebelisa faele kapa foto e nyane.'));
   const ct = res.headers.get('content-type') || '';

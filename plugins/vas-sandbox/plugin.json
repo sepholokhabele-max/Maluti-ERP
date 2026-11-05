@@ -3,7 +3,7 @@
   "name": "VAS Sandbox (test mode)",
   "version": "1.0.0",
   "type": "vas",
-  "author": "Maluti ERP",
+  "author": "S-ERP",
   "description": "Simulated airtime, data and prepaid electricity provider for training and testing. No real money moves. Recipient numbers ending in 0000 are declined.",
   "config": [
     { "key": "commission_pct", "label": "Commission %", "type": "number", "default": 5 },

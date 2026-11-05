@@ -105,7 +105,7 @@ function shell(html) {
   const initials = (state.user.name || '?').split(' ').map(s => s[0]).join('').slice(0, 2).toUpperCase();
   $('#app').innerHTML = `
   <div class="topbar">
-    <a class="brand" href="#/">${state.logo ? `<span class="brand-logo"><img src="${state.logo}" alt=""></span>` : '<span class="home-ico">▦</span>'} ${esc(state.company.name || 'Maluti ERP')}</a>
+    <a class="brand" href="#/">${state.logo ? `<span class="brand-logo"><img src="${state.logo}" alt=""></span>` : '<span class="home-ico">▦</span>'} ${esc(state.company.name || 'S-ERP')}</a>
     <nav>${NAV.filter(n => can(n[2]) && (!n[3] || hasMod(n[3])) && (n[2] !== 'hrm' || (state.hrm && state.hrm.enabled)) && (n[0] !== '#/butchery' || (state.butchery && state.butchery.enabled))).map(n => `<a href="${n[0]}" class="${h === n[0].split('?')[0] ? 'active' : ''}">${n[1]}</a>`).join('')}</nav>
     <div class="user"><select id="lang" class="lang-sel" title="Language of the help notes / Puo ea litaelo">${LANGS.map(([k, l]) => `<option value="${k}" ${lang() === k ? 'selected' : ''}>${k === 'both' ? 'EN + ST' : k.toUpperCase()}</option>`).join('')}</select><span>${esc(state.user.name)}</span><div class="avatar" title="${esc(state.user.role)}">${initials}</div>
       <button class="icon-btn" style="color:#fff" id="logout" title="Log out">⏻</button></div>
@@ -143,7 +143,7 @@ async function loginScreen() {
   let mode = users.length ? 'pin' : 'pwd', sel = null, pin = '';
   const render = () => {
     $('#app').innerHTML = `<div class="auth"><div class="auth-card">
-      ${state.logo ? `<img class="auth-logo" src="${state.logo}" alt="">` : '<div class="logo">M</div>'}<h1>${esc(state.company.name || 'Maluti ERP')}</h1><div class="sub">Sign in to continue</div>
+      ${state.logo ? `<img class="auth-logo" src="${state.logo}" alt="">` : '<div class="logo">S</div>'}<h1>${esc(state.company.name || 'S-ERP')}</h1><div class="sub">Sign in to continue</div>
       <div class="tabs"><a data-m="pin" class="${mode === 'pin' ? 'active' : ''}">Staff PIN</a><a data-m="pwd" class="${mode === 'pwd' ? 'active' : ''}">Username & password</a></div>
       ${mode === 'pin' ? `
         ${users.length ? `<div class="pin-users">${users.map(u => `<div class="pin-user ${sel === u.id ? 'sel' : ''}" data-u="${u.id}"><b>${esc(u.name)}</b><small>${esc(u.role)}</small></div>`).join('')}</div>` : '<p class="muted">No staff have a PIN yet. Use username & password.</p>'}
@@ -154,7 +154,7 @@ async function loginScreen() {
         <label class="field" style="margin-top:10px"><span>Password</span><input name="password" type="password" autocomplete="current-password" required></label>
         <div class="wz-err" id="caps" style="display:none;margin-top:6px">⇪ Caps Lock is on</div>
         <button class="btn btn-primary btn-block btn-lg" style="margin-top:16px">Sign in</button>
-        <details style="margin-top:12px"><summary class="muted" style="cursor:pointer">Forgot your password? / U lebetse phasewete?</summary><p class="muted" style="font-size:13px">Staff: ask the owner or manager to set a new one under Settings → Users. Owner: another administrator can reset it; if you are the only administrator, contact your Maluti ERP / My Wallet support.</p></details></form>`}
+        <details style="margin-top:12px"><summary class="muted" style="cursor:pointer">Forgot your password? / U lebetse phasewete?</summary><p class="muted" style="font-size:13px">Staff: ask the owner or manager to set a new one under Settings → Users. Owner: another administrator can reset it; if you are the only administrator, contact your S-ERP / My Wallet support.</p></details></form>`}
       ${users.length ? '<button class="btn btn-block" id="clockBtn" style="margin-top:16px">🕐 Clock in / out (start or end your shift)</button>' : ''}
     </div></div>`;
     const cb = $('#clockBtn'); if (cb) cb.onclick = () => { document.onkeydown = null; att.clockDialog(users); };
@@ -283,7 +283,7 @@ export async function route() {
   if (!state.status.connected || !state.status.initialised) return welcome.firstRun();
   state.company = await GET('/company').catch(() => ({}));
   await ensureLogo();
-  document.title = (state.company.name || 'Maluti') + ' · ERP';
+  document.title = (state.company.name || 'S-ERP') + ' · ERP';
   if (!state.token) return loginScreen();
   if (!state.user) {
     try { state.user = await GET('/me'); } catch (_) { setToken(null); return loginScreen(); }
@@ -311,7 +311,7 @@ function ensureExcel() {
   if (![...pg.querySelectorAll('table')].some(t => t.rows.length > 1)) return;
   const b = document.createElement('button'); b.className = 'btn'; b.dataset.xlsx = '1'; b.title = 'Download the tables on this screen as an Excel file'; b.textContent = '⬇ Excel';
   b.onclick = () => {
-    const title = (pg.querySelector('.page-title h2') || {}).textContent || 'Maluti ERP';
+    const title = (pg.querySelector('.page-title h2') || {}).textContent || 'S-ERP';
     const sheets = tablesToSheets(pg, title.slice(0, 28));
     if (!sheets.length) return toast('Nothing to export on this screen', 'err');
     const tab = (pg.querySelector('.tabs a.active') || {}).textContent;
@@ -332,7 +332,7 @@ let xlTimer; new MutationObserver(() => { clearTimeout(xlTimer); xlTimer = setTi
 
 window.addEventListener('hashchange', () => { closeModals(); route(); guide.guideReturnPill(); });
 if (window.maluti && window.maluti.onUpdateAvailable) window.maluti.onUpdateAvailable(s => {
-  if (state.user && can('settings')) toast(`Maluti ERP ${s.version} is available – Settings → Updates & backup`, 'ok', 10000);
+  if (state.user && can('settings')) toast(`S-ERP ${s.version} is available – Settings → Updates & backup`, 'ok', 10000);
 });
 // any action that fails without its own error handling still tells the user in plain words (never a silent button)
 window.addEventListener('unhandledrejection', e => { const m = e.reason && (e.reason.message || String(e.reason)); if (m && !/AbortError|ResizeObserver/.test(m)) { err({ message: m }); e.preventDefault(); } });

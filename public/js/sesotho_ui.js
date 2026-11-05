@@ -1178,7 +1178,7 @@ export const ST_UI = {
 "Pour check": "Tlhahlobo ea ho tšela",
 "Poured": "E tšetsoe",
 "Poured / sold": "E tšetsoe / e rekisitsoe",
-"Powered by Maluti ERP": "E sebetsa ka Maluti ERP",
+"Powered by S-ERP": "E sebetsa ka S-ERP",
 "Practice / pharmacy licence number": "Nomoro ea laesense ea ngaka / khemisi",
 "Practitioner": "Ngaka",
 "Pre-pack labels": "Li-label tsa thepa e phuthetsoeng",

@@ -20,7 +20,7 @@ pub.get('/status', ah(async (req, res) => {
 // First run: use the MySQL server that ships with the desktop app
 pub.post('/db-embedded', ah(async (req, res) => {
   const store = req.app.locals.configStore, emb = req.app.locals.embeddedDb;
-  if (!store || !emb) throw bad('The built-in database is not available in this copy of Maluti ERP');
+  if (!store || !emb) throw bad('The built-in database is not available in this copy of S-ERP');
   if (db.isConnected() && await setup.isInitialised().catch(() => false)) throw bad('Already set up.');
   const cfg = await emb.start();
   await db.connect(cfg);

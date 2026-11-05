@@ -1,7 +1,7 @@
 // Sesotho help notes (part 2)
 export const B = {
   butchery: {
-    label_barcode_prefix: 'Prefix e sebelisoang ho li-label tse hatisoang ke Maluti ERP (li-label tsa thepa e phuthetsoeng) – e ’ngoe ea li-prefix tse kaholimo.',
+    label_barcode_prefix: 'Prefix e sebelisoang ho li-label tse hatisoang ke S-ERP (li-label tsa thepa e phuthetsoeng) – e ’ngoe ea li-prefix tse kaholimo.',
     expiry_warning_days: 'Lemosa ho dashboard matsatsi a makae pele ho letsatsi la ho fela la batch.',
     label_width_mm: 'Bophara ba li-label tsa hau ka mm (mohl. 60).',
     label_height_mm: 'Bolelele ba li-label tsa hau ka mm (mohl. 40).',

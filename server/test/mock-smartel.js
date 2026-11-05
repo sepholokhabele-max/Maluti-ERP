@@ -1,5 +1,5 @@
 // A stand-in for the Smartel POS backend (pos-api + syncd) for tests and demos. It follows the contracts in
-// SM-POS-TDD-001 closely enough to exercise Maluti's adapter: sessions, agent ops with OTP and unknown outcomes,
+// SM-POS-TDD-001 closely enough to exercise S-ERP's adapter: sessions, agent ops with OTP and unknown outcomes,
 // payment intents, NPR scope, bulk batches, envelope batches with hash-chain + sale validation, and the change log.
 // It never talks to MyWallet. Run alone: node server/test/mock-smartel.js 8790
 const http = require('http');

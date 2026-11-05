@@ -1,4 +1,4 @@
-# Maluti ERP – web version (hosted). The same server as the desktop app, without Electron.
+# S-ERP – web version (hosted). The same server as the desktop app, without Electron.
 #   docker compose up -d        (see docker-compose.yml and README "Web version")
 FROM node:20-alpine
 RUN apk add --no-cache tzdata

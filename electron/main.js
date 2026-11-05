@@ -92,7 +92,7 @@ function setupSerial(ses) {
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 1366, height: 860, minWidth: 1024, minHeight: 680, title: 'Maluti ERP',
+    width: 1366, height: 860, minWidth: 1024, minHeight: 680, title: 'S-ERP',
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false }
   });
@@ -123,7 +123,7 @@ function buildMenu() {
       { type: 'separator' }, { role: 'quit' }
     ] },
     { label: 'View', submenu: [{ role: 'reload' }, { role: 'togglefullscreen' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { role: 'resetZoom' }, { type: 'separator' }, { role: 'toggleDevTools' }] },
-    { label: 'Help', submenu: [{ label: 'About Maluti ERP', click: () => dialog.showMessageBox(win, { message: `Maluti ERP v${app.getVersion()}\nServer: ${baseUrl}\nData folder: ${userData}` }) }] }
+    { label: 'Help', submenu: [{ label: 'About S-ERP', click: () => dialog.showMessageBox(win, { message: `S-ERP v${app.getVersion()}\nServer: ${baseUrl}\nData folder: ${userData}` }) }] }
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(tpl));
 }
@@ -152,7 +152,7 @@ else {
   app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
   app.whenReady().then(async () => {
     try { await startServer(); }
-    catch (e) { dialog.showErrorBox('Maluti ERP failed to start', e.stack || String(e)); app.quit(); return; }
+    catch (e) { dialog.showErrorBox('S-ERP failed to start', e.stack || String(e)); app.quit(); return; }
     buildMenu();
     createWindow();
     // quiet update check shortly after start

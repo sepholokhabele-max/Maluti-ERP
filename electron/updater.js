@@ -2,7 +2,7 @@
 // A release (tag vX.Y.Z) carries:
 //   update.json            { version, electron, asar, sha256, installers: { x64, ia32 } }
 //   app-X.Y.Z.asar         the application code (small: swapped in place, no reinstall)
-//   MalutiERP-Setup-X.Y.Z-x64.exe / -ia32.exe   full installers (used when the Electron shell changed)
+//   S-ERP-Setup-X.Y.Z-x64.exe / -ia32.exe   full installers (used when the Electron shell changed)
 const { app, net } = require('electron');
 const fs = require('fs');
 const path = require('path');
@@ -30,7 +30,7 @@ class Updater {
 
   headers(extra = {}) {
     const s = this.settings();
-    return { 'User-Agent': 'MalutiERP-Updater', Accept: 'application/vnd.github+json', ...(s.token ? { Authorization: `Bearer ${s.token}` } : {}), ...extra };
+    return { 'User-Agent': 'S-ERP-Updater', Accept: 'application/vnd.github+json', ...(s.token ? { Authorization: `Bearer ${s.token}` } : {}), ...extra };
   }
   // public repos: plain download link; private repos (token): API asset link
   assetUrl(a) { return this.settings().token ? a.url : a.browser_download_url; }
@@ -102,7 +102,7 @@ class Updater {
       const sha = await this.download(R.asarAsset, file, prog);
       if (R.manifest.sha256 && sha !== String(R.manifest.sha256).toLowerCase()) { fs.unlinkSync(file); throw new Error('The downloaded update is damaged (checksum mismatch). Try again.'); }
       const target = path.join(process.resourcesPath, 'app.asar');
-      try { fs.accessSync(path.dirname(target), fs.constants.W_OK); } catch (_) { throw new Error('Maluti ERP is installed in a protected folder. Download the full installer from the release page instead.'); }
+      try { fs.accessSync(path.dirname(target), fs.constants.W_OK); } catch (_) { throw new Error('S-ERP is installed in a protected folder. Download the full installer from the release page instead.'); }
       // a small script waits for the app to close (at most ~30 s, then ends it), swaps the code file and starts the app again.
       // It runs fully hidden through wscript so no console windows flash (Windows Terminal ignores windowsHide).
       const script = path.join(this.dir, 'apply-update.cmd');

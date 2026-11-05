@@ -44,7 +44,7 @@ r.put('/reminders/settings', requirePerm('settings'), ah(async (req, res) => {
 }));
 r.post('/sms/test', requirePerm('settings'), ah(async (req, res) => {
   const c = (await db.getSetting('company', {})) || {};
-  res.json(await sms.send(req.body.to, req.body.message || `Test SMS from ${c.name || 'Maluti ERP'}. If you can read this, SMS reminders work.`).catch(e => { throw bad(e.message); }));
+  res.json(await sms.send(req.body.to, req.body.message || `Test SMS from ${c.name || 'S-ERP'}. If you can read this, SMS reminders work.`).catch(e => { throw bad(e.message); }));
 }));
 
 /** customers with overdue invoices (due date passed) for the chosen kind of business, with what to say about them */

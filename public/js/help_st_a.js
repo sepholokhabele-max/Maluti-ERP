@@ -5,7 +5,7 @@ export const A = {
     port: 'Hangata ke 3306. E fetole feela haeba MySQL ea hau e kentsoe port e ’ngoe.',
     user: 'Mosebelisi oa MySQL ea lumelletsoang ho etsa li-database – hangata ke "root" ha e sa tsoa kenngoa.',
     password: 'Phasewete e behiloeng bakeng sa mosebelisi eo ha MySQL e ne e kenngoa.',
-    database: 'Lebitso la database eo Maluti ERP e tla e sebelisa. E iketsetsa haeba e le sieo. Boloka "maluti_erp" ntle le haeba u tsamaisa likhamphani tse ngata.'
+    database: 'Lebitso la database eo S-ERP e tla e sebelisa. E iketsetsa haeba e le sieo. Boloka "maluti_erp" ntle le haeba u tsamaisa likhamphani tse ngata.'
   },
   setup: {
     name: 'Lebitso la khoebo ea hau joalo ka ha le lokela ho hlaha ho li-receipt, li-invoice le litlaleho, mohl. "Ha Thetsane Butchery".',

@@ -52,7 +52,7 @@ export const E = {
   tax_levy: { levy_name: 'Mohl. Plastic levy.', basis: 'Kamoo e baliloeng kateng.', amount: 'Chelete.', period_from: 'Letsatsi la pele.', period_to: 'Letsatsi la ho qetela.', due_date: 'Letsatsi leo RSL e e batlang.' },
   smartel: {
     enabled: 'Bulela ha liaterese le litifikeiti tsa li-till li se li kentsoe. Ha e butsoe, litšebeletso tsa chelete, litefo tsa karete / MyWallet / Switch, ho khutlisa lihlahisoa le register li sebetsa ka Smartel.',
-    pos_api_url: 'Aterese ea pos-api e lengolong la Smartel, e qala ka https://. Maluti ha e letsetse MyWallet ka boeona – ke aterese ena feela.',
+    pos_api_url: 'Aterese ea pos-api e lengolong la Smartel, e qala ka https://. S-ERP ha e letsetse MyWallet ka boeona – ke aterese ena feela.',
     syncd_url: 'Aterese ea syncd e lengolong. Lirisiti tse tiisitsoeng li ea mona; ho khutlisa, lihlahisoa, litheko le Thoki li tsoa mona.',
     auth: 'Tloaelo: till ka ’ngoe e kena ka setifikeiti sa eona. Sebelisa "gateway e tšeptjoang" feela ha Smartel e kentse gateway lebenkeleng kapa bakeng sa teko.',
     merchant_id: 'ID ea hau ea mohoebi ea Smartel (lengolong). E sebelisoa bakeng sa meputso ka bongata.',

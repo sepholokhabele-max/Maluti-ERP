@@ -1,6 +1,6 @@
 name: Build Android app
 
-# Builds the Android APK (Capacitor shell that opens your Maluti ERP server) for every version,
+# Builds the Android APK (Capacitor shell that opens your S-ERP server) for every version,
 # and attaches it to the GitHub release of that version when the release exists.
 on:
   push:
@@ -59,15 +59,15 @@ jobs:
             ./gradlew assembleDebug
             cp app/build/outputs/apk/debug/app-debug.apk signed.apk
           fi
-          mv signed.apk "MalutiERP-${{ steps.v.outputs.version }}.apk"
+          mv signed.apk "S-ERP-${{ steps.v.outputs.version }}.apk"
       - uses: actions/upload-artifact@v4
         with:
-          name: MalutiERP-android-${{ steps.v.outputs.version }}
-          path: mobile/android/MalutiERP-*.apk
+          name: S-ERP-android-${{ steps.v.outputs.version }}
+          path: mobile/android/S-ERP-*.apk
       - name: Attach to the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "v${{ steps.v.outputs.version }}" >/dev/null 2>&1; then
-            gh release upload "v${{ steps.v.outputs.version }}" mobile/android/MalutiERP-*.apk --clobber
+            gh release upload "v${{ steps.v.outputs.version }}" mobile/android/S-ERP-*.apk --clobber
           else echo "No release v${{ steps.v.outputs.version }} yet – the APK is in the workflow artifacts."; fi

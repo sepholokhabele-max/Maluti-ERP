@@ -1,5 +1,5 @@
 /**
- * Maluti ERP server. Used by the desktop app (Electron) and by `npm run server` (headless / LAN server).
+ * S-ERP server. Used by the desktop app (Electron) and by `npm run server` (headless / LAN server).
  *
  * start({ port, host, dbConfig, configStore, pluginDirs, publicDir }) -> { server, port }
  */

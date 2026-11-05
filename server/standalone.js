@@ -19,5 +19,5 @@ start({
   port: Number(process.env.PORT || saved.port || 8069),
   dbConfig, configStore: store,
   pluginDirs: [path.join(__dirname, '..', 'plugins'), process.env.PLUGIN_DIR].filter(Boolean)
-}).then(({ port }) => console.log(`Maluti ERP running on http://localhost:${port}`))
+}).then(({ port }) => console.log(`S-ERP running on http://localhost:${port}`))
   .catch(e => { console.error(e); process.exit(1); });

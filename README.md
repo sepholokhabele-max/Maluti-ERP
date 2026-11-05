@@ -1,4 +1,4 @@
-# Maluti ERP
+# S-ERP
 
 ERP and point of sale for **restaurants, bars and retail stores**. It runs as a Windows desktop app (an `.exe` installer) and keeps its data in **MySQL**.
 
@@ -24,7 +24,7 @@ ERP and point of sale for **restaurants, bars and retail stores**. It runs as a 
 ## 1. Installing
 
 1. **Install MySQL 8** (or MariaDB 10.6+) on the main computer, or use an existing server. On Windows, the *MySQL Installer*, XAMPP or Laragon all work.
-2. Run **`MalutiERP-Setup-1.0.0.exe`** and follow the wizard.
+2. Run **`S-ERP-Setup-1.0.0.exe`** and follow the wizard.
 3. On first start, enter the MySQL host, user, password and database name. The database and tables are created for you.
 4. Set up the business: company name, VAT %, currency (default **M / LSL**, VAT 15%) and the admin account with a PIN. You can tick **demo data** to try it with sample products.
 
@@ -32,7 +32,7 @@ ERP and point of sale for **restaurants, bars and retail stores**. It runs as a 
 
 ### Several tills on one network
 
-The PC running Maluti ERP is also a server on port **8069**.
+The PC running S-ERP is also a server on port **8069**.
 
 * **Other Windows tills:** install the app and choose **"Use server"** on the first screen, entering `http://<main-pc-ip>:8069`.
 * **Tablets or phones** (for example a waiter's tablet or the kitchen display): open `http://<main-pc-ip>:8069` in a browser.
@@ -43,9 +43,9 @@ Each till can also connect directly to a central MySQL server instead. The end-o
 ---
 
 ## 1a. One zip, built-in MySQL 8, 32-bit
-- **MalutiERP-<version>-Windows-64bit.zip** – unzip anywhere and run `Maluti ERP\Maluti ERP.exe` (or `Create shortcuts.cmd`). MySQL 8 is inside (`resources\mysql`): on first start choose **Use the built-in database**. It runs only while the app is open, listens on 127.0.0.1 (port 3307 or the next free one), keeps data in `%APPDATA%\Maluti ERP\mysql-data` and is backed up daily to `%APPDATA%\Maluti ERP\backups` (14 kept; *Back up now* in Settings → Updates & backup). Other tills connect to this PC's Maluti ERP (http://<this-pc>:8069), not to MySQL.
-- **MalutiERP-<version>-Windows-32bit.zip** – for 32-bit Windows. MySQL 8 has no 32-bit build, so this edition connects to a MySQL/MariaDB server or to the main Maluti ERP computer.
-- Installers with the same contents: `MalutiERP-Setup-<version>-x64.exe` / `-ia32.exe`.
+- **S-ERP-<version>-Windows-64bit.zip** – unzip anywhere and run `S-ERP\S-ERP.exe` (or `Create shortcuts.cmd`). MySQL 8 is inside (`resources\mysql`): on first start choose **Use the built-in database**. It runs only while the app is open, listens on 127.0.0.1 (port 3307 or the next free one), keeps data in `%APPDATA%\S-ERP\mysql-data` and is backed up daily to `%APPDATA%\S-ERP\backups` (14 kept; *Back up now* in Settings → Updates & backup). Other tills connect to this PC's S-ERP (http://<this-pc>:8069), not to MySQL.
+- **S-ERP-<version>-Windows-32bit.zip** – for 32-bit Windows. MySQL 8 has no 32-bit build, so this edition connects to a MySQL/MariaDB server or to the main S-ERP computer.
+- Installers with the same contents: `S-ERP-Setup-<version>-x64.exe` / `-ia32.exe`.
 - Build all of it: `npm run dist` (needs `vendor/mysql-win64` – the CI workflow downloads and trims MySQL 8.4 LTS automatically).
 
 ## 1b. Online updates from GitHub
@@ -108,7 +108,7 @@ The dashboard warns when earlier days are not reconciled, and the EOD email show
 
 * **Receipt QR:** customers scan it to open their digital receipt, which they can save, print or add to their wallet.
   * Configure it under **Settings → POS → QR codes**.
-  * By default the link uses this PC's Wi-Fi address, so phones on the shop Wi-Fi can open it (allow Maluti ERP through the Windows firewall when asked).
+  * By default the link uses this PC's Wi-Fi address, so phones on the shop Wi-Fi can open it (allow S-ERP through the Windows firewall when asked).
   * For customers to open receipts anywhere, and for Samsung or Google Wallet to work, publish the server on the internet (for example with a Cloudflare Tunnel) and enter that `https://` address as the *Public address*.
 * **Wallet buttons:** these come from plugins (**Settings → Plugins**).
   * *Google Wallet* needs an Issuer ID and a service account key from the Google Pay & Wallet Console.
@@ -213,7 +213,7 @@ Then click **Reload plugins**. A plugin with `"type": "payment"` implements `req
 
 ## 4a. Smartel POS backend – MyWallet services through the adapter (v1.18)
 
-Maluti ERP **never connects to the MyWallet core / core-banking API**. Everything that touches MyWallet goes through the
+S-ERP **never connects to the MyWallet core / core-banking API**. Everything that touches MyWallet goes through the
 Smartel POS backend adapters: **pos-api** (`/v1/sessions`, `/v1/agent/ops`, `/v1/payments/intents`, `/v1/register/scope`,
 `/v1/portal/bulk-batches`) and **syncd** (`/v1/sync/batches`, `/v1/sync/changes`, `/v1/sync/cursor`). While the Smartel
 connection is on, the old direct "My Wallet" VAS set-up is refused.
@@ -294,7 +294,7 @@ address behind a proxy. Back up the `dbdata` volume (or use *Settings → Update
 **Phones and tablets** – every screen adapts to a phone (the till stacks products above the cart). On Android or iPhone,
 open the server address in the browser and choose *Install app* (it is a PWA: icon, full screen, quick start; money and stock
 always come live from the server). The **Android app** (`mobile/`, Capacitor) is built by `.github/workflows/build-android.yml`
-and attached to each release as `MalutiERP-<version>.apk`; on first start it asks for the server address (the shop PC on the
+and attached to each release as `S-ERP-<version>.apk`; on first start it asks for the server address (the shop PC on the
 Wi-Fi, e.g. `192.168.1.20:8069`, or the hosted address). See `mobile/README.md` for signed builds.
 
 ## 4d. Sesotho (v1.21)
@@ -335,11 +335,11 @@ DB_HOST=localhost DB_USER=root DB_PASSWORD=secret npm test
 
 ## 7. Building the Windows installer
 
-* **On Windows:** install NSIS (`choco install nsis`), then run `npm install` and `npm run dist`. This builds the app with electron-builder and packages it with the plain NSIS script in `build/installer.nsi`. The installer installs per user without admin rights, offers to close a running copy before upgrading, and writes a log to `%TEMP%\MalutiERP-Setup.log`. The output is `dist/MalutiERP-Setup-<version>.exe`.
+* **On Windows:** install NSIS (`choco install nsis`), then run `npm install` and `npm run dist`. This builds the app with electron-builder and packages it with the plain NSIS script in `build/installer.nsi`. The installer installs per user without admin rights, offers to close a running copy before upgrading, and writes a log to `%TEMP%\S-ERP-Setup.log`. The output is `dist/S-ERP-Setup-<version>.exe`.
 * **With GitHub:** push this folder to a GitHub repository. The workflow in `.github/workflows/build-windows.yml` tests against MySQL 8, builds the installer on Windows, and attaches it to a release when you push a tag such as `v1.0.1`.
 * **Code signing (optional):** set `CSC_LINK` and `CSC_KEY_PASSWORD` to remove the SmartScreen warning.
 
-Desktop data such as the connection settings, log file and user plugins is stored in `%APPDATA%\Maluti ERP`.
+Desktop data such as the connection settings, log file and user plugins is stored in `%APPDATA%\S-ERP`.
 
 ## 8. Not included yet (roadmap)
 

@@ -1,4 +1,4 @@
-; Maluti ERP – Windows installer (plain NSIS, per-user, no admin rights needed)
+; S-ERP (formerly Maluti ERP) – Windows installer (plain NSIS, per-user, no admin rights needed)
 ; Build:  makensis -DVERSION=1.2.0 -DSRCDIR=dist/win-unpacked -DOUTFILE=dist/MalutiERP-Setup-1.2.0.exe build/installer.nsi
 Unicode true
 SetCompressor /SOLID lzma
@@ -11,17 +11,18 @@ ManifestDPIAware true
 !endif
 !define APPNAME "Maluti ERP"
 !define EXENAME "Maluti ERP.exe"
-!define COMPANY "Maluti ERP"
+!define COMPANY "Smartel Money"
+!define DISPLAYNAME "S-ERP"  ; shown to people; APPNAME stays the folder name so existing installs update in place
 !define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\MalutiERP"
 
-Name "${APPNAME} ${VERSION}"
+Name "${DISPLAYNAME} ${VERSION}"
 OutFile "${OUTFILE}"
 InstallDir "$LOCALAPPDATA\Programs\${APPNAME}"
 InstallDirRegKey HKCU "Software\MalutiERP" "InstallDir"
-BrandingText "${APPNAME} ${VERSION}"
+BrandingText "${DISPLAYNAME} ${VERSION}"
 VIProductVersion "${VERSION}.0"
-VIAddVersionKey "ProductName" "${APPNAME}"
-VIAddVersionKey "FileDescription" "${APPNAME} Setup"
+VIAddVersionKey "ProductName" "${DISPLAYNAME}"
+VIAddVersionKey "FileDescription" "${DISPLAYNAME} Setup"
 VIAddVersionKey "FileVersion" "${VERSION}"
 VIAddVersionKey "ProductVersion" "${VERSION}"
 VIAddVersionKey "CompanyName" "${COMPANY}"
@@ -42,9 +43,9 @@ ${StrStr}
 !ifndef DBTEXT
   !define DBTEXT "You will need a MySQL (or MariaDB) server. You can enter its details the first time the app opens."
 !endif
-!define MUI_WELCOMEPAGE_TEXT "This will install ${APPNAME} ${VERSION} (${ARCHNAME}) – ERP and Point of Sale for butcheries, restaurants, bars and retail stores.$\r$\n$\r$\n${DBTEXT}$\r$\n$\r$\nClick Next to continue."
+!define MUI_WELCOMEPAGE_TEXT "This will install ${DISPLAYNAME} ${VERSION} (${ARCHNAME}) – ERP and Point of Sale for every kind of business.$\r$\n$\r$\n${DBTEXT}$\r$\n$\r$\nClick Next to continue."
 !define MUI_FINISHPAGE_RUN "$INSTDIR\${EXENAME}"
-!define MUI_FINISHPAGE_RUN_TEXT "Start ${APPNAME} now"
+!define MUI_FINISHPAGE_RUN_TEXT "Start ${DISPLAYNAME} now"
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_LICENSE "license.txt"
@@ -74,7 +75,7 @@ Function .onInit
   ${StrStr} $2 $1 "${EXENAME}"
   ${If} $2 != ""
     !insertmacro Log "App is running – asking to close it"
-    MessageBox MB_YESNOCANCEL|MB_ICONEXCLAMATION "${APPNAME} is open. Close it now and continue with setup?$\r$\n$\r$\nYes = close it for me    No = I'll close it myself, then check again" IDYES kill IDNO check_running
+    MessageBox MB_YESNOCANCEL|MB_ICONEXCLAMATION "${DISPLAYNAME} is open. Close it now and continue with setup?$\r$\n$\r$\nYes = close it for me    No = I'll close it myself, then check again" IDYES kill IDNO check_running
     Abort
     kill:
     nsExec::Exec 'taskkill /IM "${EXENAME}" /T'
@@ -94,18 +95,21 @@ Section "Install"
   File /r "${SRCDIR}\*.*"
   ${IfNot} ${FileExists} "$INSTDIR\${EXENAME}"
     !insertmacro Log "ERROR: ${EXENAME} missing after copy"
-    MessageBox MB_ICONSTOP "Files could not be copied to $INSTDIR. Check that you have free disk space and that antivirus is not blocking ${APPNAME}."
+    MessageBox MB_ICONSTOP "Files could not be copied to $INSTDIR. Check that you have free disk space and that antivirus is not blocking ${DISPLAYNAME}."
     Abort
   ${EndIf}
 
   WriteUninstaller "$INSTDIR\Uninstall ${APPNAME}.exe"
-  CreateDirectory "$SMPROGRAMS\${APPNAME}"
-  CreateShortCut "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk" "$INSTDIR\${EXENAME}" "" "$INSTDIR\${EXENAME}" 0
-  CreateShortCut "$SMPROGRAMS\${APPNAME}\Uninstall ${APPNAME}.lnk" "$INSTDIR\Uninstall ${APPNAME}.exe"
-  CreateShortCut "$DESKTOP\${APPNAME}.lnk" "$INSTDIR\${EXENAME}" "" "$INSTDIR\${EXENAME}" 0
+  ; shortcuts carry the new name; remove the ones made by versions named Maluti ERP
+  Delete "$DESKTOP\${APPNAME}.lnk"
+  RMDir /r "$SMPROGRAMS\${APPNAME}"
+  CreateDirectory "$SMPROGRAMS\${DISPLAYNAME}"
+  CreateShortCut "$SMPROGRAMS\${DISPLAYNAME}\${DISPLAYNAME}.lnk" "$INSTDIR\${EXENAME}" "" "$INSTDIR\${EXENAME}" 0
+  CreateShortCut "$SMPROGRAMS\${DISPLAYNAME}\Uninstall ${DISPLAYNAME}.lnk" "$INSTDIR\Uninstall ${APPNAME}.exe"
+  CreateShortCut "$DESKTOP\${DISPLAYNAME}.lnk" "$INSTDIR\${EXENAME}" "" "$INSTDIR\${EXENAME}" 0
 
   WriteRegStr HKCU "Software\MalutiERP" "InstallDir" "$INSTDIR"
-  WriteRegStr HKCU "${UNINSTKEY}" "DisplayName" "${APPNAME}"
+  WriteRegStr HKCU "${UNINSTKEY}" "DisplayName" "${DISPLAYNAME}"
   WriteRegStr HKCU "${UNINSTKEY}" "DisplayVersion" "${VERSION}"
   WriteRegStr HKCU "${UNINSTKEY}" "Publisher" "${COMPANY}"
   WriteRegStr HKCU "${UNINSTKEY}" "DisplayIcon" "$INSTDIR\${EXENAME}"
@@ -121,6 +125,8 @@ SectionEnd
 Section "Uninstall"
   Delete "$DESKTOP\${APPNAME}.lnk"
   RMDir /r "$SMPROGRAMS\${APPNAME}"
+  Delete "$DESKTOP\${DISPLAYNAME}.lnk"
+  RMDir /r "$SMPROGRAMS\${DISPLAYNAME}"
   RMDir /r "$INSTDIR"
   DeleteRegKey HKCU "${UNINSTKEY}"
   DeleteRegKey HKCU "Software\MalutiERP"

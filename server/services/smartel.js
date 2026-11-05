@@ -1,12 +1,12 @@
 // Smartel POS backend adapter.
 //
-// Maluti ERP never talks to the MyWallet core / core-banking API. Every money service, digital tender, register check and
+// S-ERP never talks to the MyWallet core / core-banking API. Every money service, digital tender, register check and
 // sync goes through the Smartel POS backend adapters:
 //   pos-api  /v1/sessions, /v1/agent/ops, /v1/payments/intents, /v1/register/scope, /v1/portal/bulk-batches
 //   syncd    /v1/sync/batches, /v1/sync/changes, /v1/sync/cursor
 // Tills authenticate with their own client certificate (mTLS at the gateway). The owner portal (bulk wages) uses the
 // owner's portal sign-in at the gateway. In "gateway" mode (a trusted gateway on the shop LAN, or a test backend) the
-// identity headers are sent by Maluti instead.
+// identity headers are sent by S-ERP instead.
 //
 // Rules carried from SM-POS-BPD-001 / TDD-001:
 //  * a session is one customer: goods, service lines and the goods tender close as ONE receipt and ONE sealed envelope

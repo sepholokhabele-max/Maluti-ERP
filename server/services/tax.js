@@ -104,7 +104,7 @@ async function schedule(from, to) {
     if (monthsAfterYE === 0) out.push({ tax: 'cit_3', period_from: ty.from, period_to: ty.to, period_label: `Tax year ${ty.label}`, due_date: pt });
     if (monthsAfterYE === 3) { const prev = taxYear(dayOf(...addMonths(y, m, -3), 1), E); out.push({ tax: 'cit_final', period_from: prev.from, period_to: prev.to, period_label: `Tax year ${prev.label}`, due_date: pt }); }
   }
-  // nothing is due from before the business started using Maluti (setting, or the first day in the books / trial start)
+  // nothing is due from before the business started using S-ERP (setting, or the first day in the books / trial start)
   let start = s.start_month ? `${String(s.start_month).slice(0, 7)}-01` : null;
   if (!start) {
     const first = await db.one(`SELECT MIN(entry_date) d FROM journal_entries WHERE source_type IS NULL OR source_type <> 'opening'`).catch(() => null);

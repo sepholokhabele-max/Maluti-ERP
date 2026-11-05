@@ -11,7 +11,7 @@ const friendly = m => {
   m = String(m || '');
   if (/ECONNREFUSED|connect ETIMEDOUT|ENOTFOUND/i.test(m)) return L('Cannot reach MySQL on that computer. Check that MySQL is running and the server name is right – or use the built-in database.', 'Ha ho khonehe ho fihla MySQL k\'homphieutheng eo. Sheba hore MySQL ea sebetsa – kapa sebelisa database e kahare.');
   if (/ER_ACCESS_DENIED|Access denied/i.test(m)) return L('MySQL refused the user name or password. Type the MySQL password chosen when MySQL was installed.', 'MySQL e hanne lebitso kapa phasewete.');
-  if (/Failed to fetch|NetworkError/i.test(m)) return L('The program is not answering. Close Maluti ERP and open it again.', 'Lenaneo ha le arabe. Koala Maluti ERP ’me u e bule hape.');
+  if (/Failed to fetch|NetworkError/i.test(m)) return L('The program is not answering. Close S-ERP and open it again.', 'Lenaneo ha le arabe. Koala S-ERP ’me u e bule hape.');
   return m;
 };
 
@@ -39,7 +39,7 @@ export async function firstRun(onDone) {
   async function draw() {
     const app = $('#app');
     if (d.step === 'welcome') {
-      app.innerHTML = card(`<div class="logo">M</div>${L('Welcome to Maluti ERP', 'Rea u amohela ho Maluti ERP')}`, L('Let\'s get your business ready. It takes about 5 minutes and you can change everything later.', 'A re lokise khoebo ea hau. Ho nka metsotso e ka bang 5 ’me u ka fetola tsohle hamorao.'),
+      app.innerHTML = card(`<div class="logo">S</div>${L('Welcome to S-ERP', 'Rea u amohela ho S-ERP')}`, L('Let\'s get your business ready. It takes about 5 minutes and you can change everything later.', 'A re lokise khoebo ea hau. Ho nka metsotso e ka bang 5 ’me u ka fetola tsohle hamorao.'),
         `<h4 style="margin:6px 0 10px">${L('Which language do you prefer for the instructions?', 'U khetha puo efe bakeng sa litaelo?')}</h4>
         <div class="wz-choices">${[['en', 'English', 'Instructions in English'], ['st', 'Sesotho', 'Litaelo ka Sesotho'], ['both', 'English + Sesotho', 'Both, one under the other / Ka bobeli']].map(([k, t, s]) =>
           `<button class="wz-choice ${lang() === k ? 'on' : ''}" data-lang="${k}"><b>${t}</b><small>${s}</small></button>`).join('')}</div>`, { next: L('Start', 'Qala') + ' →' });
@@ -51,7 +51,7 @@ export async function firstRun(onDone) {
       const emb = st.embedded_available;
       app.innerHTML = card(L('Where should your data be kept?', 'Lintlha tsa hau li bolokoe kae?'), L('All sales, stock and accounts are kept in a database on this computer.', 'Thekiso, setoko le libuka li bolokoa ka database k\'homphieutheng ena.'),
         `${emb ? `<button class="wz-big" id="useEmb"><span class="wz-ico">💾</span><span><b>${L('Keep it on this computer (recommended)', 'E boloke k\'homphieutheng ena (e khothalletsoa)')}</b><small>${L('One click. Nothing else to install. Backed up every day.', 'Ho tobetsa hang. Ha ho letho le leng le kenngoang. Backup letsatsi le letsatsi.')}</small></span></button>` : ''}
-        ${info && info.desktop ? `<button class="wz-big" id="toServer"><span class="wz-ico">🖥️</span><span><b>${L('This is an extra till – connect to the main computer', 'Ena ke till e eketsehileng – hokahanya le k\'homphieutha e kholo')}</b><small>${L('The main computer already runs Maluti ERP. You need its address, e.g. http://192.168.1.10:8069', 'U hloka aterese ea eona')}</small></span></button>
+        ${info && info.desktop ? `<button class="wz-big" id="toServer"><span class="wz-ico">🖥️</span><span><b>${L('This is an extra till – connect to the main computer', 'Ena ke till e eketsehileng – hokahanya le k\'homphieutha e kholo')}</b><small>${L('The main computer already runs S-ERP. You need its address, e.g. http://192.168.1.10:8069', 'U hloka aterese ea eona')}</small></span></button>
           <div id="srv" style="display:none;margin:-4px 0 12px"><div class="row"><input id="remote" placeholder="http://192.168.1.10:8069"><button class="btn btn-primary" id="useRemote">${L('Connect', 'Hokahanya')}</button></div></div>` : ''}
         <details ${emb ? '' : 'open'} class="wz-adv"><summary>${L('Advanced: use my own MySQL server', 'Ho tsoetseng pele: sebelisa seva ea ka ea MySQL')}</summary>
           <div class="form-grid" style="margin-top:10px"><label class="field"><span>${L('Server', 'Seva')}</span><input id="h" value="${esc(d.host || 'localhost')}"></label><label class="field"><span>Port</span><input id="pt" type="number" value="${esc(d.port || 3306)}"></label>

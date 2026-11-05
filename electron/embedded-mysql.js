@@ -1,4 +1,4 @@
-// Built-in MySQL: runs the MySQL server that ships with Maluti ERP (resources/mysql) as a child process,
+// Built-in MySQL: runs the MySQL server that ships with S-ERP (resources/mysql) as a child process,
 // with its data in the user's data folder. No separate MySQL installation is needed.
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -91,7 +91,7 @@ class EmbeddedMySQL {
 
   /** Initialise (first time) and start the server. Returns a dbConfig for the app. */
   async start() {
-    if (!this.available()) throw new Error('The built-in MySQL is not included in this copy of Maluti ERP');
+    if (!this.available()) throw new Error('The built-in MySQL is not included in this copy of S-ERP');
     if (this.proc && this.exited === null) return this.dbConfig();
     const port = await this.pickPort();
     this.writeIni(port);

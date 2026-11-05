@@ -1,11 +1,11 @@
-# Maluti ERP for Android
+# S-ERP for Android
 
-The Android app is a window onto **your own Maluti ERP server** – the shop PC on the Wi-Fi, or the hosted web version.
+The Android app is a window onto **your own S-ERP server** – the shop PC on the Wi-Fi, or the hosted web version.
 It stores only the server address on the phone. Everything else (the till, stock, invoices, tax…) runs on the server,
 exactly like on the PC, and screens adapt to the phone.
 
 ## Getting the APK
-GitHub builds it automatically (`.github/workflows/build-android.yml`) and attaches `MalutiERP-<version>.apk` to each release.
+GitHub builds it automatically (`.github/workflows/build-android.yml`) and attaches `S-ERP-<version>.apk` to each release.
 Install it on the phone (allow "install unknown apps" for the browser / file manager once).
 
 Without the APK, any Android phone can also use **Chrome → open the server address → ⋮ → Install app** (it is a PWA).

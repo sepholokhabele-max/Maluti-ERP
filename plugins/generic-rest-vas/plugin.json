@@ -3,7 +3,7 @@
   "name": "REST VAS Connector (My Wallet & other aggregators)",
   "version": "1.0.0",
   "type": "vas",
-  "author": "Maluti ERP",
+  "author": "S-ERP",
   "description": "Connect any HTTP/JSON VAS aggregator (e.g. My Wallet) without writing code. Configure the endpoints, request templates and where to find fields in the response. Templates use {{service}}, {{provider}}, {{product_code}}, {{recipient}}, {{amount}}, {{amount_cents}}, {{reference}}, {{api_key}}, {{merchant_id}}.",
   "config": [
     { "key": "base_url", "label": "API base URL", "type": "text", "default": "https://api.example.com" },

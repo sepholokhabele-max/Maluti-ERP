@@ -10,7 +10,7 @@ if not exist ".git" (
   call git remote add origin %%REPO%%
 )
 git add -A
-git -c user.name="Maluti ERP" -c user.email="noreply@maluti.local" commit -m "Maluti ERP %date%" || echo Nothing new to commit.
+git -c user.name="S-ERP" -c user.email="noreply@maluti.local" commit -m "S-ERP %date%" || echo Nothing new to commit.
 git push -u origin main
 echo.
 echo Done. GitHub Actions now builds the installers and publishes a release when the version in package.json is new.

@@ -1,8 +1,8 @@
-name: Build & release Maluti ERP
+name: Build & release S-ERP
 
 # A new release is published automatically whenever package.json gets a version
 # that has no release yet (push to main), or when a tag vX.Y.Z is pushed.
-# Installed copies of Maluti ERP pick it up from Settings → Updates & backup.
+# Installed copies of S-ERP pick it up from Settings → Updates & backup.
 
 on:
   push:
@@ -96,13 +96,13 @@ jobs:
         run: node build/build-all.js x64 ia32
       - uses: actions/upload-artifact@v4
         with:
-          name: MalutiERP-${{ needs.check.outputs.version }}
+          name: S-ERP-${{ needs.check.outputs.version }}
           path: dist/release/${{ needs.check.outputs.version }}/*
       - name: Publish GitHub release
         if: needs.check.outputs.release == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.check.outputs.version }}
-          name: Maluti ERP ${{ needs.check.outputs.version }}
+          name: S-ERP ${{ needs.check.outputs.version }}
           body_path: CHANGELOG-latest.md
           files: dist/release/${{ needs.check.outputs.version }}/*

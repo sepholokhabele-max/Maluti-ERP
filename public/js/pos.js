@@ -562,7 +562,7 @@ export function receiptHtml(o, company = state.company) {
   ${Number(o.change_given) ? `<tr class="b"><td>Change</td><td class="r">${m(o.change_given)}</td></tr>` : ''}</table>
   ${vasTokens}${vasOther}${servicesHtml(o)}
   ${o.receipt_qr_svg ? `<hr><div class="c"><div style="width:30mm;margin:0 auto">${o.receipt_qr_svg}</div><div style="font-size:10.5px">${esc(o.receipt_qr_text || 'Scan for your digital receipt')}</div></div>` : ''}
-  <hr><div class="c">${esc(company.receipt_footer || 'Thank you!')}</div><div class="c" style="font-size:10px;margin-top:6px">Powered by Maluti ERP</div>
+  <hr><div class="c">${esc(company.receipt_footer || 'Thank you!')}</div><div class="c" style="font-size:10px;margin-top:6px">Powered by S-ERP</div>
   </body></html>`;
 }
 

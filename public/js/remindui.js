@@ -83,7 +83,7 @@ async function settingsTab(rb) {
       <small class="help-note">You can use {name} {amount} {oldest_date} {days} {details} {company} {phone}. Keep the SMS under 160 characters to pay for one SMS.</small><div class="msg" id="pv" style="margin-top:8px"></div></div>
       <div class="card" id="autoc" style="margin-top:14px"><h3>Automatic reminders</h3>${formHtml(af, { ...s.auto, days: s.auto.days.join(', ') }, { ctx: 'remauto' })}
         <div class="row wrap">${SRC.slice(1).map(([k, l]) => `<label class="row" style="gap:4px"><input type="checkbox" data-src="${k}" ${s.auto.sources.includes(k) ? 'checked' : ''}> ${l}</label>`).join('')}</div>
-        <small class="help-note">Sent once a day after 09:00 while Maluti ERP is running, to customers whose oldest unpaid invoice is exactly that many days late${s.last_auto_run ? ` · last run ${esc(s.last_auto_run)}` : ''}.</small></div></div></div>
+        <small class="help-note">Sent once a day after 09:00 while S-ERP is running, to customers whose oldest unpaid invoice is exactly that many days late${s.last_auto_run ? ` · last run ${esc(s.last_auto_run)}` : ''}.</small></div></div></div>
     <div class="row" style="margin-top:14px"><span class="spacer"></span><button class="btn btn-primary" id="save">Save</button></div>`;
   const preview = async () => { try { const p = await POST('/reminders/preview', { templates: readForm($('#tplc'), tf) }); $('#pv').innerHTML = `${esc(p.sms)}<div class="muted" style="font-size:12px">${p.sms.length} characters · ${p.sms_parts} SMS</div>`; } catch (_) {} };
   $$('#tplc textarea, #tplc input').forEach(i => i.addEventListener('input', () => { clearTimeout(i._t); i._t = setTimeout(preview, 400); }));

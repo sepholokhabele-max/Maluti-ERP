@@ -1,4 +1,4 @@
-# Maluti ERP web version: app + MySQL 8. Put HTTPS in front of it (Caddy, nginx or your host's load balancer).
+# S-ERP web version: app + MySQL 8. Put HTTPS in front of it (Caddy, nginx or your host's load balancer).
 #   1. copy .env.example to .env and change the passwords and the address
 #   2. docker compose up -d
 #   3. open https://<your address> – the first-run wizard starts

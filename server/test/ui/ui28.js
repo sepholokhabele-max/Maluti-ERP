@@ -18,6 +18,6 @@ const SP = process.argv[2], B = 'http://localhost:8069';
   await p.waitForSelector('.modal', { state: 'detached' });
   // offline: the server cannot be reached
   await p.route('**/api/products*', r => r.abort('internetdisconnected'));
-  await p.goto(B + '/#/products'); await p.waitForSelector('text=Cannot reach Maluti ERP'); await p.screenshot({ path: SP + '/shots/392-offline-message.png' });
+  await p.goto(B + '/#/products'); await p.waitForSelector('text=Cannot reach S-ERP'); await p.screenshot({ path: SP + '/shots/392-offline-message.png' });
   console.log('ERRORS:', errors.length ? errors.join('\n') : 'none'); await b.close();
 })().catch(e => { console.error('FAIL', e.message); process.exit(1); });

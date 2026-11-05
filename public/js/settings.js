@@ -44,7 +44,7 @@ export async function settings(view) {
     preview();
     const refreshBrand = () => {
       const br = document.querySelector('.topbar .brand');
-      if (br) br.innerHTML = `${state.logo ? `<span class="brand-logo"><img src="${state.logo}" alt=""></span>` : '<span class="home-ico">▦</span>'} ${esc(state.company.name || 'Maluti ERP')}`;
+      if (br) br.innerHTML = `${state.logo ? `<span class="brand-logo"><img src="${state.logo}" alt=""></span>` : '<span class="home-ico">▦</span>'} ${esc(state.company.name || 'S-ERP')}`;
     };
     const upload = async file => {
       try {
@@ -190,7 +190,7 @@ async function updatesTab(sb) {
   const M = window.maluti;
   const info = M ? await M.info() : null;
   if (!M || !M.updateSettings) {
-    sb.innerHTML = `<div class="card" style="max-width:760px"><h3>Updates</h3><p class="muted">Updates are installed from the Maluti ERP desktop app on each computer (File → Check for updates). Tills that use this computer as their server get the new version automatically once this computer is updated.</p></div>`;
+    sb.innerHTML = `<div class="card" style="max-width:760px"><h3>Updates</h3><p class="muted">Updates are installed from the S-ERP desktop app on each computer (File → Check for updates). Tills that use this computer as their server get the new version automatically once this computer is updated.</p></div>`;
     return;
   }
   const us = await M.updateSettings();
@@ -206,8 +206,8 @@ async function updatesTab(sb) {
     error: `<span style="color:var(--bad)">${esc(s.error || 'Error')}</span>`
   }[s.status] || esc(s.status));
   sb.innerHTML = `<div class="cols cols-2"><div class="card"><h3>Online updates (GitHub)</h3>
-      <p class="muted" style="font-size:13px">This computer runs <b>Maluti ERP ${esc(us.current)}</b> (${us.arch === 'ia32' ? '32-bit' : '64-bit'}). New versions are published as GitHub releases; the app downloads only the changed program file (a few MB) and restarts. Your data is not touched – database changes are applied automatically on restart.</p>
-      <div class="form-grid"><label class="field" style="grid-column:span 2"><span>GitHub repository (owner/name)</span><input id="upRepo" value="${esc(us.repo)}" placeholder="e.g. sepholo/maluti-erp"><small class="help-note">The GitHub repository where new Maluti ERP versions are published as releases – the part after github.com/, e.g. sepholo/maluti-erp.</small></label>
+      <p class="muted" style="font-size:13px">This computer runs <b>S-ERP ${esc(us.current)}</b> (${us.arch === 'ia32' ? '32-bit' : '64-bit'}). New versions are published as GitHub releases; the app downloads only the changed program file (a few MB) and restarts. Your data is not touched – database changes are applied automatically on restart.</p>
+      <div class="form-grid"><label class="field" style="grid-column:span 2"><span>GitHub repository (owner/name)</span><input id="upRepo" value="${esc(us.repo)}" placeholder="e.g. sepholo/maluti-erp"><small class="help-note">The GitHub repository where new S-ERP versions are published as releases – the part after github.com/, e.g. sepholo/maluti-erp.</small></label>
         <label class="field check"><input type="checkbox" id="upAuto" ${us.auto_check ? 'checked' : ''}> <span>Check automatically when the app starts</span></label>
         <label class="field"><span>Access token (only for a private repository)</span><input id="upTok" type="password" placeholder="${us.has_token ? '•••••• saved – leave blank to keep' : 'not needed for a public repository'}"><small class="help-note">Only needed if the repository is private: a GitHub fine-grained token with read-only "Contents" access to that repository.</small></label></div>
       <div class="row" style="margin-top:12px"><button class="btn" id="upSave">Save</button><button class="btn btn-primary" id="upCheck">Check for updates</button></div>
@@ -217,7 +217,7 @@ async function updatesTab(sb) {
         <button class="btn btn-primary" id="bkNow">💾 Back up now</button><div id="bkRes" class="muted" style="margin-top:10px;font-size:13px;word-break:break-all"></div>`
       : '<p class="muted" style="font-size:13px">This computer uses your own MySQL server. Back it up with MySQL Workbench (Server → Data Export) or mysqldump.</p>'}</div></div>`;
   const wireApply = () => { const b = $('#upApply'); if (b) b.onclick = async () => {
-    if (!(await confirmBox('Download the update and restart Maluti ERP now? Make sure no sale is in progress on this computer.', { okLabel: 'Update & restart' }))) return;
+    if (!(await confirmBox('Download the update and restart S-ERP now? Make sure no sale is in progress on this computer.', { okLabel: 'Update & restart' }))) return;
     $('#upStatus').innerHTML = statusHtml({ status: 'downloading', progress: 0 });
     M.onUpdateProgress(p => { const e = $('#upPct'); if (e) e.textContent = (p == null ? '…' : p + '%'); });
     const r = await M.updateApply();

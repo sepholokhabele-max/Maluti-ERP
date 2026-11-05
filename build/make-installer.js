@@ -1,4 +1,4 @@
-// Builds dist/MalutiERP-Setup-<version>.exe from dist/win-unpacked using build/installer.nsi (plain NSIS).
+// Builds dist/S-ERP-Setup-<version>.exe from dist/win-unpacked using build/installer.nsi (plain NSIS).
 // Needs makensis: Windows `choco install nsis` (or nsis.sourceforge.io), Linux `apt install nsis`.
 const { execFileSync } = require('child_process');
 const fs = require('fs');
@@ -33,10 +33,10 @@ for (const c of candidates) {
 }
 if (!makensis) { console.error('makensis not found. Install NSIS (Windows: choco install nsis, Linux: apt install nsis) or set MAKENSIS.'); process.exit(1); }
 
-const out = path.join(root, 'dist', `MalutiERP-Setup-${version}-${arch}.exe`);
+const out = path.join(root, 'dist', `S-ERP-Setup-${version}-${arch}.exe`);
 const dbText = withDb && fs.existsSync(path.join(src, 'resources', 'mysql', 'bin', 'mysqld.exe'))
   ? 'A MySQL 8 database is built in - nothing else to install. You can also connect to your own MySQL server.'
-  : 'You will need a MySQL (or MariaDB) server, or another computer running Maluti ERP to connect to.';
+  : 'You will need a MySQL (or MariaDB) server, or another computer running S-ERP to connect to.';
 console.log(`Building ${path.basename(out)} with ${makensis} …`);
 execFileSync(makensis, ['-V2', `-DVERSION=${version}`, `-DSRCDIR=${src}`, `-DOUTFILE=${out}`, `-DARCHNAME=${arch === 'ia32' ? '32-bit' : '64-bit'}`, `-DDBTEXT=${dbText}`, path.join(__dirname, 'installer.nsi')],
   { stdio: 'inherit', env, cwd: __dirname });

@@ -1,6 +1,6 @@
 {
   "appId": "ls.maluti.erp",
-  "appName": "Maluti ERP",
+  "appName": "S-ERP",
   "webDir": "www",
   "server": {
     "androidScheme": "https",

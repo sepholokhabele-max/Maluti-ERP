@@ -22,7 +22,7 @@ export const HELP = {
     rsl_fee_fixed: 'The service fee for paying RSL through MyWallet, as agreed with My Wallet / Smartel. When MyWallet quotes its own fee for a payment, that quote is used instead. The fee is shown before you confirm and booked as a tax payment fee.',
     rsl_fee_pct: 'Percentage of the tax paid that is added to the fee, e.g. 0.5.',
     rsl_fee_max: 'Highest fee for one payment. Leave empty for no limit.',
-    start_month: 'Returns from before this month are not listed (they were handled before you used Maluti). Leave empty to start from your first entry in the books.'
+    start_month: 'Returns from before this month are not listed (they were handled before you used S-ERP). Leave empty to start from your first entry in the books.'
   },
   tax_pay: {
     method: '"MyWallet through Smartel" pays RSL at a till as a bill payment – you get the MyWallet reference straight away. Otherwise record a bank, M-Pesa or cash payment you already made.',
@@ -54,7 +54,7 @@ export const HELP = {
   tax_levy: { levy_name: 'E.g. Plastic levy.', basis: 'How it was worked out.', amount: 'Amount due.', period_from: 'First day of the period.', period_to: 'Last day of the period.', due_date: 'When RSL wants it.' },
   smartel: {
     enabled: 'Switch on once the addresses and till certificates are in. While it is on, payment services, card / MyWallet / Switch payments, recalls and the product register work through the Smartel POS backend.',
-    pos_api_url: 'The pos-api address from your Smartel welcome letter, starting with https://. Maluti never calls MyWallet itself – only this address.',
+    pos_api_url: 'The pos-api address from your Smartel welcome letter, starting with https://. S-ERP never calls MyWallet itself – only this address.',
     syncd_url: 'The syncd address from the welcome letter. Sealed receipts go here; recalls, catalogue, prices and Thoki updates come from here.',
     auth: 'Normal: every till signs in with its own certificate. Use "trusted gateway" only when Smartel set up a gateway in your shop or for a test backend.',
     merchant_id: 'Your Smartel merchant ID (on the welcome letter). Used for the owner portal (bulk wages).',
@@ -101,7 +101,7 @@ export const HELP = {
     port: 'Normally 3306. Only change it if your MySQL was installed on another port.',
     user: 'A MySQL user that may create databases – usually "root" on a new installation.',
     password: 'The password set for that MySQL user when MySQL was installed.',
-    database: 'Name of the database Maluti ERP will use. It is created automatically if it does not exist. Keep "maluti_erp" unless you run several companies.'
+    database: 'Name of the database S-ERP will use. It is created automatically if it does not exist. Keep "maluti_erp" unless you run several companies.'
   },
   setup: {
     name: 'Your trading name exactly as it should appear on receipts, invoices and reports, e.g. "Ha Thetsane Butchery".',
@@ -254,7 +254,7 @@ export const HELP = {
     barcode_value_type: 'Whether your scale puts the price or the weight into the barcode – check a printed label or the scale settings.',
     barcode_item_digits: 'How many digits of the barcode are the PLU (usually 5).',
     barcode_value_digits: 'How many digits hold the price in cents or weight in grams (usually 5). Prefix + PLU + value + 1 check digit must be 13.',
-    label_barcode_prefix: 'Prefix used on labels printed from Maluti ERP (pre-pack labels) – one of the prefixes above.',
+    label_barcode_prefix: 'Prefix used on labels printed from S-ERP (pre-pack labels) – one of the prefixes above.',
     expiry_warning_days: 'Warn on the dashboard this many days before a batch\'s use-by date.',
     label_width_mm: 'Width of your label stock in mm (e.g. 60).',
     label_height_mm: 'Height of your label stock in mm (e.g. 40).',

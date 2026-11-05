@@ -1,4 +1,4 @@
-// Maluti ERP service worker (web / Android): the app screens load instantly and open even with a weak connection.
+// S-ERP service worker (web / Android): the app screens load instantly and open even with a weak connection.
 // Only the app's own files are cached. The API (/api), receipts (/r) and the customer portal (/p) always go to the server –
 // money and stock are never served from a cache.
 const VERSION = 'maluti-__VERSION__';

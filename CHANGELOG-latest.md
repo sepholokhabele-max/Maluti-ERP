@@ -1,4 +1,12 @@
-## Maluti ERP 1.21.1
+## S-ERP 1.22.0
+
+**Maluti ERP is now S-ERP, by Smartel Money.**
+
+- The new name is on every screen, the login page, emails, the installer, desktop and Start-menu shortcuts, the phone app and the help notes (English and Sesotho).
+- Nothing else changes: your data, logins, activation code, settings and updates carry on exactly as before. The old "Maluti ERP" shortcuts are replaced by "S-ERP" ones when the update installs.
+
+### Also in 1.21.1
+
 
 **Fix: three account codes were shared by two modules.**
 
@@ -33,7 +41,7 @@
 **Customer portal, a web version and an Android app.**
 
 - **Customer portal**: send each account customer a private link (QR, SMS or WhatsApp). On their phone they see what they owe, their open invoices and a 6-month statement, in English or Sesotho, and can **pay with MyWallet, card or Switch** (through the Smartel POS backend – the payment goes straight onto their account) or **upload proof of a bank payment** (it arrives on their contact with a task to check it). Links can be renewed or switched off; visits are logged.
-- **Web version**: run Maluti ERP on a server or in the cloud with Docker (app + MySQL, optional automatic HTTPS). A set-up key protects the first start, and the database cannot be changed from the browser.
+- **Web version**: run S-ERP on a server or in the cloud with Docker (app + MySQL, optional automatic HTTPS). A set-up key protects the first start, and the database cannot be changed from the browser.
 - **Phones and tablets**: the screens and the till work on a phone; install it from the browser as an app (PWA). An **Android app** is built automatically with every release – it connects to the shop PC on the Wi-Fi or to the web version.
 - Fix: the welcome tour no longer stays on screen when you open another app.
 - Setup-guide step and help notes in English and Sesotho.
@@ -52,7 +60,7 @@
 
 **Smartel POS backend: MyWallet agent services, card / MyWallet / Switch payments and sealed receipts – never a direct line to the core banking system.**
 
-- **Settings → Smartel connection**: pos-api and syncd addresses, one Smartel terminal ID and certificate per till, test button, connection state, and a plain explanation of what goes where. Maluti only talks to the Smartel adapters; the old direct "My Wallet" VAS set-up is switched off while the connection is on.
+- **Settings → Smartel connection**: pos-api and syncd addresses, one Smartel terminal ID and certificate per till, test button, connection state, and a plain explanation of what goes where. S-ERP only talks to the Smartel adapters; the old direct "My Wallet" VAS set-up is switched off while the connection is on.
 - **💸 Agent services at the till**: cash deposit, withdrawal (customer's SMS PIN), till cash-out, send money, cash-in to another network (NPS Switch), redeem a Switch voucher, airtime, LEC electricity and bills (DStv, WASCO and others). MyWallet's name check and fee are shown before you confirm. The PIN is never stored. A service MyWallet does not answer is never sent twice – it is checked until MyWallet's history settles it.
 - **One customer, one receipt**: goods and services on the same receipt with the **net cash** in or out of the drawer; services-only customers get a session receipt. Cash-up expects exactly the net of all cash effects.
 - **Card, MyWallet (scan to pay) and Switch** for goods: the customer approves on their own phone; the sale completes only when the payment is confirmed.
@@ -180,7 +188,7 @@
 
 ### Also in 1.7.1
 
-- **Smoother updates:** the update now installs in the background without flashing command windows, and if the old copy of Maluti ERP does not close by itself within about 30 seconds it is ended automatically, so the update can no longer get stuck.
+- **Smoother updates:** the update now installs in the background without flashing command windows, and if the old copy of S-ERP does not close by itself within about 30 seconds it is ended automatically, so the update can no longer get stuck.
 
 ### Also in 1.7.0
 

@@ -306,7 +306,7 @@ async function settingsTab(root, st) {
     { key: 'waste_reasons', label: 'Waste reasons (one per line)', type: 'textarea', rows: 4, span: 2 }];
   root.innerHTML = `<div class="card" style="max-width:900px">${formHtml(f, { ...s, waste_reasons: (s.waste_reasons || []).join('\n') }, { ctx: 'butchery' })}
     <p class="muted" style="font-size:12px">Common layout: <b>2 + 1 prefix digit, 5-digit PLU, 5-digit price in cents, check digit</b> (e.g. 21 01001 19760 C = PLU 1001, M197.60). Set the same layout on your label scale.
-    Scale reading works in the Maluti ERP desktop app (Windows) via Web Serial; most butchery scales with an RS-232/USB output that send lines like <code>ST,GS,+ 1.235kg</code> are supported.</p>
+    Scale reading works in the S-ERP desktop app (Windows) via Web Serial; most butchery scales with an RS-232/USB output that send lines like <code>ST,GS,+ 1.235kg</code> are supported.</p>
     <div class="row wrap">${admin ? '<button class="btn btn-primary" id="bsv">Save</button>' : '<span class="muted">Only an administrator can change these.</span>'}<button class="btn" id="bts">⚖️ Test scale</button><button class="btn" id="bpt">Choose scale port…</button><span class="muted" id="btr"></span></div></div>`;
   if (admin) $('#bsv').onclick = async () => {
     try { await PUT('/butchery/settings', readForm(root, f)); toast('Saved'); setTimeout(() => location.reload(), 400); } catch (e) { err(e); }

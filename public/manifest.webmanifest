@@ -1,6 +1,6 @@
 {
-  "name": "Maluti ERP",
-  "short_name": "Maluti",
+  "name": "S-ERP",
+  "short_name": "S-ERP",
   "description": "Till, stock, invoices, payroll and tax for businesses in Lesotho",
   "start_url": "./#/",
   "scope": "./",

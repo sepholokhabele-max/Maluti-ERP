@@ -34,7 +34,7 @@ async function sendEod(date = today(), { recipients, kind = 'eod' } = {}) {
   if (!to.length) throw Object.assign(new Error('No report recipients configured (Settings → Email)'), { status: 400 });
   const lg = await require('./logo').binary();
   const { html, data, company } = await reports.eodHtml(date, { logo: lg ? 'cid:company-logo' : null });
-  const subject = `${company.name || 'Maluti ERP'} – End of Day Report ${date}`;
+  const subject = `${company.name || 'S-ERP'} – End of Day Report ${date}`;
   try {
     const t = await transport(s);
     await t.sendMail({
@@ -90,8 +90,8 @@ async function sendMail({ to, subject, text, html, kind = 'other', attachments, 
 async function sendTest(to) {
   const s = await getEmailSettings();
   const t = await transport(s);
-  await t.sendMail({ from: s.from_address || s.smtp_user, to, subject: 'Maluti ERP test email', text: 'Your email settings work.' });
-  await log('test', null, [to], 'Maluti ERP test email', 'sent');
+  await t.sendMail({ from: s.from_address || s.smtp_user, to, subject: 'S-ERP test email', text: 'Your email settings work.' });
+  await log('test', null, [to], 'S-ERP test email', 'sent');
 }
 
 module.exports = { sendEod, schedule, sendTest, sendMail, getEmailSettings, DEFAULT_EMAIL };

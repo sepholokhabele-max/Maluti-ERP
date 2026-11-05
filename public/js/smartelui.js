@@ -1,6 +1,6 @@
 // Smartel POS backend: connection & tills, sync (sealed receipts out, recalls / catalogue / prices / Thoki in), product register,
 // agency cash & settlement, bulk wages – plus the till's "Agent services" panel and card / MyWallet / Switch payment requests.
-// Maluti never talks to MyWallet directly: everything goes through the Smartel pos-api / syncd adapters.
+// S-ERP never talks to MyWallet directly: everything goes through the Smartel pos-api / syncd adapters.
 import { state, GET, POST, PUT, esc, $, $$, toast, err, modal, formHtml, readForm, tableHtml, badge, page, dt, query, money, can, confirmBox, printHtml } from './core.js';
 import { L, lang } from './i18n.js';
 
@@ -19,7 +19,7 @@ export async function smartelPage(view) {
       ? (s.link.ok === false ? `<b>⚠ ${L('Offline', 'Ha e kopane')}</b> – ${esc(s.link.error || '')}. ${L('The till sells goods for cash only until the link is back; receipts wait and go out oldest first.', 'Till e rekisa thepa ka chelete feela ho fihlela kopano e khutla.')}`
         : `<b>✓ ${L('Connected to the Smartel POS backend', 'E kopane le Smartel')}</b>${s.link.at ? ` · ${L('last answer', 'karabo ea ho qetela')} ${esc(dt(s.link.at))}` : ''}`)
       : `<b>${L('Not connected', 'Ha e so kopane')}</b> – ${L('Fill in the addresses and certificates from your Smartel welcome letter, then switch the connection on.', 'Kenya liaterese le litifikeiti tse tsoang lengolong la Smartel, ebe u bulela kopano.')}`}
-      <br><small class="muted">${L('Maluti never talks to MyWallet directly. Payment services, card / MyWallet / Switch payments, the product register and receipts all go through the Smartel POS backend.', 'Maluti ha e bue le MyWallet ka kotloloho; tsohle li feta ho Smartel.')}</small></div>
+      <br><small class="muted">${L('S-ERP never talks to MyWallet directly. Payment services, card / MyWallet / Switch payments, the product register and receipts all go through the Smartel POS backend.', 'S-ERP ha e bue le MyWallet ka kotloloho; tsohle li feta ho Smartel.')}</small></div>
     <div class="tabs">${TABS.map(([k, en, st]) => `<a href="#/smartel?tab=${k}" class="${tab === k ? 'active' : ''}">${L(en, st)}</a>`).join('')}</div><div id="smb"></div>`);
   if ($('#pushB')) $('#pushB').onclick = async () => { try { const r = await POST('/smartel/push'); toast(`${r.applied} ${L('accepted', 'li amohetsoe')}${r.held ? `, ${r.held} ${L('waiting', 'li emetse')}` : ''}${r.rejected ? `, ${r.rejected} ${L('refused', 'li hanoe')}` : ''}${r.errors.length ? ' – ' + r.errors[0] : ''}`, r.rejected || r.errors.length ? 'err' : 'ok', 6000); smartelPage(view); } catch (e) { err(e); } };
   if ($('#pullB')) $('#pullB').onclick = async () => { try { const r = await POST('/smartel/pull'); toast(Object.entries(r).map(([k, v]) => `${k}: ${typeof v === 'object' ? (v.gtins ?? '') : v}`).join(' · '), 'ok', 7000); smartelPage(view); } catch (e) { err(e); } };

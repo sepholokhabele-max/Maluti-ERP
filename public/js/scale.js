@@ -1,4 +1,4 @@
-// Read weight from a serial (RS-232/USB) scale using Web Serial – works in the Maluti ERP desktop app and in Chrome/Edge.
+// Read weight from a serial (RS-232/USB) scale using Web Serial – works in the S-ERP desktop app and in Chrome/Edge.
 import { parseScaleOutput } from './barcode.js';
 
 let port = null, opening = null;
@@ -6,7 +6,7 @@ let port = null, opening = null;
 export const scaleSupported = () => typeof navigator !== 'undefined' && !!navigator.serial;
 
 async function getPort(cfg, { choose = false } = {}) {
-  if (!scaleSupported()) throw new Error('Scale reading needs the Maluti ERP desktop app (or Chrome/Edge).');
+  if (!scaleSupported()) throw new Error('Scale reading needs the S-ERP desktop app (or Chrome/Edge).');
   if (port && !choose) return port;
   const granted = await navigator.serial.getPorts();
   port = (!choose && granted[0]) || await navigator.serial.requestPort();

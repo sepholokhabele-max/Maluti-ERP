@@ -82,7 +82,7 @@ async function eodHtml(date, opts = {}) {
   const h2 = t => `<h3 style="margin:22px 0 8px;color:#0f172a;border-left:4px solid #4f46e5;padding-left:8px">${esc(t)}</h3>`;
   const html = `<div style="font-family:Segoe UI,Arial,sans-serif;max-width:760px;margin:auto;color:#1e293b">
   ${opts.logo ? `<img src="${opts.logo}" alt="" style="max-height:70px;max-width:220px;margin-bottom:8px">` : ''}
-  <h2 style="margin-bottom:0">${esc(c.name || 'Maluti ERP')} — End of Day Report</h2>
+  <h2 style="margin-bottom:0">${esc(c.name || 'S-ERP')} — End of Day Report</h2>
   <div style="color:#64748b">${esc(date)} · generated ${esc(new Date().toLocaleString())}</div>
   ${h2('Summary')}
   ${table([{ t: 'Metric' }, { t: 'Value', r: 1 }], [
@@ -120,7 +120,7 @@ async function eodHtml(date, opts = {}) {
   ${d.waste.length ? h2('Waste & shrinkage') + table([{ t: 'Reason' }, { t: 'Entries', r: 1 }, { t: 'Value at cost', r: 1 }], d.waste.map(w => [w.reason, w.count, m(w.value)])) : ''}
   ${h2('Low stock')}
   ${table([{ t: 'Product' }, { t: 'On hand', r: 1 }, { t: 'Reorder at', r: 1 }], d.lowStock.map(p => [p.name, Number(p.stock_qty), Number(p.reorder_level)]))}
-  <p style="color:#94a3b8;font-size:12px">Sent automatically by Maluti ERP.</p></div>`;
+  <p style="color:#94a3b8;font-size:12px">Sent automatically by S-ERP.</p></div>`;
   return { html, data: d, company: c };
 }
 

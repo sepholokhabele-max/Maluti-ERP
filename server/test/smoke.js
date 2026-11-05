@@ -6,6 +6,9 @@ const { start } = require('../app');
 
 const DB = { host: process.env.DB_HOST || 'localhost', port: 3306, user: process.env.DB_USER || 'erp', password: process.env.DB_PASSWORD || 'erp123', database: process.env.DB_NAME || 'maluti_smoke' };
 let base, token;
+// The server treats DB_HOST in the environment as "database fixed by the administrator" and then
+// refuses POST /db-config. The smoke test drives first-run setup through the API, so hide those vars.
+for (const k of ['DB_HOST', 'DB_PORT', 'DB_USER', 'DB_PASSWORD', 'DB_NAME', 'MALUTI_SETUP_KEY']) delete process.env[k];
 
 async function api(method, url, body, expectFail) {
   const r = await fetch(base + '/api' + url, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) }, body: body ? JSON.stringify(body) : undefined });

@@ -1,4 +1,13 @@
-## Maluti ERP 1.21.0
+## Maluti ERP 1.21.1
+
+**Fix: three account codes were shared by two modules.**
+
+- Levies filed in the Tax centre were posted to the same account as staff expense claims (2250). Levies now have their own account **2260 Other taxes & levies payable (RSL)**.
+- Hire income shared 4900 with *Sales returns & refunds*; it now has **4880 Hire income**.
+- Clinic consultation fees shared 4950 with *Stock count gains*; they now have **4960 Medical & consultation fees**.
+- Entries already posted are moved to the right account automatically when the update starts; nothing has to be re-entered. Reports for past months now show these amounts on the correct lines.
+
+### Also in 1.21.0
 
 **The whole program in Sesotho, a translation review screen, and fewer ways to lose work.**
 

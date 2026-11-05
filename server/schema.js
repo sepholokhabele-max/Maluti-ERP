@@ -1766,7 +1766,7 @@ module.exports = [
     id: 16,
     name: 'equipment_hire',
     sql: [
-      `INSERT IGNORE INTO accounts (code, name, type) VALUES ('2420', 'Hire deposits held', 'liability'), ('4900', 'Hire income', 'income')`,
+      `INSERT IGNORE INTO accounts (code, name, type) VALUES ('2420', 'Hire deposits held', 'liability'), ('4880', 'Hire income', 'income')`,
       `CREATE TABLE IF NOT EXISTS hire_items (
         id INT AUTO_INCREMENT PRIMARY KEY,
         name VARCHAR(120) NOT NULL,
@@ -1838,7 +1838,7 @@ module.exports = [
     id: 17,
     name: 'patients',
     sql: [
-      `INSERT IGNORE INTO accounts (code, name, type) VALUES ('4950', 'Medical & consultation fees', 'income')`,
+      `INSERT IGNORE INTO accounts (code, name, type) VALUES ('4960', 'Medical & consultation fees', 'income')`,
       `ALTER TABLE users MODIFY role ENUM('admin','manager','accountant','cashier','waiter','bartender','kitchen','technician','staff','supervisor','receptionist','clinician') NOT NULL DEFAULT 'cashier'`,
       `CREATE TABLE IF NOT EXISTS patients (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -2286,7 +2286,7 @@ module.exports = [
         ('2220', 'Withholding tax payable (RSL)', 'liability'),
         ('2230', 'Income tax payable (RSL)', 'liability'),
         ('2240', 'Fringe benefit tax payable (RSL)', 'liability'),
-        ('2250', 'Other taxes & levies payable (RSL)', 'liability'),
+        ('2260', 'Other taxes & levies payable (RSL)', 'liability'),
         ('6450', 'Tax payment fees', 'expense'),
         ('6460', 'Tax penalties & interest', 'expense'),
         ('6470', 'Fringe benefit tax', 'expense'),
@@ -2309,6 +2309,31 @@ module.exports = [
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         INDEX (partner_id, created_at)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+    ]
+  },
+  {
+    // Account codes that two modules had both claimed (INSERT IGNORE kept the first name):
+    //   2250 staff expense claims (migration 8)  -> levies move to 2260
+    //   4900 sales returns (default chart)       -> hire income moves to 4880
+    //   4950 stock count gains (migration 6)     -> medical & consultation fees move to 4960
+    id: 23,
+    name: 'account_code_clashes',
+    sql: [
+      `INSERT IGNORE INTO accounts (code, name, type) VALUES ('2260', 'Other taxes & levies payable (RSL)', 'liability')`,
+      `UPDATE journal_lines l JOIN journal_entries e ON e.id = l.entry_id JOIN accounts a ON a.id = l.account_id
+         SET l.account_id = (SELECT id FROM (SELECT id FROM accounts WHERE code = '2260') x)
+       WHERE a.code = '2250' AND e.source_type IN ('tax_close', 'tax_payment')`,
+      `INSERT IGNORE INTO accounts (code, name, type) VALUES ('4880', 'Hire income', 'income'), ('4960', 'Medical & consultation fees', 'income')`,
+      `UPDATE accounts SET name = 'Sales Returns & Refunds' WHERE code = '4900'`,
+      `UPDATE accounts SET name = 'Stock Count Gains' WHERE code = '4950'`,
+      `UPDATE journal_lines l JOIN journal_entries e ON e.id = l.entry_id JOIN accounts a ON a.id = l.account_id
+         SET l.account_id = (SELECT id FROM (SELECT id FROM accounts WHERE code = '4880') x)
+       WHERE a.code = '4900' AND e.source_type IN ('invoice', 'hire_deposit')`,
+      `UPDATE journal_lines l JOIN journal_entries e ON e.id = l.entry_id JOIN accounts a ON a.id = l.account_id
+         SET l.account_id = (SELECT id FROM (SELECT id FROM accounts WHERE code = '4960') x)
+       WHERE a.code = '4950' AND e.source_type = 'invoice'`,
+      `UPDATE invoice_lines SET account_code = '4880' WHERE account_code = '4900'`,
+      `UPDATE invoice_lines SET account_code = '4960' WHERE account_code = '4950'`
     ]
   }
 ];

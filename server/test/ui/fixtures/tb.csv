@@ -1,0 +1,5 @@
+Account,Account Name,Type,Debit,Credit
+1010,Standard Bank current,asset,25000,
+2600,Vehicle loan,liability,,80000
+1600,Vehicles,asset,150000,
+3100,Owner capital,equity,,95000

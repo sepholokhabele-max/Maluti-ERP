@@ -280,10 +280,10 @@ r.post('/visits/:id(\\d+)/bill', C, ah(async (req, res) => {
     const name = `${v.first_name} ${v.last_name || ''}`.trim();
     const lines = items.map(x => ({ product_id: x.product_id, description: `${x.description}${x.dosage ? ' – ' + x.dosage : ''}${x.duration ? ' (' + x.duration + ')' : ''}`.slice(0, 200),
       qty: Number(x.qty), unit_price: Math.round(Number(x.unit_price) / (1 + Number(x.tax_rate) / 100) * 10000) / 10000, gross_total: round2(Number(x.qty) * Number(x.unit_price)),
-      tax_rate: Number(x.tax_rate), account_code: x.kind === 'service' ? '4950' : null }));
+      tax_rate: Number(x.tax_rate), account_code: x.kind === 'service' ? '4960' : null }));
     const total = round2(lines.reduce((t, l) => t + l.gross_total, 0));
     const copay = toAid ? round2(Math.min(total, Math.max(0, Number(b.copay) || 0))) : 0;
-    if (copay) lines.push({ description: `Less co-payment by the patient`, qty: 1, unit_price: -copay, gross_total: -copay, tax_rate: 0, account_code: '4950' });
+    if (copay) lines.push({ description: `Less co-payment by the patient`, qty: 1, unit_price: -copay, gross_total: -copay, tax_rate: 0, account_code: '4960' });
     const notes = `${v.number} · ${name} (${v.file_no})${toAid ? ` · member no. ${v.medical_aid_no}` : ''}${v.diagnosis ? ` · ${v.icd10 ? v.icd10 + ' ' : ''}${v.diagnosis}` : ''}`.slice(0, 250);
     const inv = await biz.createInvoice(c, req.user, { kind: 'customer_invoice', partner_id: toAid ? v.medical_aid_id : v.partner_id, invoice_date: today(), due_date: toAid ? null : (b.due_date || today()), notes, lines: biz.calcLines(lines, 'unit_price') });
     await c.query('UPDATE invoices SET visit_id = ? WHERE id = ?', [v.id, inv]);
@@ -291,7 +291,7 @@ r.post('/visits/:id(\\d+)/bill', C, ah(async (req, res) => {
     let copayInv = null;
     if (copay) {
       copayInv = await biz.createInvoice(c, req.user, { kind: 'customer_invoice', partner_id: v.partner_id, invoice_date: today(), due_date: today(), notes: `${v.number} co-payment (medical aid invoice ${number})`,
-        lines: biz.calcLines([{ description: `Co-payment ${v.number}`, qty: 1, unit_price: copay, gross_total: copay, tax_rate: 0, account_code: '4950' }], 'unit_price') });
+        lines: biz.calcLines([{ description: `Co-payment ${v.number}`, qty: 1, unit_price: copay, gross_total: copay, tax_rate: 0, account_code: '4960' }], 'unit_price') });
       await c.query('UPDATE invoices SET visit_id = ? WHERE id = ?', [v.id, copayInv]);
       await biz.postInvoice(c, copayInv, req.user);
     }

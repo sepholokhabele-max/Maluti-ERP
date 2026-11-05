@@ -6,9 +6,6 @@ const { start } = require('../app');
 
 const DB = { host: process.env.DB_HOST || 'localhost', port: 3306, user: process.env.DB_USER || 'erp', password: process.env.DB_PASSWORD || 'erp123', database: process.env.DB_NAME || 'maluti_smoke' };
 let base, token;
-// The server treats DB_HOST in the environment as "database fixed by the administrator" and then
-// refuses POST /db-config. The smoke test drives first-run setup through the API, so hide those vars.
-for (const k of ['DB_HOST', 'DB_PORT', 'DB_USER', 'DB_PASSWORD', 'DB_NAME', 'MALUTI_SETUP_KEY']) delete process.env[k];
 
 async function api(method, url, body, expectFail) {
   const r = await fetch(base + '/api' + url, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) }, body: body ? JSON.stringify(body) : undefined });
@@ -1108,6 +1105,8 @@ const ok = (m) => console.log('  ✓', m);
     const st = await api('POST', `/hire/orders/${A.id}/settle`, { amount: 9590, method_id: cash });
     const inv = await api('GET', `/invoices/${st.invoice_id}`);
     assert.strictEqual(Number(inv.total), 13750); assert.strictEqual(inv.status, 'paid'); assert.strictEqual(st.deposit_applied, 4160);
+    { const ac = await api('GET', '/accounts'); const h = ac.find(x => x.code === '4880'); assert(h && h.name === 'Hire income' && Number(h.balance) !== 0, 'hire income has its own account');
+      assert.strictEqual(ac.find(x => x.code === '4900').name, 'Sales Returns & Refunds'); }
     // reservation with a deposit cancelled: a fee kept, the rest refunded
     await api('POST', `/hire/orders/${B.id}/deposit`, { amount: 500, method_id: cash });
     await api('POST', `/hire/orders/${B.id}/cancel`, { fee: 100, refund_method_id: cash, reason: 'date moved' });
@@ -1160,6 +1159,8 @@ const ok = (m) => console.log('  ✓', m);
     assert.strictEqual(Number(ai.total), 270); assert.strictEqual(ai.partner_id, aid.id); assert.strictEqual(Number(ci.total), 100); assert.strictEqual(ci.status, 'paid');
     assert.strictEqual(Number((await api('GET', `/products/${para.id}`)).stock_qty), 180);
     await api('POST', `/visits/${v.id}/bill`, { bill_to: 'patient' }, true); // billed once
+    { const ac = await api('GET', '/accounts'); const m = ac.find(x => x.code === '4960'); assert(m && m.name === 'Medical & consultation fees' && Number(m.balance) !== 0, 'medical fees have their own account');
+      assert.strictEqual(ac.find(x => x.code === '4950').name, 'Stock Count Gains'); }
     const claims = await api('GET', '/clinic/claims'); assert(claims.some(x => x.invoice_id === bill.invoice_id && Number(x.open) === 270 && x.medical_aid_no === 'LN-55123'));
     // pharmacy walk-in with a new patient, paid in full
     const w = await api('POST', '/visits', { kind: 'pharmacy', patient: { first_name: 'Lineo', last_name: 'Ramone', phone: '62000111' } });
@@ -1467,6 +1468,13 @@ const ok = (m) => console.log('  ✓', m);
     // fringe benefits (quarter) and a levy
     const fb = await api('POST', '/tax/returns/prepare', { tax: 'fbt', period_from: '2026-10-01', period_to: '2026-12-31', due_date: '2026-12-31', inputs: { benefits_value: 5000, details: 'Company car' } });
     assert.strictEqual(fb.amount_due, 1500); await api('POST', `/tax/returns/${fb.id}/file`, {});
+    const claimsBefore = (await api('GET', '/accounts')).find(a => a.code === '2250').balance;
+    const lv = await api('POST', '/tax/returns/prepare', { tax: 'levy', period_from: '2026-11-01', period_to: '2026-11-30', due_date: '2026-12-20', inputs: { levy_name: 'Plastic levy', amount: 80 } });
+    assert.strictEqual(lv.amount_due, 80); await api('POST', `/tax/returns/${lv.id}/file`, {});
+    let accs = await api('GET', '/accounts'); assert.strictEqual(accs.find(a => a.code === '2260').balance, 80);
+    assert.strictEqual(accs.find(a => a.code === '2250').balance, claimsBefore, 'levies must not land on staff expense claims');
+    await api('POST', `/tax/returns/${lv.id}/pay`, { method: 'bank', reference: 'EFT-LEVY' });
+    accs = await api('GET', '/accounts'); assert.strictEqual(accs.find(a => a.code === '2260').balance, 0);
     // income tax: provisional instalments a third each, the annual return less instalments and WHT credits
     let c1 = await api('POST', '/tax/returns/prepare', { tax: 'cit_1', period_from: '2026-04-01', period_to: '2027-03-31', due_date: '2026-09-30', inputs: { estimated_income: 120000 } });
     assert.strictEqual(c1.amount_due, 10000); c1 = await api('POST', `/tax/returns/${c1.id}/file`, {});

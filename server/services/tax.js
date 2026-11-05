@@ -33,7 +33,7 @@ const TAXES = {
   cit_2: { name: 'Income tax – 2nd instalment', st: 'Lekhetho la lekeno – karolo ea 2', account: '2230' },
   cit_3: { name: 'Income tax – 3rd instalment', st: 'Lekhetho la lekeno – karolo ea 3', account: '2230' },
   cit_final: { name: 'Income tax – annual return', st: 'Lekhetho la lekeno – selemo', account: '2230' },
-  levy: { name: 'Other levy', st: 'Lekhetho le leng', account: '2250' }
+  levy: { name: 'Other levy', st: 'Lekhetho le leng', account: '2260' }
 };
 
 const ymd = d => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
@@ -294,7 +294,7 @@ async function file(user, id, { filed_ref, accept_warnings } = {}) {
     if (f.net > 0) lines.push({ code: '2110', credit: f.net, description: 'VAT payable to RSL' });
     else if (f.net < 0) lines.push({ code: '1410', debit: -f.net, description: 'VAT refund due from RSL' });
   } else if (r.tax === 'fbt' && Number(r.amount_due) > 0) lines.push({ code: '6470', debit: Number(r.amount_due) }, { code: '2240', credit: Number(r.amount_due) });
-  else if (r.tax === 'levy' && Number(r.amount_due) > 0) lines.push({ code: '6480', debit: Number(r.amount_due), description: f.levy_name }, { code: '2250', credit: Number(r.amount_due), description: f.levy_name });
+  else if (r.tax === 'levy' && Number(r.amount_due) > 0) lines.push({ code: '6480', debit: Number(r.amount_due), description: f.levy_name }, { code: '2260', credit: Number(r.amount_due), description: f.levy_name });
   else if (r.tax === 'cit_final') {
     if (f.tax > 0) lines.push({ code: '7100', debit: f.tax, description: 'Income tax for the year' }, { code: '2230', credit: f.tax });
     if (f.wht_credits > 0) lines.push({ code: '2230', debit: f.wht_credits, description: 'Withholding tax credits used' }, { code: '1420', credit: f.wht_credits });
@@ -324,7 +324,7 @@ async function reopen(user, id) {
 }
 
 // ---------------------------------------------------------------- paying RSL
-const liability = tax => (TAXES[tax] || {}).account || '2250';
+const liability = tax => (TAXES[tax] || {}).account || '2260';
 async function bookPayment(c, user, r, p) {
   const lines = [{ code: liability(r.tax), debit: Number(p.amount), description: `${r.name} ${r.period_label}` }, { code: p.account_code, credit: Number(p.amount), description: `Paid to RSL ${p.reference || ''}` }];
   if (Number(p.fee) > 0) lines.push({ code: '6450', debit: Number(p.fee), description: 'Tax payment fee' }, { code: p.fee_account || p.account_code, credit: Number(p.fee), description: 'Tax payment fee' });
@@ -423,7 +423,7 @@ async function paymentSummary(from, to) {
 /** what is owed to RSL right now, per tax (from the liability accounts) */
 async function liabilities() {
   const rows = await db.query(`SELECT a.code, a.name, COALESCE(SUM(l.credit - l.debit),0) bal FROM accounts a LEFT JOIN journal_lines l ON l.account_id = a.id
-    WHERE a.code IN ('2100','1400','2110','1410','2200','2220','2230','2240','2250','1420') GROUP BY a.id ORDER BY a.code`);
+    WHERE a.code IN ('2100','1400','2110','1410','2200','2220','2230','2240','2260','1420') GROUP BY a.id ORDER BY a.code`);
   return rows.map(r => ({ code: r.code, name: r.name, balance: round2(r.bal) }));
 }
 

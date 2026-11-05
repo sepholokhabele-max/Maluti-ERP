@@ -21,7 +21,7 @@ async function calTab(b) {
   const c = await GET('/tax/calendar');
   const L2 = code => (c.liabilities.find(x => x.code === code) || { balance: 0 }).balance;
   const owed = [[L('VAT on sales not yet filed', 'VAT e e so romeloe'), round(L2('2100') + L2('1400'))], [L('VAT filed, to pay (2110)', 'VAT e lokelang ho lefshoa'), L2('2110')], [L('PAYE (2200)', 'PAYE (2200)'), L2('2200')], [L('Withholding tax (2220)', 'Lekhetho le tšoaroang'), L2('2220')],
-    [L('Income tax (2230)', 'Lekhetho la lekeno'), L2('2230')], [L('Fringe benefit tax (2240)', 'FBT'), L2('2240')], [L('Levies (2250)', 'Makhetho a mang'), L2('2250')]];
+    [L('Income tax (2230)', 'Lekhetho la lekeno'), L2('2230')], [L('Fringe benefit tax (2240)', 'FBT'), L2('2240')], [L('Levies (2260)', 'Makhetho a mang'), L2('2260')]];
   const items = c.items;
   const soon = items.filter(x => x.status !== 'paid' && x.days_left <= 31 && !(x.status === 'filed' && x.amount_due <= 0));
   b.innerHTML = `<div class="tiles" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-bottom:12px">${owed.map(([k, v]) => `<div class="card"><small class="muted">${k}</small><div style="font-size:19px;font-weight:700">${money(v)}</div></div>`).join('')}</div>

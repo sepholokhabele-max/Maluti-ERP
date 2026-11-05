@@ -282,10 +282,10 @@ r.post('/hire/orders/:id(\\d+)/settle', requirePerm('hire'), ah(async (req, res)
     const lines = [];
     for (const x of await c.query('SELECT x.*, h.name FROM hire_returns x JOIN hire_lines l ON l.id = x.line_id JOIN hire_items h ON h.id = l.item_id WHERE x.order_id = ? ORDER BY x.id', [o.id])) {
       const units = round2(Number(x.qty) + Number(x.lost));
-      if (Number(x.hire_charge) > 0) lines.push({ description: `${x.name} – ${x.days} day${x.days > 1 ? 's' : ''} (${d10(o.start_date)} to ${d10(x.return_date)})`.slice(0, 200), qty: units, unit_price: ex(Number(x.hire_charge) / units), gross_total: Number(x.hire_charge), tax_rate: vat, account_code: '4900' });
-      if (Number(x.damage_charge) > 0) lines.push({ description: `${x.name} – ${Number(x.lost) ? `${Number(x.lost)} lost` : ''}${Number(x.lost) && Number(x.damaged) ? ', ' : ''}${Number(x.damaged) ? `${Number(x.damaged)} damaged` : ''}${x.note ? ': ' + x.note : ''}`.slice(0, 200), qty: 1, unit_price: ex(x.damage_charge), gross_total: Number(x.damage_charge), tax_rate: vat, account_code: '4900' });
+      if (Number(x.hire_charge) > 0) lines.push({ description: `${x.name} – ${x.days} day${x.days > 1 ? 's' : ''} (${d10(o.start_date)} to ${d10(x.return_date)})`.slice(0, 200), qty: units, unit_price: ex(Number(x.hire_charge) / units), gross_total: Number(x.hire_charge), tax_rate: vat, account_code: '4880' });
+      if (Number(x.damage_charge) > 0) lines.push({ description: `${x.name} – ${Number(x.lost) ? `${Number(x.lost)} lost` : ''}${Number(x.lost) && Number(x.damaged) ? ', ' : ''}${Number(x.damaged) ? `${Number(x.damaged)} damaged` : ''}${x.note ? ': ' + x.note : ''}`.slice(0, 200), qty: 1, unit_price: ex(x.damage_charge), gross_total: Number(x.damage_charge), tax_rate: vat, account_code: '4880' });
     }
-    if (Number(o.delivery_fee) > 0) lines.push({ description: 'Delivery and collection', qty: 1, unit_price: ex(o.delivery_fee), gross_total: Number(o.delivery_fee), tax_rate: vat, account_code: '4900' });
+    if (Number(o.delivery_fee) > 0) lines.push({ description: 'Delivery and collection', qty: 1, unit_price: ex(o.delivery_fee), gross_total: Number(o.delivery_fee), tax_rate: vat, account_code: '4880' });
     let inv = null, number = null, applied = 0;
     if (lines.length) {
       inv = await biz.createInvoice(c, req.user, { kind: 'customer_invoice', partner_id: o.partner_id, invoice_date: today(), due_date: d10(b.due_date) || today(), notes: `${o.number}${o.delivery_address ? ' · ' + o.delivery_address : ''}`, lines: biz.calcLines(lines, 'unit_price') });
@@ -326,7 +326,7 @@ r.post('/hire/orders/:id(\\d+)/cancel', H, ah(async (req, res) => {
       // a cancellation fee may be kept from the deposit
       const fee = round2(Math.min(held, Math.max(0, Number(req.body.fee) || 0))), back = round2(held - fee);
       const lines = [{ code: '2420', debit: held, partner_id: o.partner_id }];
-      if (fee) lines.push({ code: '4900', credit: fee, description: 'Cancellation fee' });
+      if (fee) lines.push({ code: '4880', credit: fee, description: 'Cancellation fee' });
       if (back) { const m = await methodOf(c, req.body.refund_method_id); lines.push({ code: m.account_code, credit: back });
         await c.query(`INSERT INTO payments (direction, partner_id, method_id, amount, reference, user_id) VALUES ('out', ?, ?, ?, ?, ?)`, [o.partner_id, m.id, back, `Deposit refund ${o.number}`, req.user.id]); }
       await accounting.post(c, { reference: o.number, memo: `Hire cancelled ${o.number}`, source_type: 'hire_deposit', source_id: o.id, user_id: req.user.id, lines });

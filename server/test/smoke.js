@@ -5,6 +5,8 @@ const assert = require('assert');
 const { start } = require('../app');
 
 const DB = { host: process.env.DB_HOST || 'localhost', port: 3306, user: process.env.DB_USER || 'erp', password: process.env.DB_PASSWORD || 'erp123', database: process.env.DB_NAME || 'maluti_smoke' };
+// the test passes the DB in through /db-config itself; don't let the server think it's admin-managed
+delete process.env.DB_HOST; delete process.env.DB_USER; delete process.env.DB_PASSWORD; delete process.env.DB_NAME;
 let base, token;
 
 async function api(method, url, body, expectFail) {

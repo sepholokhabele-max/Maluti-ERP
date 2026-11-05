@@ -11,17 +11,25 @@ export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 export async function api(method, url, body) {
-  const res = await fetch('/api' + url, {
-    method,
-    headers: { 'Content-Type': 'application/json', ...(state.token ? { Authorization: 'Bearer ' + state.token } : {}) },
-    body: body === undefined ? undefined : JSON.stringify(body)
-  });
+  let res;
+  try {
+    res = await fetch('/api' + url, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...(state.token ? { Authorization: 'Bearer ' + state.token } : {}) },
+      body: body === undefined ? undefined : JSON.stringify(body)
+    });
+  } catch (_) {
+    // plain words instead of "Failed to fetch"
+    throw new Error(L('Cannot reach Maluti ERP. Check that the shop computer is switched on and this device is on the same Wi-Fi or network, then try again. Nothing was saved.',
+      'Ha e khone ho fihlela Maluti ERP. Hlahloba hore khomputara ea lebenkele e butsoe ’me sesebelisoa sena se Wi-Fi kapa marang-rang a tšoanang, ebe u leka hape. Ha ho letho le bolokiloeng.'));
+  }
+  if (res.status === 413) throw new Error(L('That is too big to send – use a smaller file or photo.', 'Ke e kholo haholo – sebelisa faele kapa foto e nyane.'));
   const ct = res.headers.get('content-type') || '';
   const data = ct.includes('application/json') ? await res.json() : await res.text();
   if (res.status === 401 && state.token && !url.startsWith('/login') && !url.startsWith('/pin-login')) {
     setToken(null); location.hash = '#/login';
   }
-  if (!res.ok) throw new Error((data && data.error) || `Request failed (${res.status})`);
+  if (!res.ok) throw new Error((data && data.error) || (res.status >= 500 ? L('Something went wrong on the server. Try again; if it keeps happening, note what you did and tell the administrator (Settings → Logs).', 'Ho na le phoso server. Leka hape; haeba e ntse e etsahala, bolella motsamaisi (Settings → Logs).') : `Request failed (${res.status})`));
   return data;
 }
 export const GET = u => api('GET', u), POST = (u, b) => api('POST', u, b ?? {}), PUT = (u, b) => api('PUT', u, b), DEL = u => api('DELETE', u);
@@ -125,7 +133,7 @@ export const err = e => toast(e.message || String(e), 'err', 5000);
 
 import { HELP } from './help.js';
 import { HELP_ST } from './help_st.js';
-import { pick } from './i18n.js';
+import { pick, L } from './i18n.js';
 // ---------- modal ----------
 /**
  * modal({ title, body (html), wide, actions:[{label, cls, onClick(close, root) }], onOpen(root, close) })
@@ -146,11 +154,22 @@ export function modal({ title, body, wide, size, actions = [], onOpen, onClose, 
   root.appendChild(wrap);
   const close = () => { openModals.delete(close); wrap.remove(); document.removeEventListener('keydown', onKey); onClose && onClose(); };
   if (dismissable) openModals.add(close);
-  const onKey = e => { if (e.key === 'Escape' && dismissable && wrap === root.lastElementChild) close(); };
+  // typed something and then pressed ✕, Escape or clicked beside the box? ask before throwing it away
+  const snapshot = () => [...wrap.querySelectorAll('.modal-body input:not([type=file]):not([readonly]), .modal-body select, .modal-body textarea')].map(x => x.type === 'checkbox' ? x.checked : x.value).join('\u0001');
+  let initial = null;
+  const askClose = async () => {
+    if (initial !== null && actions.some(a => a.onClick) && snapshot() !== initial) {
+      if (!(await confirmBox(L('Close without saving what you typed?', 'Koala ntle le ho boloka seo u se ngotseng?'), { okLabel: L('Close without saving', 'Koala ntle le ho boloka'), danger: true }))) return;
+    }
+    close();
+  };
+  const onKey = e => { if (e.key === 'Escape' && dismissable && wrap === root.lastElementChild) askClose(); };
   document.addEventListener('keydown', onKey);
   if (dismissable) {
-    wrap.querySelector('[data-x]').onclick = close;
-    wrap.addEventListener('mousedown', e => { if (e.target === wrap) close(); });
+    wrap.querySelector('[data-x]').onclick = askClose;
+    let downOnBackdrop = false;
+    wrap.addEventListener('mousedown', e => { downOnBackdrop = e.target === wrap; });
+    wrap.addEventListener('mouseup', e => { if (downOnBackdrop && e.target === wrap) askClose(); downOnBackdrop = false; });
   }
   actions.forEach((a, i) => {
     const b = wrap.querySelector(`[data-a="${i}"]`);
@@ -161,6 +180,7 @@ export function modal({ title, body, wide, size, actions = [], onOpen, onClose, 
     };
   });
   onOpen && onOpen(wrap, close);
+  setTimeout(() => { initial = snapshot(); }, 0);
   const first = wrap.querySelector('input:not([type=hidden]):not([readonly]), select, textarea');
   if (first) setTimeout(() => { if (!wrap.contains(document.activeElement)) first.focus(); }, 30);
   return close;
@@ -216,7 +236,12 @@ export function readForm(root, fields) {
     else if (f.type === 'number') out[f.key] = el.value === '' ? (f.nullable ? null : 0) : Number(el.value);
     else if (f.type === 'select' && f.numeric) out[f.key] = el.value === '' ? null : Number(el.value);
     else out[f.key] = el.value;
-    if (f.required && (out[f.key] === '' || out[f.key] == null)) throw new Error(`${f.label} is required`);
+    if (f.required && (out[f.key] === '' || out[f.key] == null || (typeof out[f.key] === 'string' && !out[f.key].trim()))) {
+      el.classList.add('invalid'); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.focus();
+      el.addEventListener('input', () => el.classList.remove('invalid'), { once: true });
+      throw new Error(L(`Fill in "${f.label}" – it is needed`, `Tlatsa "${f.label}" – ea hlokahala`));
+    }
+    el.classList.remove('invalid');
   }
   return out;
 }

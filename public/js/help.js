@@ -1,6 +1,101 @@
 // Explanation notes shown under every input on the setup and configuration screens.
 // formHtml(fields, values, { ctx: 'company' }) looks up HELP[ctx][field.key]; a field's own `help` wins.
 export const HELP = {
+  portal: {
+    enabled: 'Customers can open their private link (balance, invoices, statement). Switch off to close every link at once.',
+    allow_proof: 'Customers who paid at the bank can upload the slip. It lands on their contact as a file, with a task for the office to check it.',
+    terminal_id: 'Online payments go through this Smartel-linked till as MyWallet / card / Switch payment requests – never to MyWallet directly. Leave empty for no online payment.'
+  },
+  tax_settings: {
+    tin: 'Your Taxpayer Identification Number from RSL – on your registration certificate and every RSL letter.',
+    entity: 'A company pays company income tax; a sole trader pays personal income tax on the same instalment dates.',
+    vat_registered: 'Tick if RSL registered you for VAT (compulsory above M2 000 000 turnover a year). Then a VAT return is due every month.',
+    vat_rate: 'Standard rate – 15% today. Electricity is 10%; exports and basic foods 0% (set on the product\'s tax).',
+    vat_due_day: 'Day of the following month the VAT return and payment are due – the 20th.',
+    paye_due_day: 'Day of the following month PAYE is due – the 15th.',
+    wht_due_day: 'Day of the following month withheld tax must be paid over – the 15th.',
+    cit_rate: '25% for most companies; 10% for manufacturing and commercial farming income.',
+    year_end_month: 'Month your financial year ends. Most Lesotho businesses use March (3): instalments 30 Sep, 31 Dec, 31 Mar, return 30 Jun.',
+    fbt_enabled: 'Tick if staff get benefits like a company car, housing or cheap loans. Fringe benefit tax is then due every quarter.',
+    fbt_rate: 'Rate on the taxable value of the benefits. Published sources differ – confirm the current rate with RSL.',
+    rsl_phone: 'Mobile number that receives the MyWallet SMS when you pay RSL through MyWallet.',
+    rsl_fee_fixed: 'The service fee for paying RSL through MyWallet, as agreed with My Wallet / Smartel. When MyWallet quotes its own fee for a payment, that quote is used instead. The fee is shown before you confirm and booked as a tax payment fee.',
+    rsl_fee_pct: 'Percentage of the tax paid that is added to the fee, e.g. 0.5.',
+    rsl_fee_max: 'Highest fee for one payment. Leave empty for no limit.',
+    start_month: 'Returns from before this month are not listed (they were handled before you used Maluti). Leave empty to start from your first entry in the books.'
+  },
+  tax_pay: {
+    method: '"MyWallet through Smartel" pays RSL at a till as a bill payment – you get the MyWallet reference straight away. Otherwise record a bank, M-Pesa or cash payment you already made.',
+    amount: 'You may pay in parts; the return shows what is still owed.',
+    pos_session_id: 'The till with an open cashier session where you hand in the cash for the payment.',
+    account_code: 'Where the money comes from – it is taken off that account in the books.',
+    reference: 'Bank deposit slip, EFT or RSL receipt number.',
+    fee: 'Any bank charge for the payment – booked as a tax payment fee.'
+  },
+  tax_wht: {
+    direction: 'Withheld = you paid a contractor less and must pay that tax to RSL by the 15th. Suffered = a customer paid you less and gave you a certificate; it counts against your income tax.',
+    partner_id: 'The contractor you paid, or the customer who withheld tax from you.',
+    kind: 'What the payment was for – it decides the rate.',
+    gross: 'The invoice amount BEFORE VAT – withholding tax is worked on the amount without VAT.',
+    tx_date: 'Date of the payment.',
+    reference: 'Supplier invoice number, or the certificate number the customer gave you.'
+  },
+  tax_inputs: {
+    benefits_value: 'Taxable value of all benefits this quarter (cars, housing, loans at low interest…), worked out as RSL prescribes.',
+    details: 'Short description for your records.',
+    levy_name: 'E.g. Plastic levy, Gaming levy.', basis: 'E.g. "2 000 bags × M0.90".', amount: 'Amount due for the period.',
+    estimated_income: 'What you expect the taxable profit for the whole year to be. Leave empty to use last year\'s profit or this year so far.',
+    rate: 'Leave empty to use the rate under Settings. 10% for manufacturing or commercial farming.',
+    add_backs: 'Costs in your books that the tax law does not allow, e.g. fines, private use, entertainment above the limit.',
+    allowances: 'Wear-and-tear (capital allowances) on equipment and vehicles, worked out on RSL\'s rates.',
+    losses_brought_forward: 'An assessed loss from earlier years that RSL accepted.'
+  },
+  tax_file: { filed_ref: 'Acknowledgement number from RSL e-Tax or the stamp reference from the RSL counter.' },
+  tax_levy: { levy_name: 'E.g. Plastic levy.', basis: 'How it was worked out.', amount: 'Amount due.', period_from: 'First day of the period.', period_to: 'Last day of the period.', due_date: 'When RSL wants it.' },
+  smartel: {
+    enabled: 'Switch on once the addresses and till certificates are in. While it is on, payment services, card / MyWallet / Switch payments, recalls and the product register work through the Smartel POS backend.',
+    pos_api_url: 'The pos-api address from your Smartel welcome letter, starting with https://. Maluti never calls MyWallet itself – only this address.',
+    syncd_url: 'The syncd address from the welcome letter. Sealed receipts go here; recalls, catalogue, prices and Thoki updates come from here.',
+    auth: 'Normal: every till signs in with its own certificate. Use "trusted gateway" only when Smartel set up a gateway in your shop or for a test backend.',
+    merchant_id: 'Your Smartel merchant ID (on the welcome letter). Used for the owner portal (bulk wages).',
+    ca_pem: 'Smartel\'s certificate authority, pasted as text (-----BEGIN CERTIFICATE-----). Leave empty if Smartel says the normal internet certificates are used.',
+    portal_auth: 'How the owner signs in for bulk wages. "Portal token" if Smartel gave you one.',
+    portal_sub: 'Owner user name at the Smartel portal (gateway sign-in only).',
+    portal_token: 'Token from the Smartel owner portal. Kept secret – it is never shown again after saving.',
+    npr: 'Every product sold must be in the National Product Register. "Refuse" blocks unknown barcodes at the till and reports them; "Warn" only while you are still setting up.',
+    accept_prices: 'Tick to take price changes Smartel sends for linked products. Untick if you set your own prices.',
+    create_products: 'Tick to add products from the Smartel catalogue that you do not have yet (matched by barcode first).',
+    gps_lat: 'Your shop\'s position (e.g. -29.3167 for Maseru). Sent with receipts and scan flags. Find it on Google Maps: right-click the shop.',
+    gps_lng: 'Longitude, e.g. 27.4833 for Maseru.',
+    grn_terminal_id: 'Deliveries received in the back office are sealed on this till\'s chain. Leave on the first linked till if unsure.',
+    timeout_s: 'How long to wait for Smartel before treating a service as "unknown". 25 seconds is normal. An unknown service is never sent again.'
+  },
+  smartel_till: {
+    terminal_uuid: 'The terminal ID for THIS till from the Smartel welcome letter (looks like 7f3c2a10-…). Each till has its own.',
+    cert_pem: 'The till\'s certificate as text (-----BEGIN CERTIFICATE-----). Open the .crt / .pem file with Notepad and paste everything.',
+    key_pem: 'The till\'s private key as text (-----BEGIN PRIVATE KEY-----). Keep it secret – it is never shown again after saving.'
+  },
+  smartel_settle: {
+    kind: 'What MyWallet paid or what you moved. This keeps the agency cash, digital takings and commission accounts right.',
+    amount: 'The amount on the MyWallet statement or bank slip.',
+    account: 'Where the money arrived or left from – usually your MyWallet business wallet.',
+    reference: 'MyWallet settlement reference or bank reference.',
+    date: 'Date on the statement. Leave empty for today.'
+  },
+  agent: {
+    cell: 'The customer\'s MyWallet number – 8 digits, e.g. 5812 3456. Read it back to the customer.',
+    amount: 'Amount in Maloti. MyWallet\'s fee is shown before you confirm – tell the customer.',
+    reference: 'Optional note the customer wants on the deposit.',
+    account: 'The agent or till account number for a till cash-out.',
+    cell_sender: 'Phone of the person sending the money.',
+    cell_recipient: 'Phone of the person receiving it.',
+    tomember: 'The customer\'s other network (M-Pesa, EcoCash…).',
+    voucher: 'The cash-out voucher number the customer made on their own wallet.',
+    network: 'Vodacom or Econet.',
+    meter: 'The 11-digit LEC prepaid meter number on the meter or old token slip.',
+    biller: 'Who the bill is paid to.',
+    bouquet: 'DStv package, if paying DStv.'
+  },
   db: {
     host: 'Where MySQL runs. "localhost" if MySQL is installed on this computer; otherwise the server\'s IP address, e.g. 192.168.1.10.',
     port: 'Normally 3306. Only change it if your MySQL was installed on another port.',
@@ -143,7 +238,8 @@ export const HELP = {
     credit_limit: 'Maximum they may owe you on account. 0 = no credit sales allowed.',
     is_customer: 'You sell to them.',
     is_supplier: 'You buy from them (abattoir, farmer, wholesaler…).',
-    notes: 'Anything staff should know, e.g. delivery days or price agreements.'
+    notes: 'Anything staff should know, e.g. delivery days or price agreements.',
+    marketing_opt_out: 'Tick when the person asked not to get specials and news. They are left out of every SMS and email campaign (invoices and reminders still go).'
   },
   butchery: {
     enabled: 'Turns on weighed items, scale labels, carcass breakdown & tracing, waste, batches and processing for the whole business.',
@@ -650,6 +746,30 @@ export const HELP = {
     next_due: 'When the next dose or vaccination is due – it then shows under Health due.', final: 'Tick on the last harvest so the season is closed.', note: 'Anything worth remembering.'
   },
   farmexit: { kind: 'Sold (an invoice is made to the buyer), died, or slaughtered.', date: 'Date.', partner_id: 'Buyer – add new buyers under Contacts.', amount: 'Selling price.', weight: 'Weight at sale or slaughter.', note: 'Cause of death, where it was sold…' },
+  campaign: {
+    name: 'For you only, e.g. "Easter specials 2027" or "Back-to-school uniforms".',
+    channel: 'SMS reaches most people the same day (costs per message); email is free but fewer customers read it.',
+    group: 'Start from a group: customers, tenants with a running lease, parents of enrolled learners, patients, hire customers or suppliers.',
+    tags: 'Only contacts with one of these tags (set tags on the contact), e.g. vip, wholesale, staff.',
+    bought_within: 'Recent buyers – e.g. 30 for everyone who bought in the last month (till and invoices).',
+    not_bought_for: 'Customers you have not seen for a while – e.g. 90 to win back people who stopped coming.',
+    birthday_month: 'Customers with a birthday in this month (birthday set on the contact) – good for a birthday special.',
+    min_spent: 'Only customers who spent at least this much with you in total – your best customers.',
+    subject: 'Email subject line. SMS has no subject.',
+    message: 'Keep SMS short (160 letters = 1 SMS). {first_name} makes it personal. A line telling people how to stop messages is added automatically.'
+  },
+  opening: {
+    title: 'Job title as it should appear on the advert, e.g. "Cashier", "Security officer", "Bookkeeper".', department_id: 'Department in HR – the new employee lands in it.',
+    location: 'Branch, site or town.', employment_type: 'Permanent, fixed-term, casual or intern – carried over to the employee.', positions: 'How many people you need. The job is marked filled when that many are hired.',
+    closing_date: 'Last day to apply – printed on the advert.', salary_from: 'Bottom of the salary range (optional – leave out if you do not want to show it).', salary_to: 'Top of the range.',
+    description: 'What the person will do day to day.', requirements: 'Qualifications (LGCSE, diploma…), experience, licence, languages.', how_to_apply: 'Where to bring or send the CV, and the contact number.', status: 'Draft (not advertised yet), open, closed or filled.'
+  },
+  applicant: {
+    first_name: 'As on the ID.', last_name: 'Surname – needed before hiring (payroll).', phone: 'Mobile number – for interview invitations and the outcome by SMS.', email: 'Optional.', id_number: 'National ID or passport – checked at interview, copied to HR when hired.',
+    source: 'Where they heard about the job – shows which adverts bring the people you hire.', rating: 'Your first impression from the CV, 1–5 stars – helps sort a big pile.', notes: 'Experience, qualifications, references called…'
+  },
+  appstage: { interview_at: 'Date and time of the interview – sent in the SMS.', interviewer: 'Who interviews.', salary_offered: 'Monthly salary offered.', start_date: 'When they would start.', reject_reason: 'Kept on record only, not sent.', notify: 'Sends a polite SMS: interview invitation, offer, or regret.' },
+  apphire: { last_name: 'Surname for payroll.', basic_salary: 'Monthly basic salary – goes onto the employee in HR & Payroll.', hire_date: 'First working day – the first month is paid pro rata.' },
   vehicle: {
     reg_no: 'Registration number exactly as on the licence disc, e.g. "A 123 BCD".',
     name: 'Optional nickname drivers use, e.g. "Blue Quantum".',

@@ -40,7 +40,7 @@ export async function fleet(view) {
         { key: 'amount', label: 'Charge', right: 1, fmt: money }, { key: 'status', label: 'Status', html: 1, fmt: (s, t) => tsBadge(s) + (t.invoice_number ? ` <small class="muted">${esc(t.invoice_number)}</small>` : '') }],
         rows, { rowAttr: t => `data-t="${t.id}"`, empty: 'No trips here.' })}</div>`;
     $$('[data-pick]', fb).forEach(c => c.onclick = e => e.stopPropagation());
-    $$('[data-t]', fb).forEach(tr => tr.onclick = () => tripActions(rows.find(t => String(t.id) === tr.dataset.t), () => fleet(view)));
+    $$('[data-t]', fb).forEach(tr => tr.onclick = () => tripActions(rows.find(t => String(t.id) === tr.dataset.t), () => fleet(document.getElementById('view') || view)));
     if ($('#ti')) $('#ti').onclick = async () => {
       const ids = $$('[data-pick]:checked', fb).map(c => Number(c.dataset.pick));
       if (!ids.length) return toast('Tick the trips to invoice', 'err');

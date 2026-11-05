@@ -13,7 +13,7 @@ const pub = express.Router();
 pub.get('/status', ah(async (req, res) => {
   const connected = db.isConnected();
   res.json({ connected, initialised: connected ? await setup.isInitialised() : false, version: require('../../package.json').version,
-    db_config_editable: !!req.app.locals.configStore, embedded_available: !!req.app.locals.embeddedDb,
+    db_config_editable: !!req.app.locals.configStore && !process.env.DB_HOST, setup_key_required: !!process.env.MALUTI_SETUP_KEY, embedded_available: !!req.app.locals.embeddedDb,
     embedded_running: !!(req.app.locals.embeddedDb && req.app.locals.embeddedDb.running()) });
 }));
 
@@ -32,7 +32,7 @@ pub.post('/db-embedded', ah(async (req, res) => {
 // Save DB connection (first run). Only allowed when not yet initialised.
 pub.post('/db-config', ah(async (req, res) => {
   const store = req.app.locals.configStore;
-  if (!store) throw bad('Database is configured by the server administrator');
+  if (!store || process.env.DB_HOST) throw bad('Database is configured by the server administrator');
   if (db.isConnected() && await setup.isInitialised().catch(() => false)) throw bad('Already set up. Change the database from Settings as an admin.');
   const cfg = pick(req.body, ['host', 'port', 'user', 'password', 'database']);
   cfg.port = Number(cfg.port || 3306); cfg.database = cfg.database || 'maluti_erp';
@@ -44,12 +44,18 @@ pub.post('/db-config', ah(async (req, res) => {
 
 pub.post('/setup', ah(async (req, res) => {
   const { company, admin, demo } = req.body;
+  // hosted (web) version: only the person who has the set-up key from the server administrator can create the business
+  if (process.env.MALUTI_SETUP_KEY && String(req.body.setup_key || '') !== process.env.MALUTI_SETUP_KEY) throw Object.assign(new Error('The set-up key is wrong. Ask whoever installed the server for it.'), { status: 403 });
   if (!admin || !admin.username || !admin.password || admin.password.length < 6) throw bad('Admin username and a password of at least 6 characters are required');
   await setup.initialise({ company: company || {}, admin, demo: !!demo });
   // remember the kinds of business for the setup guide; butchery mode is switched on straight away
   const types = Array.isArray(req.body.business_types) ? req.body.business_types : [];
   // a brand-new business: only the modules its types need are switched on
   if (types.length) { const M = require('../services/modules'); await M.save({ types, modules: M.defaultsFor(types) }); }
+  const A = require('../services/activation'); await A.get();
+  const k = req.body.kyc || {};
+  if (k.path === 'merchant' && k.merchant_no) await A.save({ kyc: { path: 'merchant', merchant_no: String(k.merchant_no).slice(0, 40), merchant_phone: String(k.merchant_phone || '').slice(0, 40) } });
+  else if (k.path === 'documents') await A.save({ kyc: { path: 'documents' } });
   if (types.includes('butchery')) { const B = require('../services/butchery'); await db.setSetting('butchery', { ...(await B.settings()), enabled: true }); }
   res.json(await auth.login(admin.username, admin.password));
 }));

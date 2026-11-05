@@ -1,4 +1,80 @@
-## Maluti ERP 1.15.0
+## Maluti ERP 1.21.0
+
+**The whole program in Sesotho, a translation review screen, and fewer ways to lose work.**
+
+- **Full Sesotho screens**: choose *ST* at the top and menus, buttons, table headings, forms, the till, settings and messages switch to Sesotho (about 2 100 screen texts), on top of the Sesotho help notes and setup guide. Receipts, invoices and documents for customers and RSL stay in English.
+- **Settings → Translations**: a native speaker can correct any Sesotho word or fill in texts that are still English (they are collected automatically as people use the program, most-seen first). Corrections apply to everybody at once – no new version needed. Export to CSV / Excel to work offline and import it back.
+- **KYC requests go to kyc@smartelmoney.com**, with the KYC documents attached; if this computer cannot send email, the screen says so and gives a ready-to-send email link.
+- **Foolproofing**:
+  - A missing required field is outlined in red, the screen scrolls to it and says which one to fill in.
+  - Typing in a form and then pressing ✕, Escape or clicking beside it asks before throwing the typing away.
+  - "Failed to fetch" and server errors are replaced by plain instructions (is the shop computer on, same Wi-Fi?), and an action that fails always shows a message instead of doing nothing.
+
+### Also in 1.20.1
+
+**Tax centre: checks before filing, VAT supplies by class, and the RSL payment fee up front.**
+
+- **VAT checks before filing** (as in the Smartel design, P11): VAT that does not match its line, sealed receipts refused by Smartel or not sent yet, a held receipt chain, unusually many voids or refunds, prices far from the list price, and input VAT claimed from suppliers without a VAT number. A serious problem must be fixed – or confirmed – before the return is marked filed.
+- The VAT return shows **standard-rated, zero-rated and exempt** supplies separately.
+- **Fee for paying RSL through MyWallet**: the confirmation shows tax + fee = total before you pay. MyWallet's own quote is used when it gives one; otherwise the tariff under *Tax centre → Settings* (fixed + % with an optional cap). The fee is booked as a tax payment fee, and *What is due* shows taxes and fees paid this tax year.
+- **RSL acknowledgement & papers**: attach the e-Tax acknowledgement, assessments and receipts to each return.
+
+### Also in 1.20.0
+
+**Customer portal, a web version and an Android app.**
+
+- **Customer portal**: send each account customer a private link (QR, SMS or WhatsApp). On their phone they see what they owe, their open invoices and a 6-month statement, in English or Sesotho, and can **pay with MyWallet, card or Switch** (through the Smartel POS backend – the payment goes straight onto their account) or **upload proof of a bank payment** (it arrives on their contact with a task to check it). Links can be renewed or switched off; visits are logged.
+- **Web version**: run Maluti ERP on a server or in the cloud with Docker (app + MySQL, optional automatic HTTPS). A set-up key protects the first start, and the database cannot be changed from the browser.
+- **Phones and tablets**: the screens and the till work on a phone; install it from the browser as an app (PWA). An **Android app** is built automatically with every release – it connects to the shop PC on the Wi-Fi or to the web version.
+- Fix: the welcome tour no longer stays on screen when you open another app.
+- Setup-guide step and help notes in English and Sesotho.
+
+### Also in 1.19.0
+
+**Tax centre: every RSL tax in one place – worked out from the books, filed and paid.**
+
+- **What is due**: a calendar of VAT (20th), PAYE and withholding tax (15th), income tax instalments (30 Sep, 31 Dec, 31 Mar) and the annual return (30 Jun), fringe benefit tax each quarter and any other levy – with what is owed now per tax and overdue items in red.
+- **Returns from the books**: VAT with output and input VAT and supplies by rate; PAYE from the payroll run; withholding tax from the register; income tax instalments from your estimate (or last year's profit); the annual income tax return with add-backs, allowances, losses, instalments and withholding credits. Print any return.
+- **Filed with RSL** locks the return and posts the closing entry; **Pay** records bank / EFT / M-Pesa / cash payments, in parts if needed – or pays RSL **through MyWallet at the till** via the Smartel POS backend, with MyWallet's fee shown first and booked.
+- **Withholding tax**: tax withheld from contractors with a printable certificate, and certificates from customers claimed against income tax.
+- Settings for TIN, VAT registration, rates, due days and year-end (defaults from RSL, Nov 2026). Setup-guide steps and help notes in English and Sesotho.
+
+### Also in 1.18.0
+
+**Smartel POS backend: MyWallet agent services, card / MyWallet / Switch payments and sealed receipts – never a direct line to the core banking system.**
+
+- **Settings → Smartel connection**: pos-api and syncd addresses, one Smartel terminal ID and certificate per till, test button, connection state, and a plain explanation of what goes where. Maluti only talks to the Smartel adapters; the old direct "My Wallet" VAS set-up is switched off while the connection is on.
+- **💸 Agent services at the till**: cash deposit, withdrawal (customer's SMS PIN), till cash-out, send money, cash-in to another network (NPS Switch), redeem a Switch voucher, airtime, LEC electricity and bills (DStv, WASCO and others). MyWallet's name check and fee are shown before you confirm. The PIN is never stored. A service MyWallet does not answer is never sent twice – it is checked until MyWallet's history settles it.
+- **One customer, one receipt**: goods and services on the same receipt with the **net cash** in or out of the drawer; services-only customers get a session receipt. Cash-up expects exactly the net of all cash effects.
+- **Card, MyWallet (scan to pay) and Switch** for goods: the customer approves on their own phone; the sale completes only when the payment is confirmed.
+- **Sealed, chained receipts** (sale, services, deliveries, recall acknowledgements, scan flags, heartbeats) are sent to Smartel automatically, oldest first after an outage; you can see what was accepted or refused and re-check the chain.
+- **Recalls and the National Product Register**: recalled products (or only the recalled lot) cannot be sold; unregistered barcodes are refused or warned, and reported with the shop's location. Catalogue links, price updates and the daily **Thoki** float line arrive automatically.
+- **Wages by MyWallet**: pay staff on mobile money from an approved payroll run in one bulk batch from the business wallet, without double-booking when the run is marked paid.
+- **Books**: payment services are not sales – agency cash, digital takings due, commission and the business wallet have their own accounts, with a screen to record settlements.
+- Demo barcodes now carry correct check digits. Receipts no longer wrap amounts.
+- Setup-guide steps and help notes in English and Sesotho for all of it.
+
+### Also in 1.17.0
+
+**Foolproof first start, KYC and activation.**
+
+- **New first-run wizard**: one question per screen with big buttons and a progress bar – language (English, Sesotho or both) → where to keep the data (one click for the built-in database) → your business (name, phone, address, Maloti or Rand, "Are you VAT-registered? Yes / No / Not sure", logo) → what your business does (picture cards, shows which apps will be switched on) → your login (password strength, typed twice, show/hide) → KYC → a summary with "change" links → *Create my business*. Every answer is checked with a plain explanation of what is wrong; nothing is lost if the screen is reloaded; database errors are explained in plain words.
+- **"What next?"** after setup: follow the setup guide, import data from another program, or look around – with a short **guided tour** of the home screen the first time.
+- **KYC & activation**: every new business gets a **30-day trial**. To keep selling after that, My Wallet activates it: **existing My Wallet agents / merchants only give their agent or merchant number** (their KYC is already on file); new businesses upload photos or PDFs of their ID, business registration / trader's licence and proof of address (TIN / VAT certificate and bank letter if they have them). The request (and a KYC pack zip) goes to My Wallet, who sends back an **activation code** that only fits this installation. Until then a banner shows the days left; after the trial, selling (till, customer invoices, airtime / electricity) pauses while everything else keeps working.
+- Login: Caps Lock warning and help for a forgotten password.
+- Fix: the trip screen sometimes did not refresh after a vehicle left.
+
+### Also in 1.16.0
+
+**SMS & email campaigns, recruitment and staff appraisals.**
+
+- **Campaigns**: send specials, events and news by SMS, email or both to a chosen audience – all customers, tenants, parents, patients, hire customers or suppliers, narrowed by **tags**, **bought in the last … days**, **not seen for … days** (win-back), **birthday month** and **total spent**. The screen shows how many people it reaches and how many SMS it will cost before you send; messages are personalised with {first_name}; send a test to yourself, send now or **schedule** (goes out within five minutes of the time). Every message is logged per customer and added to their CRM history.
+- **Opt-out**: tick *No marketing* on a contact and they are never included; every message says how to stop them. Invoices and payment reminders still go.
+- **Recruitment**: job openings with a printable **advert** (job, requirements, salary range, how to apply, closing date); applicants with CV, ID and certificates attached, moving **new → screening → interview → offer → hired** on a board; **SMS** interview invitations, offers and regrets; duplicate applications caught; **Hire** creates the employee in HR & Payroll with the agreed salary and copies their documents, and closes the job when all posts are filled. Shows where your hires come from.
+- **Appraisals**: score every employee 1–5 on weighted points you choose (quality, attendance, customer service, teamwork…), with strengths, things to improve, goals and the employee's comment; previous scores alongside; printable form with signature lines; closing can **apply the agreed salary increase** from the next payroll. Overview per period of who still needs an appraisal.
+- Setup-guide steps and help notes in English and Sesotho for all of it.
+
+### Also in 1.15.0
 
 **Farm** – for poultry (layers and broilers), wool and mohair, cattle, pigs, dairy and crop farms.
 

@@ -53,7 +53,7 @@ async function consumeBatches(conn, productId, qty, moveType, reference, preferr
   const loc = locationId ? await resolveLocation(conn, locationId) : null;
   const def = loc ? await defaultLocation(conn) : null;
   const batches = await conn.query(
-    `SELECT * FROM stock_batches WHERE product_id = ? AND qty_remaining > 0
+    `SELECT * FROM stock_batches WHERE product_id = ? AND qty_remaining > 0 ${moveType === 'sale' || moveType === 'invoice' ? 'AND recalled = 0' : ''}
      ${loc ? 'AND (location_id = ? OR (location_id IS NULL AND ? = ?))' : ''}
      ORDER BY (id = ?) DESC, expiry_date IS NULL, expiry_date, received_date, id FOR UPDATE`,
     [productId, ...(loc ? [loc, loc, def] : []), preferredBatchId || 0]);

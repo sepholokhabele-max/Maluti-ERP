@@ -62,15 +62,15 @@ async function seedDemo(c, vatId) {
     ['FD002', null, 'Chicken Wings (8)', 'Food', 'consumable', 80, 30],
     ['FD003', null, 'Papa & Moroho', 'Food', 'consumable', 45, 15],
     ['FD004', null, 'Grilled Fish', 'Food', 'consumable', 120, 55],
-    ['DR001', '6001234000011', 'Coca-Cola 330ml', 'Drinks', 'stock', 15, 8.5],
-    ['DR002', '6001234000028', 'Still Water 500ml', 'Drinks', 'stock', 12, 5],
+    ['DR001', '6001234000013', 'Coca-Cola 330ml', 'Drinks', 'stock', 15, 8.5],
+    ['DR002', '6001234000020', 'Still Water 500ml', 'Drinks', 'stock', 12, 5],
     ['DR003', null, 'Cappuccino', 'Drinks', 'consumable', 30, 9],
-    ['BR001', '6001234000035', 'Maluti Lager 340ml', 'Beer & Cider', 'stock', 22, 13],
-    ['BR002', '6001234000042', 'Savanna Dry 330ml', 'Beer & Cider', 'stock', 30, 18],
-    ['GR001', '6001234000059', 'White Bread 700g', 'Groceries', 'stock', 18, 13],
-    ['GR002', '6001234000066', 'Maize Meal 5kg', 'Groceries', 'stock', 75, 58],
-    ['GR003', '6001234000073', 'Full Cream Milk 1L', 'Groceries', 'stock', 21, 15],
-    ['HH001', '6001234000080', 'Dishwashing Liquid 750ml', 'Household', 'stock', 35, 22]
+    ['BR001', '6001234000037', 'Maluti Lager 340ml', 'Beer & Cider', 'stock', 22, 13],
+    ['BR002', '6001234000044', 'Savanna Dry 330ml', 'Beer & Cider', 'stock', 30, 18],
+    ['GR001', '6001234000051', 'White Bread 700g', 'Groceries', 'stock', 18, 13],
+    ['GR002', '6001234000068', 'Maize Meal 5kg', 'Groceries', 'stock', 75, 58],
+    ['GR003', '6001234000075', 'Full Cream Milk 1L', 'Groceries', 'stock', 21, 15],
+    ['HH001', '6001234000082', 'Dishwashing Liquid 750ml', 'Household', 'stock', 35, 22]
   ];
   for (const [sku, bc, name, cat, type, price, cost] of prods) {
     const r = await c.query(

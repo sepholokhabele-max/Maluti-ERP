@@ -161,7 +161,7 @@ export async function customer360(view, [id]) {
   ].sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 80);
 
   view.innerHTML = page(c.name, `${c.phone ? `<a class="btn" href="tel:${esc(c.phone)}">📞 ${esc(c.phone)}</a>` : ''}
-      <button class="btn" id="edit">Edit</button><button class="btn" id="mail" ${c.email ? '' : 'disabled title="No email address"'}>✉ Email</button>
+      <button class="btn" id="portalB">🔗 Portal link</button><button class="btn" id="edit">Edit</button><button class="btn" id="mail" ${c.email ? '' : 'disabled title="No email address"'}>✉ Email</button>
       ${s.balance > 0 && can('invoicing') ? '<button class="btn" id="recv">Receive payment</button>' : ''}
       ${can('invoicing') ? `<a class="btn" href="#/invoice/new?kind=customer_invoice&partner_id=${c.id}">＋ Invoice</a>` : ''}
       <button class="btn btn-primary" id="addAct">＋ Activity</button>`, `
@@ -200,6 +200,7 @@ export async function customer360(view, [id]) {
 
   filesCard('partner', c.id, 'ID copies, contracts & files');
   const reload = () => customer360(view, [id]);
+  if ($('#portalB')) $('#portalB').onclick = async () => (await import('./portalui.js')).portalLinkDialog(c.id, c.name);
   wireActivityRows($('#openActs'), open, reload);
   $$('[data-href]', view).forEach(el => el.onclick = () => location.hash = el.dataset.href);
   $$('[data-order]', view).forEach(el => el.onclick = () => showOrder(el.dataset.order));

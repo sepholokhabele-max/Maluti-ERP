@@ -190,7 +190,7 @@ export async function partners(view) {
   const fields = [{ key: 'name', label: 'Name', required: true, span: 2 }, { key: 'phone', label: 'Phone' }, { key: 'email', label: 'Email', type: 'email' },
     { key: 'contact_person', label: 'Contact person' }, { key: 'birthday', label: 'Birthday', type: 'date' }, { key: 'tags', label: 'Tags (comma separated)', span: 2 },
     { key: 'address', label: 'Address', span: 2 }, { key: 'tax_number', label: 'VAT / TIN' }, { key: 'credit_limit', label: 'Credit limit', type: 'number' },
-    { key: 'is_customer', label: 'Customer', type: 'checkbox' }, { key: 'is_supplier', label: 'Supplier', type: 'checkbox' }, { key: 'notes', label: 'Notes', type: 'textarea', span: 2 }];
+    { key: 'is_customer', label: 'Customer', type: 'checkbox' }, { key: 'is_supplier', label: 'Supplier', type: 'checkbox' }, { key: 'marketing_opt_out', label: 'No marketing SMS / email (opted out)', type: 'checkbox' }, { key: 'notes', label: 'Notes', type: 'textarea', span: 2 }];
   const pb = $('#pb');
   const load = async () => {
     const rows = await GET(`/partners?${type === 'customer' ? 'is_customer' : 'is_supplier'}=1`);
@@ -208,6 +208,7 @@ export async function partners(view) {
     const bal = p ? await GET(`/partners/${p.id}/balance`) : null;
     const actions = [{ label: 'Cancel' }];
     if (p && bal.receivable > 0 && can('invoicing')) actions.push({ label: 'Receive payment', onClick: async c => { c(); receiveAccountPayment(p, bal.receivable, load); } });
+    if (p && Number(p.is_customer) && can('partners')) actions.push({ label: '🔗 Portal link', onClick: async c => { c(); (await import('./portalui.js')).portalLinkDialog(p.id, p.name); } });
     actions.push({ label: 'Save', cls: 'btn-primary', onClick: async (c, r) => { const data = readForm(r, fields); if (!data.birthday) data.birthday = null; if (p) await PUT('/partners/' + p.id, data); else await POST('/partners', data); c(); toast('Saved'); load(); } });
     modal({ title: p ? p.name : `New ${type}`, size: 'lg', body: (bal ? `<div class="cols cols-2" style="margin-bottom:14px"><div class="kpi"><div class="label">They owe us</div><div class="value">${money(bal.receivable)}</div></div><div class="kpi"><div class="label">We owe them</div><div class="value">${money(bal.payable)}</div></div></div>` : '') +
       formHtml(fields, p ? { ...p, birthday: d(p.birthday) } : { is_customer: type === 'customer' ? 1 : 0, is_supplier: type === 'supplier' ? 1 : 0 }, { ctx: 'partner' }), actions });

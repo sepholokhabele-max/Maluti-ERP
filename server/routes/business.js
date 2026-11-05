@@ -110,6 +110,7 @@ r.post('/purchases/:id/receive', requirePerm('purchasing'), ah(async (req, res) 
     const req_ = new Map(reqLines.map(l => [Number(l.line_id), Number(l.qty)]));
     const batchInfo = new Map(reqLines.map(l => [Number(l.line_id), l]));
     let value = 0;
+    const grnLines = [];
     for (const l of lines) {
       const q = req_.get(l.id) || 0;
       if (q < 0 || !isFinite(q)) throw bad(`Quantity to receive for ${l.description} must be 0 or more`);
@@ -129,6 +130,7 @@ r.post('/purchases/:id/receive', requirePerm('purchasing'), ah(async (req, res) 
           if (lw && lw < pc.qty) throw bad(`Live weight (${lw} kg) cannot be less than the carcass weight (${pc.qty} kg)${pc.batch_no ? ' for ' + pc.batch_no : ''}`);
           await stock.move(c, { product_id: l.product_id, qty: pc.qty, unit_cost: Number(l.unit_cost), move_type: 'purchase', reference: po.number, user_id: req.user.id, location_id: po.location_id,
             batch: { batch_no: pc.batch_no || null, expiry_date: bi.expiry_date || null, supplier_id: po.supplier_id, source: 'purchase', live_weight: lw } });
+          grnLines.push({ product_id: l.product_id, qty: pc.qty, unit_cost: Number(l.unit_cost), tax_rate: Number(l.tax_rate || 0), lot: pc.batch_no || null });
         }
         value += q * Number(l.unit_cost);
       }
@@ -140,6 +142,7 @@ r.post('/purchases/:id/receive', requirePerm('purchasing'), ah(async (req, res) 
     const rem = await c.one('SELECT SUM(qty - qty_received) r FROM purchase_lines WHERE po_id = ?', [po.id]);
     const status = Number(rem.r) > 1e-9 ? 'partial' : 'received';
     await c.query('UPDATE purchase_orders SET status = ? WHERE id = ?', [status, po.id]);
+    await require('../services/smartel').sealGrn(c, { grn_id: `${po.number}-${Date.now()}`, supplier_id: po.supplier_id, invoice_no: req.body.invoice_no, lines: grnLines });
     return { status, value };
   });
   res.json(out);
@@ -224,6 +227,7 @@ r.put('/invoices/:id', requirePerm('invoicing'), ah(async (req, res) => {
 }));
 /** Post a draft invoice or bill: number, stock moves and journal. Used by the screen and by recurring contracts. */
 async function postInvoice(c, invoiceId, user) {
+  { const k = await c.one('SELECT kind FROM invoices WHERE id = ?', [invoiceId]); if (k && k.kind === 'customer_invoice') await require('../services/activation').assertCanSell(); }
   const i = await c.one('SELECT * FROM invoices WHERE id = ? FOR UPDATE', [invoiceId]);
   if (!i) throw notFound();
   if (i.status !== 'draft') throw bad('Already posted');

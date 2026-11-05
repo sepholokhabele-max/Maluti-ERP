@@ -1988,5 +1988,327 @@ module.exports = [
         INDEX (log_date), INDEX (group_id), INDEX (season_id), INDEX (animal_id), INDEX (kind, next_due)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
     ]
+  },
+  {
+    id: 19,
+    name: 'campaigns_recruitment',
+    sql: [
+      `ALTER TABLE partners ADD COLUMN marketing_opt_out TINYINT(1) NOT NULL DEFAULT 0, ADD COLUMN opt_out_at DATETIME NULL`,
+      `CREATE TABLE IF NOT EXISTS campaigns (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(120) NOT NULL,
+        channel ENUM('sms','email','both') NOT NULL DEFAULT 'sms',
+        audience TEXT NULL,
+        subject VARCHAR(160) NULL,
+        message TEXT NULL,
+        status ENUM('draft','scheduled','sending','sent','cancelled') NOT NULL DEFAULT 'draft',
+        scheduled_at DATETIME NULL,
+        sent_at DATETIME NULL,
+        recipients INT NOT NULL DEFAULT 0, sent INT NOT NULL DEFAULT 0, failed INT NOT NULL DEFAULT 0,
+        user_id INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS campaign_recipients (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        campaign_id INT NOT NULL,
+        partner_id INT NOT NULL,
+        channel ENUM('sms','email') NOT NULL,
+        sent_to VARCHAR(160) NULL,
+        status ENUM('sent','failed') NOT NULL,
+        error VARCHAR(255) NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (campaign_id), INDEX (partner_id),
+        FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS job_openings (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        title VARCHAR(120) NOT NULL,
+        department_id INT NULL,
+        location VARCHAR(120) NULL,
+        employment_type ENUM('permanent','fixed_term','casual','intern') NOT NULL DEFAULT 'permanent',
+        positions INT NOT NULL DEFAULT 1,
+        salary_from DECIMAL(14,2) NULL, salary_to DECIMAL(14,2) NULL,
+        description TEXT NULL, requirements TEXT NULL,
+        how_to_apply VARCHAR(255) NULL,
+        closing_date DATE NULL,
+        status ENUM('draft','open','closed','filled') NOT NULL DEFAULT 'open',
+        user_id INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS applicants (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        opening_id INT NOT NULL,
+        first_name VARCHAR(80) NOT NULL, last_name VARCHAR(80) NULL,
+        phone VARCHAR(40) NULL, email VARCHAR(120) NULL, id_number VARCHAR(40) NULL,
+        source ENUM('walk_in','referral','facebook','newspaper','radio','website','whatsapp','other') NOT NULL DEFAULT 'walk_in',
+        stage ENUM('new','screening','interview','offer','hired','rejected','withdrawn') NOT NULL DEFAULT 'new',
+        rating TINYINT NULL,
+        interview_at DATETIME NULL, interviewer VARCHAR(120) NULL,
+        salary_offered DECIMAL(14,2) NULL, start_date DATE NULL,
+        employee_id INT NULL,
+        reject_reason VARCHAR(160) NULL,
+        notes TEXT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NULL,
+        INDEX (opening_id, stage),
+        FOREIGN KEY (opening_id) REFERENCES job_openings(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS appraisals (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        employee_id INT NOT NULL,
+        period VARCHAR(40) NOT NULL,
+        review_date DATE NOT NULL,
+        reviewer_id INT NULL,
+        status ENUM('draft','discussed','closed') NOT NULL DEFAULT 'draft',
+        overall DECIMAL(4,2) NULL,
+        strengths TEXT NULL, improvements TEXT NULL, goals TEXT NULL, employee_comment TEXT NULL,
+        increase_pct DECIMAL(5,2) NULL,
+        increase_applied TINYINT(1) NOT NULL DEFAULT 0,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY (employee_id, period)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS appraisal_scores (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        appraisal_id INT NOT NULL,
+        criterion VARCHAR(80) NOT NULL,
+        weight DECIMAL(5,2) NOT NULL DEFAULT 1,
+        score TINYINT NULL,
+        comment VARCHAR(255) NULL,
+        FOREIGN KEY (appraisal_id) REFERENCES appraisals(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+    ]
+  },
+  {
+    id: 20,
+    name: 'smartel_adapter',
+    sql: [
+      `CREATE TABLE IF NOT EXISTS smartel_terminals (
+        pos_terminal_id INT PRIMARY KEY,
+        terminal_uuid VARCHAR(64) NOT NULL,
+        cert_pem TEXT NULL, key_pem TEXT NULL,
+        device_seq BIGINT NOT NULL DEFAULT 0,
+        head_hash CHAR(64) NOT NULL DEFAULT 'GENESIS',
+        quarantined TINYINT(1) NOT NULL DEFAULT 0,
+        quarantine_reason VARCHAR(255) NULL,
+        last_push_at DATETIME NULL, last_heartbeat_at DATETIME NULL, last_error VARCHAR(255) NULL,
+        receipt_seq INT NOT NULL DEFAULT 0,
+        UNIQUE KEY (terminal_uuid),
+        FOREIGN KEY (pos_terminal_id) REFERENCES pos_terminals(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS smartel_sessions (
+        session_uuid CHAR(36) PRIMARY KEY,
+        pos_terminal_id INT NOT NULL,
+        pos_session_id INT NULL,
+        remote_open TINYINT(1) NOT NULL DEFAULT 0,
+        state ENUM('open','closed','abandoned') NOT NULL DEFAULT 'open',
+        order_id BIGINT NULL,
+        receipt_no VARCHAR(40) NULL,
+        goods_gross DECIMAL(14,2) NOT NULL DEFAULT 0,
+        net_cash DECIMAL(14,2) NOT NULL DEFAULT 0,
+        tender_seq INT NOT NULL DEFAULT 0,
+        user_id INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, closed_at DATETIME NULL,
+        INDEX (pos_session_id), INDEX (state)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS smartel_ops (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        session_uuid CHAR(36) NOT NULL,
+        line_no INT NOT NULL,
+        op VARCHAR(12) NOT NULL,
+        fields JSON NULL,
+        amount DECIMAL(14,2) NOT NULL,
+        operation_id VARCHAR(64) NULL,
+        state VARCHAR(16) NOT NULL DEFAULT 'draft',
+        fee DECIMAL(14,2) NULL, commission DECIMAL(14,2) NULL,
+        counterparty VARCHAR(160) NULL, account_masked VARCHAR(40) NULL,
+        mw_ref VARCHAR(80) NULL, cash DECIMAL(14,2) NOT NULL DEFAULT 0,
+        failure_code VARCHAR(40) NULL, result VARCHAR(255) NULL,
+        booked TINYINT(1) NOT NULL DEFAULT 0,
+        order_id BIGINT NULL, pos_session_id INT NULL, user_id INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NULL,
+        UNIQUE KEY (session_uuid, line_no), INDEX (state), INDEX (order_id), INDEX (created_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS smartel_intents (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        session_uuid CHAR(36) NOT NULL,
+        tender_seq INT NOT NULL,
+        tender ENUM('card','mywallet','switch') NOT NULL,
+        amount DECIMAL(14,2) NOT NULL,
+        intent_id VARCHAR(64) NULL,
+        state VARCHAR(16) NOT NULL DEFAULT 'CREATED',
+        payload TEXT NULL,
+        mw_ref VARCHAR(80) NULL,
+        order_id BIGINT NULL, user_id INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NULL,
+        UNIQUE KEY (session_uuid, tender_seq), INDEX (intent_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS smartel_outbox (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        pos_terminal_id INT NOT NULL,
+        client_id CHAR(36) NOT NULL,
+        type VARCHAR(20) NOT NULL,
+        schema_version INT NOT NULL DEFAULT 1,
+        device_seq BIGINT NOT NULL,
+        device_time VARCHAR(40) NOT NULL,
+        prev_hash CHAR(64) NOT NULL,
+        hash CHAR(64) NOT NULL,
+        body MEDIUMTEXT NOT NULL,
+        status ENUM('pending','applied','duplicate','held','rejected') NOT NULL DEFAULT 'pending',
+        code VARCHAR(40) NULL, reason VARCHAR(255) NULL,
+        source_type VARCHAR(30) NULL, source_id BIGINT NULL,
+        attempts INT NOT NULL DEFAULT 0,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, sent_at DATETIME NULL,
+        UNIQUE KEY (client_id), UNIQUE KEY (pos_terminal_id, device_seq), INDEX (status), INDEX (source_type, source_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS smartel_cursors (
+        scope VARCHAR(20) PRIMARY KEY,
+        seq BIGINT NOT NULL DEFAULT 0,
+        pulled_at DATETIME NULL, last_error VARCHAR(255) NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS smartel_changes (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        scope VARCHAR(20) NOT NULL, seq BIGINT NOT NULL,
+        entity VARCHAR(40) NULL, entity_id VARCHAR(80) NULL, op VARCHAR(20) NULL,
+        payload JSON NULL, note VARCHAR(255) NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY (scope, seq)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS smartel_recalls (
+        recall_id VARCHAR(64) PRIMARY KEY,
+        gtin VARCHAR(14) NOT NULL, lot VARCHAR(40) NULL,
+        reason VARCHAR(255) NULL,
+        received_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        closed_at DATETIME NULL,
+        acked_at DATETIME NULL, units_blocked DECIMAL(14,3) NULL,
+        INDEX (gtin)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS smartel_register (
+        gtin VARCHAR(14) PRIMARY KEY,
+        product_name VARCHAR(200) NULL,
+        status VARCHAR(20) NOT NULL DEFAULT 'active'
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS smartel_register_lots (
+        gtin VARCHAR(14) NOT NULL, lot VARCHAR(40) NOT NULL, expires_on DATE NULL,
+        PRIMARY KEY (gtin, lot)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS smartel_credit (
+        as_of DATE PRIMARY KEY,
+        float_limit DECIMAL(14,2) NULL, arrears DECIMAL(14,2) NULL, stock_advance DECIMAL(14,2) NULL,
+        pd_bp INT NULL, elasticity DECIMAL(8,4) NULL, ref VARCHAR(80) NULL,
+        payload JSON NULL, received_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS smartel_bulk (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        payroll_run_id INT NULL,
+        batch_id VARCHAR(64) NULL,
+        title VARCHAR(120) NOT NULL,
+        total DECIMAL(14,2) NOT NULL DEFAULT 0,
+        state VARCHAR(16) NOT NULL DEFAULT 'draft',
+        user_id INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS smartel_bulk_lines (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        bulk_id INT NOT NULL,
+        line_no INT NOT NULL,
+        employee_id INT NULL,
+        name VARCHAR(160) NOT NULL, msisdn VARCHAR(16) NOT NULL, provider VARCHAR(20) NOT NULL DEFAULT 'mywallet',
+        amount DECIMAL(14,2) NOT NULL,
+        state VARCHAR(16) NOT NULL DEFAULT 'ready',
+        mw_ref VARCHAR(80) NULL, failure VARCHAR(255) NULL,
+        booked TINYINT(1) NOT NULL DEFAULT 0,
+        UNIQUE KEY (bulk_id, line_no),
+        FOREIGN KEY (bulk_id) REFERENCES smartel_bulk(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `ALTER TABLE products ADD COLUMN smartel_product_id VARCHAR(64) NULL, ADD INDEX (smartel_product_id)`,
+      `ALTER TABLE stock_batches ADD COLUMN recalled TINYINT(1) NOT NULL DEFAULT 0`,
+      `INSERT IGNORE INTO accounts (code, name, type) VALUES
+        ('1150', 'Digital takings due from MyWallet (card, MyWallet, Switch)', 'asset'),
+        ('1160', 'Agency commission receivable – MyWallet', 'asset'),
+        ('1170', 'MyWallet business wallet', 'asset'),
+        ('2450', 'Agency cash clearing – MyWallet services', 'liability'),
+        ('4150', 'Agency commission income', 'income')`
+    ]
+  },
+  {
+    id: 21,
+    name: 'tax_centre',
+    sql: [
+      `CREATE TABLE IF NOT EXISTS tax_returns (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        tax VARCHAR(20) NOT NULL,
+        period_label VARCHAR(40) NOT NULL,
+        period_from DATE NOT NULL, period_to DATE NOT NULL, due_date DATE NOT NULL,
+        status ENUM('draft','filed','paid','part_paid') NOT NULL DEFAULT 'draft',
+        amount_due DECIMAL(14,2) NOT NULL DEFAULT 0,
+        amount_paid DECIMAL(14,2) NOT NULL DEFAULT 0,
+        figures JSON NULL,
+        filed_at DATETIME NULL, filed_ref VARCHAR(80) NULL,
+        journal_entry_id BIGINT NULL,
+        notes VARCHAR(255) NULL,
+        user_id INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY (tax, period_from, period_to), INDEX (due_date)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS tax_payments (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        return_id INT NOT NULL,
+        amount DECIMAL(14,2) NOT NULL,
+        fee DECIMAL(14,2) NOT NULL DEFAULT 0,
+        method VARCHAR(20) NOT NULL,
+        account_code VARCHAR(20) NULL,
+        reference VARCHAR(80) NULL,
+        smartel_op_id BIGINT NULL,
+        status ENUM('pending','paid','failed') NOT NULL DEFAULT 'pending',
+        paid_at DATETIME NULL, user_id INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (return_id) REFERENCES tax_returns(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS tax_withholding (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        direction ENUM('deducted','suffered') NOT NULL,
+        partner_id INT NOT NULL,
+        kind VARCHAR(30) NOT NULL,
+        tx_date DATE NOT NULL,
+        gross DECIMAL(14,2) NOT NULL,
+        rate DECIMAL(6,3) NOT NULL,
+        amount DECIMAL(14,2) NOT NULL,
+        reference VARCHAR(80) NULL,
+        certificate_no VARCHAR(40) NULL,
+        user_id INT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (direction, tx_date)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `INSERT IGNORE INTO accounts (code, name, type) VALUES
+        ('2110', 'VAT payable to RSL (filed returns)', 'liability'),
+        ('1410', 'VAT refund due from RSL', 'asset'),
+        ('1420', 'Withholding tax suffered (credit against income tax)', 'asset'),
+        ('2220', 'Withholding tax payable (RSL)', 'liability'),
+        ('2230', 'Income tax payable (RSL)', 'liability'),
+        ('2240', 'Fringe benefit tax payable (RSL)', 'liability'),
+        ('2250', 'Other taxes & levies payable (RSL)', 'liability'),
+        ('6450', 'Tax payment fees', 'expense'),
+        ('6460', 'Tax penalties & interest', 'expense'),
+        ('6470', 'Fringe benefit tax', 'expense'),
+        ('6480', 'Levies (plastic, gaming, other)', 'expense'),
+        ('7100', 'Income tax expense', 'expense')`
+    ]
+  },
+  {
+    id: 22,
+    name: 'customer_portal',
+    sql: [
+      `ALTER TABLE partners ADD COLUMN portal_token CHAR(32) NULL, ADD UNIQUE KEY uq_portal_token (portal_token)`,
+      `ALTER TABLE smartel_intents ADD COLUMN partner_id INT NULL, ADD COLUMN allocated TINYINT(1) NOT NULL DEFAULT 0`,
+      `CREATE TABLE IF NOT EXISTS portal_log (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        partner_id INT NOT NULL,
+        action VARCHAR(30) NOT NULL,
+        detail VARCHAR(255) NULL,
+        ip VARCHAR(60) NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (partner_id, created_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+    ]
   }
 ];

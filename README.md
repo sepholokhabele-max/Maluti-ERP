@@ -211,6 +211,99 @@ Then click **Reload plugins**. A plugin with `"type": "payment"` implements `req
 
 ---
 
+## 4a. Smartel POS backend – MyWallet services through the adapter (v1.18)
+
+Maluti ERP **never connects to the MyWallet core / core-banking API**. Everything that touches MyWallet goes through the
+Smartel POS backend adapters: **pos-api** (`/v1/sessions`, `/v1/agent/ops`, `/v1/payments/intents`, `/v1/register/scope`,
+`/v1/portal/bulk-batches`) and **syncd** (`/v1/sync/batches`, `/v1/sync/changes`, `/v1/sync/cursor`). While the Smartel
+connection is on, the old direct "My Wallet" VAS set-up is refused.
+
+**Set up** (Settings → Smartel connection): pos-api and syncd addresses, then per till the Smartel terminal ID, the till's
+client certificate and key (mTLS at the gateway). "Trusted gateway" mode sends `X-Terminal-ID` itself – only for a gateway in
+the shop or a test backend. *Test the connection*, switch on, *Get updates now*.
+
+**At the till**
+- **💸 Agent services**: cash deposit, withdrawal with the customer's SMS PIN, till cash-out, send-through, NPS Switch cash-in,
+  voucher redeem, airtime, LEC electricity, bills. Check → (PIN) → confirm. The PIN goes straight to pos-api and is never stored.
+  A service MyWallet does not answer is *unknown*: it is never sent again; the system keeps asking pos-api, which resolves it
+  from MyWallet's history or hands it to operations after 10 minutes. The customer cannot be closed while a line is open.
+- **One customer = one receipt**: goods, services and the goods tender together, with the **net cash** (BR-07). A
+  services-only customer gets a non-fiscal `SVC/…` receipt.
+- **Card, MyWallet and Switch** tenders are payment requests through pos-api (QR / card page on the customer's phone); the sale
+  only completes when the request is PAID, and it must cover the whole bill. Other non-cash methods are refused on a Smartel till.
+- **Offline**: goods for cash only; receipts are sealed and wait.
+- **Recalls** block the product (or only the recalled lot – FEFO skips it) within one update and are acknowledged to Smartel.
+  Barcodes not in the **National Product Register** are refused (or only warned) and a scan flag with the shop's location is sent.
+
+**Sealed receipts**: every sale, services-only customer, delivery (GRN from purchase receiving), recall acknowledgement, scan
+flag and heartbeat is an envelope `hash = sha256(prev | seq | body)` (first prev `GENESIS`) on that till's chain, pushed to
+syncd oldest first. *Receipts sent* shows what was accepted, held or refused; *Check chain* re-verifies the chain locally.
+A till whose chain Smartel rejects is held until Smartel support has fixed it.
+
+**Books**: services are not sales (no VAT, no revenue). Service cash is booked against **2450 Agency cash clearing**;
+commission **1160 / 4150**; card / MyWallet / Switch takings **1150 Digital takings due**; the business wallet **1170**.
+*Agency cash & settlement* records what MyWallet paid out or what you moved.
+
+**Updates from Smartel**: recalls (first), catalogue (links products by barcode, can add new ones), prices, and the daily
+**Thoki** float line / stock advance.
+
+**Wages by MyWallet**: from an approved payroll run, employees paid by *Mobile money* with a Lesotho number are sent as one
+bulk batch from the business wallet; each paid line is booked (Dr 2300 / Cr 1170) and *Mark paid* leaves them out.
+
+**Testing without Smartel**: `node server/test/mock-smartel.js 8790 <terminal-id>` runs a stand-in pos-api + syncd.
+
+## 4b. Tax centre – VAT, PAYE, withholding, income tax and levies to RSL (v1.19)
+
+**Tax centre** (home screen, accounting rights) lists everything due to Revenue Services Lesotho with its due date and status:
+VAT monthly by the 20th, PAYE and withholding tax by the 15th, income tax instalments on 30 Sep, 31 Dec and 31 Mar with the
+annual return by 30 Jun (for a March year-end), fringe benefit tax quarterly, and any other levy you add (plastic, gaming…).
+Rates and due days are settings (defaults from rsl.org.ls, Nov 2026): VAT 15% (electricity 10%, exports and basic foods 0%);
+income tax 25% (10% manufacturing and commercial farming); withholding 5% resident contractors, 10% non-resident contractors
+and interest, 7.5% South African technical services. Published sources disagree on the fringe benefit tax rate – confirm it with RSL.
+
+- **Prepare** works a return out from the books: VAT from the output / input VAT accounts with supplies and purchases by rate;
+  PAYE from that month's payroll run; withholding from the withholding register; income tax instalments as thirds of the
+  estimated tax (your estimate, last year's profit, or this year so far for 12 months); the annual return from profit before
+  tax, add-backs, allowances and losses, less instalments and withholding tax certificates.
+- **Filed with RSL** locks the figures and posts the closing entry (VAT 2100/1400 → 2110 payable or 1410 refund; income tax
+  7100 → 2230; FBT 6470 → 2240; levies 6480 → 2250). An administrator can reopen a return that has no payments.
+- **Pay**: by bank / EFT / M-Pesa / cash at RSL (recorded with the reference and any bank charge), or **through MyWallet** –
+  a "pay a bill" service (biller `rsl`, your TIN as the account) on a till's open cashier session through the Smartel POS
+  backend, never directly. MyWallet's fee is shown before you confirm and booked to 6450. Part payments are allowed.
+- **Withholding tax**: record tax you withheld from a contractor (prints a certificate; owed to RSL by the 15th) or tax a customer
+  withheld from you (a credit against income tax).
+
+## 4c. Customer portal, web version and Android (v1.20)
+
+**Customer portal** – *Settings → Customer portal*, then on a customer *🔗 Portal link*: a private link (with QR, SMS and
+WhatsApp buttons) where the customer sees their balance, open invoices (printable) and a 6-month statement, in English or
+Sesotho. They can **pay online** with MyWallet, card or Switch – a payment request through the Smartel POS backend on the
+till you choose, never MyWallet directly; the money is put on their account (oldest invoices first) once it is confirmed – or
+**upload proof** of a bank payment, which lands on the contact with a task for the office. *New link* switches an old link off.
+
+**Web version (hosted)** – the same server without the desktop shell, in Docker:
+```
+cp .env.example .env      # set the passwords, PUBLIC_URL and MALUTI_SETUP_KEY
+docker compose up -d                      # app + MySQL 8.4 on 127.0.0.1:8069
+docker compose --profile https up -d      # optional: Caddy with automatic HTTPS for PUBLIC_DOMAIN
+```
+With `DB_HOST` set the database cannot be changed from the browser, and the first-run wizard asks for `MALUTI_SETUP_KEY`
+so nobody else can claim a fresh server. `PUBLIC_URL` is used for portal / receipt links; `TRUST_PROXY` for the real client
+address behind a proxy. Back up the `dbdata` volume (or use *Settings → Updates & backup*).
+
+**Phones and tablets** – every screen adapts to a phone (the till stacks products above the cart). On Android or iPhone,
+open the server address in the browser and choose *Install app* (it is a PWA: icon, full screen, quick start; money and stock
+always come live from the server). The **Android app** (`mobile/`, Capacitor) is built by `.github/workflows/build-android.yml`
+and attached to each release as `MalutiERP-<version>.apk`; on first start it asks for the server address (the shop PC on the
+Wi-Fi, e.g. `192.168.1.20:8069`, or the hosted address). See `mobile/README.md` for signed builds.
+
+## 4d. Sesotho (v1.21)
+
+Choose **ST** in the top bar: the help notes, setup guide and every screen text with a translation switch to Sesotho
+(`public/js/sesotho_ui.js`, swapped at runtime by `public/js/i18n_dom.js`). **EN + ST** keeps English screens with
+Sesotho help underneath. **Settings → Translations** lets a native speaker correct words or fill in missing ones (saved in the
+database, applied to everyone at once; CSV export / import). Documents for customers and RSL stay in English.
+
 ## 5. Accounting
 
 | Code | Account | Code | Account |

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Maluti ERP</title>
+<style>
+  *{box-sizing:border-box} body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#eef0f6;font-family:Roboto,Segoe UI,Arial,sans-serif;color:#1e2233;padding:20px}
+  .card{background:#fff;border-radius:18px;box-shadow:0 6px 24px rgba(0,0,0,.08);padding:24px;max-width:420px;width:100%}
+  h1{font-size:22px;margin:0 0 4px} p{color:#5b6178;font-size:14px;line-height:1.45} label{font-size:13px;color:#4b5168;display:block;margin:14px 0 6px}
+  input{width:100%;font-size:16px;padding:13px;border:1px solid #cfd3e3;border-radius:12px} button{width:100%;margin-top:16px;padding:14px;border:0;border-radius:999px;background:#3f3d9e;color:#fff;font-size:16px;font-weight:600}
+  .err{color:#b91c1c;font-size:14px;min-height:20px;margin-top:10px} .hint{background:#fef9c3;border-left:4px solid #ca8a04;padding:8px 10px;border-radius:8px;font-size:13px;color:#5b4a06}
+  .ex{font-family:monospace;color:#3f3d9e} a{color:#3f3d9e}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Maluti ERP</h1>
+  <p id="t1">Connect this phone or tablet to your Maluti ERP.</p>
+  <label for="u" id="t2">Address of your Maluti ERP</label>
+  <input id="u" inputmode="url" autocomplete="url" placeholder="192.168.1.20:8069">
+  <div class="hint" id="t3">On the shop PC open Maluti ERP → Settings → Company: the address under "receipt QR" works on the shop Wi-Fi (e.g. <span class="ex">192.168.1.20:8069</span>). For the hosted web version use its address, e.g. <span class="ex">https://erp.mybusiness.co.ls</span>.</div>
+  <button id="go">Connect</button>
+  <div class="err" id="err"></div>
+  <p style="text-align:center;margin-bottom:0"><a href="#" id="lang">Sesotho</a></p>
+</div>
+<script>
+  // The app is a window onto your own Maluti ERP server – nothing is stored on the phone except the address.
+  const K = 'maluti_server';
+  const T = {
+    en: ['Connect this phone or tablet to your Maluti ERP.', 'Address of your Maluti ERP', document.getElementById('t3').innerHTML, 'Connect', 'Sesotho', 'Checking…', 'No Maluti ERP answered at that address. Is the phone on the shop Wi-Fi and the PC switched on?'],
+    st: ['Hokela mohala ona kapa tablet le Maluti ERP ea hau.', 'Aterese ea Maluti ERP ea hau', 'Khomputareng ea lebenkele bula Maluti ERP → Settings → Company: aterese e ka tlas\'a "receipt QR" e sebetsa Wi-Fi ea lebenkele (mohl. <span class="ex">192.168.1.20:8069</span>). Bakeng sa mofuta oa inthanete sebelisa aterese ea oona.', 'Hokela', 'English', 'E ea hlahloba…', 'Ha ho Maluti ERP e arabileng atereseng eo. Na mohala o Wi-Fi ea lebenkele ’me khomputara e butsoe?']
+  };
+  let lang = localStorage.getItem('maluti_lang') === 'st' ? 'st' : 'en';
+  const $ = id => document.getElementById(id);
+  function draw() { const t = T[lang]; $('t1').textContent = t[0]; $('t2').textContent = t[1]; $('t3').innerHTML = t[2]; $('go').textContent = t[3]; $('lang').textContent = t[4]; }
+  $('lang').onclick = e => { e.preventDefault(); lang = lang === 'st' ? 'en' : 'st'; localStorage.setItem('maluti_lang', lang); draw(); };
+  function norm(v) { v = v.trim().replace(/\/+$/, ''); if (!v) return ''; if (!/^https?:\/\//i.test(v)) v = (/^(\d+\.){3}\d+|localhost|\.local\b/.test(v) ? 'http://' : 'https://') + v; if (/^http:\/\/(\d+\.){3}\d+$/.test(v)) v += ':8069'; return v; }
+  async function check(url) {
+    const c = new AbortController(); const t = setTimeout(() => c.abort(), 8000);
+    try { const r = await fetch(url + '/api/status', { signal: c.signal }); const j = await r.json(); return !!j.version; } catch (_) { return false; } finally { clearTimeout(t); }
+  }
+  async function connect(url, auto) {
+    $('err').textContent = auto ? '' : T[lang][5];
+    if (await check(url)) { localStorage.setItem(K, url); location.replace(url + '/'); return; }
+    $('err').textContent = T[lang][6];
+  }
+  $('go').onclick = () => { const u = norm($('u').value); if (u) connect(u); };
+  $('u').onkeydown = e => { if (e.key === 'Enter') $('go').click(); };
+  draw();
+  const saved = localStorage.getItem(K);
+  // open the last server straight away; the "change server" link is ?change=1
+  if (saved && !/change=1/.test(location.search)) { $('u').value = saved; connect(saved, true); } else if (saved) $('u').value = saved;
+</script>
+</body>
+</html>

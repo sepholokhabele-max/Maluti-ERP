@@ -66,12 +66,15 @@ r.get('/balance/:plugin', requirePerm('vas'), ah(async (req, res) => {
  * body: { plugin_id, service, provider, product_code, recipient, amount, session_id, payments:[...] }
  */
 r.post('/purchase', requirePerm('vas'), ah(async (req, res) => {
+  await require('../services/activation').assertCanSell();
   const b = req.body;
   const amount = round2(b.amount);
   if (!(amount > 0)) throw bad('Enter an amount');
   if (!b.recipient) throw bad('Enter the phone number / meter number');
   const session = await db.tx(c => pos.requireOpenSession(c, b.session_id));
   const p = await plugins.get(b.plugin_id);
+  if (await require('../services/smartel').enabled() && /my ?wallet/i.test(`${p.manifest.id} ${p.manifest.name} ${JSON.stringify(p.config || {})}`))
+    throw bad('My Wallet services now go through the Smartel POS backend. Use "Agent services" on the till.');
   // validate tendered payment before calling the provider
   const methods = new Map((await db.query('SELECT * FROM payment_methods WHERE active = 1')).map(m => [m.id, m]));
   const pays = (b.payments || []).filter(x => Number(x.amount) > 0).map(x => ({ ...x, amount: round2(x.amount), m: methods.get(Number(x.method_id)) }));

@@ -172,6 +172,30 @@ export const D = {
     next_due: 'Ha tekanyo e latelang kapa ente e lokela ho etsoa – e hlaha tlas\'a Health due.', final: 'Tšoaea kotulong ea ho qetela hore nako e koaloe.', note: 'Eng kapa eng e lokelang ho hopoloa.'
   },
   farmexit: { kind: 'E rekisitsoe (invoice e etsoa ho moreki), e shoele, kapa e hlabiloe.', date: 'Letsatsi.', partner_id: 'Moreki – eketsa bareki ba bacha ho Contacts.', amount: 'Theko ea ho rekisa.', weight: 'Boima ha e rekisoa kapa e hlabiloa.', note: 'Sesosa sa lefu, moo e rekisitsoeng teng…' },
+  campaign: {
+    name: 'Ke ea hau feela, mohl. "Litheolelo tsa Paseka 2027" kapa "Junifomo tsa ho khutlela sekolong".',
+    channel: 'SMS e fihla ho batho ba bangata ka letsatsi leo (e lefelloa ka molaetsa); email ke mahala empa bareki ba fokolang baa e bala.',
+    group: 'Qala ka sehlopha: bareki, bahiri ba nang le konteraka e sebetsang, batsoali ba baithuti, bakuli, bareki ba hire kapa barekisi.',
+    tags: 'Ke bareki ba nang le e ’ngoe ea li-tag tsena feela (li-tag li behoa ho contact), mohl. vip, wholesale, basebetsi.',
+    bought_within: 'Ba rekileng haufinyane – mohl. 30 bakeng sa bohle ba rekileng khoeling e fetileng (till le li-invoice).',
+    not_bought_for: 'Bareki bao u sa ba boneng nako e itseng – mohl. 90 ho khutlisa batho ba khaolitseng ho tla.',
+    birthday_month: 'Bareki ba nang le letsatsi la tsoalo khoeling ena (le behiloe ho contact) – ho loketse theolelo ea letsatsi la tsoalo.',
+    min_spent: 'Ke bareki ba sebelisitseng bonyane chelete ena ho uena kaofela feela – bareki ba hau ba molemo ka ho fetisisa.',
+    subject: 'Sehlooho sa email. SMS ha e na sehlooho.',
+    message: 'Etsa SMS e khutšoanyane (litlhaku tse 160 = SMS e le ’ngoe). {first_name} e etsa hore e be ea motho ka mong. Mola o bolelang batho kamoo ba ka emisang melaetsa o eketsoa ka bo oona.'
+  },
+  opening: {
+    title: 'Lebitso la mosebetsi joalo ka ha le lokela ho hlaha papatsong, mohl. "Cashier", "Molebeli", "Bookkeeper".', department_id: 'Lefapha ho HR – mosebetsi e mocha o kena ho lona.',
+    location: 'Lekala, sebaka kapa toropo.', employment_type: 'Ea ka ho sa feleng, nako e itseng, ea nakoana kapa moithuti – e fetisetsoa ho mosebetsi.', positions: 'U hloka batho ba bakae. Mosebetsi o tšoauoa o tletse ha ba bangata hakaalo ba hiriloe.',
+    closing_date: 'Letsatsi la ho qetela la ho kopa – le hatisoa papatsong.', salary_from: 'Tlase ea moputso (ha ho hlokahale – e tlohele haeba u sa batle ho e bontša).', salary_to: 'Holimo ea moputso.',
+    description: 'Seo motho a tla se etsa letsatsi le letsatsi.', requirements: 'Mangolo (LGCSE, diploma…), boiphihlelo, laesense, lipuo.', how_to_apply: 'Moo CV e tlisoang kapa e romeloang teng, le nomoro ea mohala.', status: 'Draft (ha e so phatlalatsoe), e bulehile, e koetsoe kapa e tletse.'
+  },
+  applicant: {
+    first_name: 'Joalo ka ha ho le ID.', last_name: 'Fane – e hlokahala pele ho hira (payroll).', phone: 'Nomoro ea mohala – bakeng sa memo ea puisano le sephetho ka SMS.', email: 'Ha ho hlokahale.', id_number: 'ID ea naha kapa phasepoto – e hlahlojoa puisanong, e kopitsoa ho HR ha a hiriloe.',
+    source: 'Moo a utloileng ka mosebetsi teng – ho bontša hore na ke lipapatso life tse tlisang batho bao u ba hirang.', rating: 'Maikutlo a hau a pele ho tsoa CV, linaleli tse 1–5 – a thusa ho hlophisa liCV tse ngata.', notes: 'Boiphihlelo, mangolo, ba ileng ba letsetsoa…'
+  },
+  appstage: { interview_at: 'Letsatsi le nako ea puisano – li romeloa ka SMS.', interviewer: 'Ea tla botsa lipotso.', salary_offered: 'Moputso oa khoeli o fanoang.', start_date: 'Ha a tla qala.', reject_reason: 'E bolokoa rekotong feela, ha e romeloe.', notify: 'E romela SMS e nang le tlhompho: memo ea puisano, tlhahiso ea mosebetsi, kapa ho itšoarela.' },
+  apphire: { last_name: 'Fane bakeng sa payroll.', basic_salary: 'Moputso oa motheo oa khoeli – o kena ho mosebetsi ho HR & Payroll.', hire_date: 'Letsatsi la pele la mosebetsi – khoeli ea pele e lefuoa ka karolo.' },
   vehicle: {
     reg_no: 'Nomoro ea ngoliso hantle joalo ka ha e le ho disc ea laesense, mohl. "A 123 BCD".',
     name: 'Lebitso la bosoasoi leo bakhanni ba le sebelisang, ha ho hlokahale, mohl. "Quantum e putsoa".',

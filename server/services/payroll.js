@@ -141,12 +141,17 @@ async function markPaid(user, id, { date } = {}) {
     const r = await c.one('SELECT * FROM payroll_runs WHERE id = ? FOR UPDATE', [id]);
     if (!r) throw notFound('Payroll run');
     if (r.status !== 'approved') throw bad('Approve the run before paying it');
-    const byMethod = await c.query(
-      `SELECT e.pay_method, SUM(p.net) net FROM payslips p JOIN employees e ON e.id = p.employee_id WHERE p.run_id = ? GROUP BY e.pay_method`, [id]);
-    const lines = [{ code: '2300', debit: r.net_total, description: 'Net salaries paid' }];
-    for (const m of byMethod) lines.push({ code: PAY_ACCOUNT[m.pay_method] || '1050', credit: round2(m.net), description: `Salaries paid by ${m.pay_method.replace('_', ' ')}` });
-    const entry = await accounting.post(c, { date: date || r.pay_date, reference: `SALARIES ${r.period}`, memo: `Salary payments ${r.period}`,
-      source_type: 'payroll_payment', source_id: r.id, user_id: user.id, lines });
+    // wages already paid through a MyWallet bulk batch (Smartel) were booked line by line – leave them out here
+    const viaBulk = await require('./smartel').bulkPaidForRun(c, id);
+    const bulkBy = new Map(viaBulk.map(b => [b.employee_id, Number(b.amount)]));
+    const slips = await c.query(`SELECT p.employee_id, p.net, e.pay_method FROM payslips p JOIN employees e ON e.id = p.employee_id WHERE p.run_id = ?`, [id]);
+    const byMethod = new Map();
+    for (const sl of slips) { const left = round2(Number(sl.net) - (bulkBy.get(sl.employee_id) || 0)); if (left > 0) byMethod.set(sl.pay_method, round2((byMethod.get(sl.pay_method) || 0) + left)); }
+    const toPay = round2([...byMethod.values()].reduce((a, v) => a + v, 0));
+    const lines = toPay > 0 ? [{ code: '2300', debit: toPay, description: 'Net salaries paid' }] : [];
+    for (const [method, net] of byMethod) lines.push({ code: PAY_ACCOUNT[method] || '1050', credit: net, description: `Salaries paid by ${method.replace('_', ' ')}` });
+    const entry = lines.length ? await accounting.post(c, { date: date || r.pay_date, reference: `SALARIES ${r.period}`, memo: `Salary payments ${r.period}`,
+      source_type: 'payroll_payment', source_id: r.id, user_id: user.id, lines }) : null;
     await c.query(`UPDATE payroll_runs SET status = 'paid', payment_entry_id = ? WHERE id = ?`, [entry, id]);
   });
 }
@@ -163,6 +168,7 @@ async function reopen(user, id) {
     const r = await c.one('SELECT * FROM payroll_runs WHERE id = ? FOR UPDATE', [id]);
     if (!r) throw notFound('Payroll run');
     if (r.status === 'draft') throw bad('Run is already a draft');
+    if ((await require('./smartel').bulkPaidForRun(c, id)).length) throw bad('Some wages in this run were already paid through MyWallet bulk. They cannot be taken back here – make a correction in the next run.');
     if (r.payment_entry_id) await reverseEntry(c, r.payment_entry_id, `SALARIES ${r.period} REVERSED`, user);
     if (r.journal_entry_id) await reverseEntry(c, r.journal_entry_id, `PAYROLL ${r.period} REVERSED`, user);
     await c.query(`UPDATE payroll_runs SET status = 'draft', journal_entry_id = NULL, payment_entry_id = NULL, approved_by = NULL, approved_at = NULL WHERE id = ?`, [id]);

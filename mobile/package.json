@@ -1,0 +1,17 @@
+{
+  "name": "maluti-erp-android",
+  "private": true,
+  "description": "Android app for Maluti ERP – opens your Maluti ERP server (shop PC on the Wi-Fi, or the hosted web version)",
+  "scripts": {
+    "sync": "cap sync android",
+    "icons": "capacitor-assets generate --android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/core": "^6.1.2"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^6.1.2"
+  }
+}

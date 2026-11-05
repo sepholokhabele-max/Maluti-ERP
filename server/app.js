@@ -16,6 +16,8 @@ async function start({ port = 8069, host = '0.0.0.0', dbConfig, configStore, emb
   const app = express();
   app.locals.configStore = configStore || null;
   app.locals.embeddedDb = embeddedDb;
+  // hosted behind a reverse proxy (nginx / Caddy / a cloud load balancer): real client IPs and https links
+  if (process.env.TRUST_PROXY) app.set('trust proxy', /^\d+$/.test(process.env.TRUST_PROXY) ? Number(process.env.TRUST_PROXY) : process.env.TRUST_PROXY);
   app.use(express.json({ limit: '12mb' }));
 
   // Allow other tills/tablets on the LAN to use the browser UI against this server
@@ -28,9 +30,11 @@ async function start({ port = 8069, host = '0.0.0.0', dbConfig, configStore, emb
   });
 
   app.use('/api', admin.pub);
+  app.use('/api', require('./routes/i18n').pub);
   app.use('/api', require('./routes/attendance').pub);
   // list of business types for the first-run setup screen (no login yet)
-  app.get('/api/business-types', (req, res) => res.json(require('./services/modules').TYPES.map(({ key, name, icon, desc }) => ({ key, name, icon, desc }))));
+  app.get('/api/business-types', (req, res) => { const M = require('./services/modules'); const names = Object.fromEntries(M.MODULES.map(m => [m.key, m.name]));
+    res.json(M.TYPES.map(({ key, name, icon, desc, modules }) => ({ key, name, icon, desc, apps: (modules || []).map(k => names[k]).filter(Boolean) }))); });
   app.use('/api', (req, res, next) => db.isConnected() ? next() : next(new HttpError(503, 'Database not configured')));
   app.use('/api', auth.requireAuth);
   app.use('/api', admin.priv);
@@ -63,12 +67,25 @@ async function start({ port = 8069, host = '0.0.0.0', dbConfig, configStore, emb
   app.use('/api', require('./routes/hire'));
   app.use('/api', require('./routes/clinic'));
   app.use('/api', require('./routes/farm'));
+  app.use('/api', require('./routes/campaigns').router);
+  app.use('/api', require('./routes/recruit'));
+  app.use('/api', require('./routes/activation'));
+  app.use('/api', require('./routes/smartel'));
+  app.use('/api', require('./routes/tax'));
+  app.use('/api', require('./routes/portal').router);
+  app.use('/api', require('./routes/i18n').router);
   app.use('/api', require('./routes/importer'));
   app.use('/api', require('./routes/master'));
   app.use('/api', require('./routes/business'));
 
   app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
   app.use(require('./routes/public-receipt'));
+  app.use(require('./routes/portal').pub);
+  // service worker carries the app version so an update replaces the cached screens
+  app.get('/sw.js', (req, res) => {
+    const f = require('fs').readFileSync(path.join(publicDir || path.join(__dirname, '..', 'public'), 'sw.js'), 'utf8');
+    res.type('application/javascript').set('Cache-Control', 'no-cache').send(f.replace('__VERSION__', require('../package.json').version));
+  });
   app.use(express.static(publicDir || path.join(__dirname, '..', 'public')));
 
   // error handler
@@ -94,6 +111,10 @@ async function start({ port = 8069, host = '0.0.0.0', dbConfig, configStore, emb
       const runContracts = () => require('./routes/property').escalate().catch(e => console.error('[rent]', e.message)).then(() => require('./routes/growth').runDue(null)).catch(e => console.error('[contracts]', e.message))
         .then(() => require('./routes/reminders').runAuto()).catch(e => console.error('[reminders]', e.message));
       setTimeout(runContracts, 20000); setInterval(runContracts, 3600000).unref();
+      // scheduled SMS / email campaigns go out within five minutes of their time
+      setInterval(() => require('./routes/campaigns').runScheduled().catch(e => console.error('[campaigns]', e.message)), 300000).unref();
+      // Smartel POS backend: push sealed receipts, pull recalls / catalogue / prices / Thoki, heartbeats, unknown services
+      require('./services/smartel').startScheduler();
       console.log(`[db] connected to ${dbConfig.host}/${dbConfig.database}`);
     } catch (e) {
       console.error('[db] connection failed:', e.message);

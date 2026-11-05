@@ -273,7 +273,7 @@ r.post('/contracts/run', requirePerm('invoicing'), ah(async (req, res) => res.js
 /* ======================= ATTACHMENTS ======================= */
 const ENTITIES = { partner: 'partners', lead: 'leads', invoice: 'invoices', purchase: 'purchase_orders', project: 'projects', ticket: 'tickets', contract: 'contracts',
   equipment: 'equipment', employee: 'employees', sale: 'sale_orders', maintenance: 'maintenance_requests', product: 'products',
-  lease: 'leases', learner: 'learners', property: 'properties', site: 'sites', incident: 'incidents' };
+  lease: 'leases', learner: 'learners', property: 'properties', site: 'sites', incident: 'incidents', applicant: 'applicants', opening: 'job_openings', appraisal: 'appraisals', tax_return: 'tax_returns' };
 const MAX = 8 * 1024 * 1024;
 async function checkEntity(entity, id) {
   const t = ENTITIES[entity];

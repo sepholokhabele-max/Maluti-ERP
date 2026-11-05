@@ -1,0 +1,10 @@
+node_modules
+dist
+vendor
+build
+electron
+mobile/android
+mobile/node_modules
+.git
+*.log
+config.json

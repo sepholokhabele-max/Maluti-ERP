@@ -3,6 +3,7 @@ import { receiptLogoHtml, ensureLogo } from './core.js';
 import { parseScaleBarcode } from './barcode.js';
 import { best as bestRule } from './pricing.js';
 import { readWeight, scaleSupported, chooseScalePort } from './scale.js';
+import { agentDialog, requestPayment, isSmartelMethod, servicesHtml } from './smartelui.js';
 import { state, GET, POST, PUT, esc, $, $$, toast, err, can, money, qty as fq, round2, modal, confirmBox, promptBox, printHtml, dt, timeAgo, badge, setToken, debounce, today } from './core.js';
 
 let S = null;
@@ -20,12 +21,13 @@ function orderTotals() {
   for (const l of S.order.lines) { const c = lineCalc(l); total += c.total; tax += c.tax; disc += Number(l.qty) * Number(l.unit_price) * Number(l.discount_pct || 0) / 100; }
   return { total: round2(total), tax: round2(tax), net: round2(total - tax), discount: round2(disc), items: S.order.lines.reduce((s, l) => s + (isWeighed(l) ? 1 : Number(l.qty)), 0) };
 }
+const smartelOn = () => !!(S && S.catalog && S.catalog.smartel && S.catalog.smartel.enabled && S.catalog.smartel.till_linked);
 const emptyOrder = (extra = {}) => ({ id: null, lines: [], partner_id: null, partner_name: null, table_id: null, table_name: null, tab_name: null, guests: 0, ...extra });
 
 export async function start(terminalId) {
   document.onkeydown = null;
   if (!terminalId) return pickTerminal();
-  const [terms, catalog] = await Promise.all([GET('/pos/terminals'), GET('/pos/catalog')]);
+  const [terms, catalog] = await Promise.all([GET('/pos/terminals'), GET('/pos/catalog?terminal_id=' + encodeURIComponent(terminalId))]);
   const terminal = terms.find(t => String(t.id) === String(terminalId));
   if (!terminal) { location.hash = '#/pos'; return; }
   state.company = catalog.company || state.company;
@@ -70,6 +72,8 @@ function render() {
     <div class="pos-top">
       <span class="title">${esc(t.name)}</span>${modeBtns.join('')}
       ${S.catalog.vas.length && can('vas') ? '<button class="btn" id="vasBtn">⚡ Airtime / Power</button>' : ''}
+      ${smartelOn() && can('vas') ? '<button class="btn" id="agentBtn">💸 Agent services</button>' : ''}
+      ${S.catalog.smartel && S.catalog.smartel.quarantined ? '<span class="badge badge-overdue" title="Smartel is holding this till – call Smartel support">Till held by Smartel</span>' : ''}
       <span class="spacer"></span>
       <span class="info">${sess ? `Session #${sess.id} · ${esc(state.user.name)}` : 'No session'}</span>
       <button class="btn" id="histBtn">History</button><button class="btn" id="clkBtn" title="Clock in / out for your shift">🕐</button>
@@ -90,6 +94,7 @@ function render() {
   if ($('#closeBtn')) $('#closeBtn').onclick = closeSessionDialog;
   if ($('#openBtn')) $('#openBtn').onclick = openSessionDialog;
   if ($('#vasBtn')) $('#vasBtn').onclick = vasDialog;
+  if ($('#agentBtn')) $('#agentBtn').onclick = () => agentDialog(S, () => { if ($('#lines')) renderLines(); });
   if (S.view === 'floor') renderFloor();
   else if (S.view === 'tabs') renderTabs();
   else renderOrder();
@@ -270,7 +275,14 @@ function renderLines() {
       <div class="row" style="justify-content:flex-end;gap:4px">${isWeighed(l) ? `<button class="btn btn-sm" data-rw="${i}" title="Weigh again">⚖️</button>` : `<button class="btn btn-sm" data-m="${i}">−</button><button class="btn btn-sm" data-pl="${i}">＋</button>`}</div>
       ${l.note ? `<div class="note">✎ ${esc(l.note)}</div>` : ''}
     </div>`;
-  }).join('') : `<div class="cart-empty">🛒<br><br>Tap products or scan a barcode to start.</div>`;
+  }).join('') : (S.smartel && S.smartel.view && S.smartel.view.ops.length ? '' : `<div class="cart-empty">🛒<br><br>Tap products or scan a barcode to start.</div>`);
+  const sv = S.smartel && S.smartel.view;
+  if (sv && sv.ops.length) $('#lines').insertAdjacentHTML('beforeend', `<div class="cart-svc" id="svcBox"><div class="row"><b style="flex:1">💸 Payment services</b><button class="btn btn-sm" id="svcOpen">Open</button></div>
+    ${sv.ops.map(o => `<div class="row" style="gap:6px"><span style="flex:1">${o.line_no}. ${esc(o.name || o.op)}${o.mw_ref ? ` <small class="muted">${esc(o.mw_ref)}</small>` : ''}</span>${badge(o.state, o.state === 'completed' ? 'paid' : o.state === 'failed' ? 'cancelled' : 'partial')}<span class="r" style="min-width:70px;text-align:right">${o.state === 'completed' ? money(o.cash) : ''}</span></div>`).join('')}
+    <div class="row"><span class="muted" style="flex:1">Cash for services</span><b>${money(sv.services_cash)}</b></div>
+    ${!L.length ? `<button class="btn btn-primary" id="svcFin" ${sv.blocked ? 'disabled title="A service is still waiting for MyWallet"' : ''}>🧾 Finish customer (services only)</button>` : ''}</div>`);
+  if ($('#svcOpen')) $('#svcOpen').onclick = () => agentDialog(S, () => renderLines());
+  if ($('#svcFin')) $('#svcFin').onclick = () => agentDialog(S, () => renderLines());
   $$('[data-i]', $('#lines')).forEach(el => el.onclick = e => { if (e.target.closest('button')) return; S.sel = Number(el.dataset.i); renderLines(); });
   $$('[data-m]').forEach(b => b.onclick = () => changeQty(Number(b.dataset.m), -1));
   $$('[data-pl]').forEach(b => b.onclick = () => changeQty(Number(b.dataset.pl), +1));
@@ -280,13 +292,20 @@ function renderLines() {
   $('#totals').innerHTML = `<div class="t"><span>Items</span><span>${fq(t.items)}</span></div>
     ${t.discount ? `<div class="t"><span>Discounts</span><span>−${money(t.discount)}</span></div>` : ''}
     <div class="t"><span>Excl. VAT</span><span>${money(t.net)}</span></div><div class="t"><span>VAT</span><span>${money(t.tax)}</span></div>
-    <div class="t big"><span>Total</span><span>${money(t.total)}</span></div>`;
+    <div class="t big"><span>Total</span><span>${money(t.total)}</span></div>
+    ${S.smartel && S.smartel.view && S.smartel.view.ops.length ? `<div class="t"><span>Net cash (goods in cash + services)</span><span>${money(round2(t.total + S.smartel.view.services_cash))}</span></div>` : ''}`;
   const pb = $('#payBtn'); if (pb) pb.textContent = `Pay ${money(t.total)}`;
   const sel = $('.cart-line.sel'); if (sel) sel.scrollIntoView({ block: 'nearest' });
 }
 
 function addProduct(p, opts = {}) {
   if (!p) return;
+  const blk = S.catalog.smartel && S.catalog.smartel.blocked && S.catalog.smartel.blocked[p.id];
+  if (blk) {
+    POST('/smartel/flags', { terminal_id: S.terminal.id, kind: blk.kind, gtin: p.barcode, raw: p.barcode || p.name }).catch(() => {});
+    if (!blk.warn_only) return toast(`⛔ ${p.name}: ${blk.reason}. Put it aside – it cannot be sold.`, 'err', 7000);
+    toast(`⚠ ${p.name}: ${blk.reason}`, 'err', 5000);
+  }
   const L = S.order.lines;
   if (p.sold_by_weight) {
     if (!opts.qty) return weighDialog(p);
@@ -398,7 +417,11 @@ function customerDialog() {
 }
 
 // ---------------------------------------------------------------- payment
-function methodsAllowed() { return S.catalog.methods.filter(m => m.kind !== 'account' || S.order.partner_id); }
+function methodsAllowed() {
+  // on a Smartel till goods are paid by Cash, Card, MyWallet or Switch only (BR-05)
+  if (smartelOn()) return S.catalog.methods.filter(m => m.kind === 'cash' || isSmartelMethod(m));
+  return S.catalog.methods.filter(m => m.kind !== 'account' || S.order.partner_id);
+}
 
 async function payDialog() {
   if (!S.session) return openSessionDialog();
@@ -420,7 +443,8 @@ async function payDialog() {
       const draw = () => {
         r.querySelector('#pl').innerHTML = pays.map((p, i) => `<div class="pl ${i === active ? 'active' : ''}" data-pi="${i}">
           <b>${esc(p.m.name)}</b><input data-amt="${i}" type="number" step="0.01" value="${p.amount}"><button class="icon-btn" data-rm="${i}">✕</button>
-          ${p.m.kind === 'mobile_money' || p.m.requires_reference || p.m.kind === 'card' ? `<div class="extra">
+          ${isSmartelMethod(p.m) ? `<div class="extra">${p.approved ? `<span class="badge badge-paid">✓ approved ${esc(p.reference || '')}</span>` : `<button class="btn btn-sm btn-primary" data-ask="${i}">📲 Ask customer to pay</button><small class="muted">Must cover the whole bill on its own</small>`}</div>`
+          : p.m.kind === 'mobile_money' || p.m.requires_reference || p.m.kind === 'card' ? `<div class="extra">
             ${p.m.kind === 'mobile_money' ? `<input data-ph="${i}" placeholder="Customer phone" value="${esc(p.phone || '')}">` : ''}
             <input data-ref="${i}" placeholder="${p.m.requires_reference ? 'Transaction reference *' : 'Reference / approval code'}" value="${esc(p.reference || '')}">
             ${p.m.plugin_id ? `<button class="btn btn-sm" data-push="${i}">📲 Request on phone</button>` : ''}</div>` : ''}
@@ -433,12 +457,13 @@ async function payDialog() {
         r.querySelector('#quick').innerHTML = ap && ap.m.kind === 'cash' ? [Math.max(rem, 0) + Number(ap.amount), 20, 50, 100, 200, 500].filter((v, i, a) => v > 0 && a.indexOf(v) === i)
           .map((v, i) => `<button class="btn" data-q="${v}">${i === 0 ? 'Exact ' : ''}${money(v)}</button>`).join('') : '';
         $$('[data-pi]', r).forEach(el => el.onclick = e => { if (e.target.closest('input,button')) return; active = Number(el.dataset.pi); fresh = true; draw(); });
-        $$('[data-amt]', r).forEach(el => { el.oninput = () => { pays[Number(el.dataset.amt)].amount = Number(el.value); updateOnly(); }; el.onfocus = () => { active = Number(el.dataset.amt); }; });
+        $$('[data-amt]', r).forEach(el => { el.oninput = () => { const p = pays[Number(el.dataset.amt)]; p.amount = Number(el.value); if (p.approved) { p.approved = false; p.intent_id = null; p.reference = ''; } updateOnly(); }; el.onfocus = () => { active = Number(el.dataset.amt); }; });
         $$('[data-ref]', r).forEach(el => el.oninput = () => { pays[Number(el.dataset.ref)].reference = el.value; });
         $$('[data-ph]', r).forEach(el => el.oninput = () => { pays[Number(el.dataset.ph)].phone = el.value; });
         $$('[data-rm]', r).forEach(el => el.onclick = () => { pays.splice(Number(el.dataset.rm), 1); active = pays.length - 1; draw(); });
         $$('[data-q]', r).forEach(el => el.onclick = () => { pays[active].amount = Number(el.dataset.q); fresh = true; draw(); });
         $$('[data-push]', r).forEach(el => el.onclick = () => pushPayment(pays[Number(el.dataset.push)], el, draw));
+        $$('[data-ask]', r).forEach(el => el.onclick = () => { const p = pays[Number(el.dataset.ask)]; if (!(Number(p.amount) > 0)) return toast('Enter the amount first', 'err'); requestPayment(S, p, el, draw); });
       };
       const updateOnly = () => {
         const pd = paid(), rem = round2(total - pd);
@@ -448,6 +473,8 @@ async function payDialog() {
       };
       $$('[data-mm]', r).forEach(b => b.onclick = () => {
         const m = S.catalog.methods.find(x => x.id === Number(b.dataset.mm));
+        // card / MyWallet / Switch on a Smartel till must cover the whole bill alone
+        if (isSmartelMethod(m) || pays.some(x => isSmartelMethod(x.m))) pays.length = 0;
         const rem = Math.max(round2(total - paid()), 0);
         pays.push({ m, method_id: m.id, amount: rem, reference: '', phone: '' }); active = pays.length - 1; fresh = true; draw();
       });
@@ -468,15 +495,19 @@ async function payDialog() {
       r.querySelector('#done').onclick = async () => {
         const btn = r.querySelector('#done');
         if (paid() + 0.001 < total) return toast('Payment is short', 'err');
+        if (pays.some(p => isSmartelMethod(p.m) && !p.approved)) return toast('Ask the customer to pay first and wait until it shows approved', 'err');
         btn.disabled = true; btn.textContent = 'Processing…';
         try {
-          const payments = pays.map(p => ({ method_id: p.method_id, amount: p.amount, reference: p.reference, phone: p.phone }));
+          const payments = pays.map(p => ({ method_id: p.method_id, amount: p.amount, reference: p.reference, phone: p.phone, intent_id: p.intent_id || undefined }));
+          const smartel_session = S.smartel && S.smartel.session_uuid || undefined;
           let res;
           if (S.order.id || S.order.table_id || S.order.tab_name) {
             if (S.dirty || !S.order.id) await persist(false);
-            res = await POST(`/pos/orders/${S.order.id}/pay`, { payments, partner_id: S.order.partner_id });
+            res = await POST(`/pos/orders/${S.order.id}/pay`, { payments, partner_id: S.order.partner_id, smartel_session });
+            S.smartel = null;
           } else {
-            res = await POST('/pos/checkout', { session_id: S.session.id, mode: S.terminal.mode, partner_id: S.order.partner_id, lines: payloadLines(), payments });
+            res = await POST('/pos/checkout', { session_id: S.session.id, mode: S.terminal.mode, partner_id: S.order.partner_id, lines: payloadLines(), payments, smartel_session });
+          S.smartel = null;
           }
           close();
           receiptDialog(res.order, res.change);
@@ -516,7 +547,7 @@ export function receiptHtml(o, company = state.company) {
   const vasOther = (o.vas || []).filter(v => !v.token).map(v => `<div>Ref: ${esc(v.provider_ref || '')} · ${esc(v.message || '')}</div>`).join('');
   return `<!doctype html><html><head><meta charset="utf-8"><style>
     @page { size: 80mm auto; margin: 3mm } body { font-family: 'Courier New', monospace; font-size: 12px; width: 72mm; margin: 0 auto; color: #000 }
-    .c { text-align: center } .r { text-align: right } table { width: 100%; border-collapse: collapse } td { vertical-align: top; padding: 1px 0 }
+    .c { text-align: center } .r { text-align: right; white-space: nowrap } table { width: 100%; border-collapse: collapse } td { vertical-align: top; padding: 1px 0 }
     hr { border: 0; border-top: 1px dashed #000; margin: 6px 0 } .b { font-weight: bold } .big { font-size: 15px; font-weight: bold }
   </style></head><body>
   ${receiptLogoHtml(company)}
@@ -529,7 +560,7 @@ export function receiptHtml(o, company = state.company) {
   <tr class="big"><td>TOTAL</td><td class="r">${m(o.total)}</td></tr></table><hr>
   <table>${(o.payments || []).map(p => `<tr><td>${esc(p.method_name)}${p.reference ? ' ' + esc(p.reference) : ''}</td><td class="r">${m(p.direction === 'out' ? -p.amount : p.amount)}</td></tr>`).join('')}
   ${Number(o.change_given) ? `<tr class="b"><td>Change</td><td class="r">${m(o.change_given)}</td></tr>` : ''}</table>
-  ${vasTokens}${vasOther}
+  ${vasTokens}${vasOther}${servicesHtml(o)}
   ${o.receipt_qr_svg ? `<hr><div class="c"><div style="width:30mm;margin:0 auto">${o.receipt_qr_svg}</div><div style="font-size:10.5px">${esc(o.receipt_qr_text || 'Scan for your digital receipt')}</div></div>` : ''}
   <hr><div class="c">${esc(company.receipt_footer || 'Thank you!')}</div><div class="c" style="font-size:10px;margin-top:6px">Powered by Maluti ERP</div>
   </body></html>`;

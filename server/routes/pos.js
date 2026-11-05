@@ -3,6 +3,7 @@ const db = require('../db');
 const pos = require('../services/pos');
 const plugins = require('../services/plugins');
 const mailer = require('../services/mailer');
+const smartel = require('../services/smartel');
 const { requirePerm, can } = require('../auth');
 const { ah, bad, today } = require('../util');
 
@@ -32,7 +33,14 @@ r.get('/catalog', ah(async (req, res) => {
   const posSettings = await db.getSetting('pos', {}) || {};
   const butchery = await require('../services/butchery').settings();
   const price_rules = (await require('../services/pricing').activeRules()).filter(r => Number(r.on_pos));
-  res.json({ categories, products, methods, company, vas, pos: posSettings, butchery: butchery.enabled ? butchery : { enabled: false }, price_rules });
+  // Smartel: payment services and the products the till must refuse (recalled / not in the National Product Register)
+  const sm = await smartel.settings(true);
+  const smTerm = sm.enabled && req.query.terminal_id ? await db.one('SELECT pos_terminal_id, quarantined FROM smartel_terminals WHERE pos_terminal_id = ?', [req.query.terminal_id]) : null;
+  const smartelInfo = sm.enabled ? { enabled: true, till_linked: !!smTerm, quarantined: !!(smTerm && smTerm.quarantined), npr: sm.npr, blocked: await smartel.blockedProducts(),
+    ops: Object.entries(smartel.OPS).map(([code, o]) => ({ code, name: o.name, name_st: o.st, fields: o.fields, need: o.need, otp: !!o.otp, pin: !!o.pin, cash: o.cash })), billers: smartel.BILLERS } : { enabled: false };
+  // the old direct My Wallet VAS plugin is replaced by the Smartel adapter (never call MyWallet directly)
+  const vasOut = sm.enabled ? vas.filter(v => !/my ?wallet/i.test(`${v.plugin_id} ${v.plugin_name}`)) : vas;
+  res.json({ categories, products, methods: methods.filter(m => !String(m.plugin_id || '').startsWith('smartel:') || smTerm), company, vas: vasOut, pos: posSettings, butchery: butchery.enabled ? butchery : { enabled: false }, price_rules, smartel: smartelInfo });
 }));
 
 // ---- sessions ----
@@ -118,15 +126,27 @@ r.post('/orders/:id/send', ah(async (req, res) => {
   res.json({ sent: n });
 }));
 r.post('/orders/:id/pay', ah(async (req, res) => {
-  const out = await db.tx(c => pos.payOrder(c, req.user, Number(req.params.id), req.body));
+  await require('../services/activation').assertCanSell();
+  const out = await db.tx(async c => {
+    const o = await pos.payOrder(c, req.user, Number(req.params.id), req.body);
+    o.smartel = await smartel.afterSale(c, req.user, o.order_id, req.body, o);
+    return o;
+  });
+  if (out.smartel) smartel.pushSoon();
+  delete out.lots;
   res.json({ ...out, order: await db.tx(c => pos.getOrder(c, out.order_id)) });
 }));
 // Retail one-shot checkout: create + pay
 r.post('/checkout', ah(async (req, res) => {
+  await require('../services/activation').assertCanSell();
   const out = await db.tx(async c => {
     const id = await pos.saveOrder(c, req.user, req.body);
-    return pos.payOrder(c, req.user, id, req.body);
+    const o = await pos.payOrder(c, req.user, id, req.body);
+    o.smartel = await smartel.afterSale(c, req.user, id, req.body, o);
+    return o;
   });
+  if (out.smartel) smartel.pushSoon();
+  delete out.lots;
   res.json({ ...out, order: await db.tx(c => pos.getOrder(c, out.order_id)) });
 }));
 r.post('/orders/:id/void', requirePerm('pos.void'), ah(async (req, res) => {

@@ -8,11 +8,12 @@ import { hasMod, locationOptions } from './core.js';
 export async function settings(view) {
   const tab = query().tab || 'company';
   const tabs = [['company', 'Company'], ['business', 'Business & modules'], ['pos', 'POS'], ['payments', 'Payment methods'], ['taxes', 'Taxes'], ['terminals', 'Tills'], ['restaurant', 'Restaurant floors'],
-    ['users', 'Users'], ['email', 'Email & EOD reports'], ['plugins', 'Plugins (VAS / payments)'], ['hrm', 'HR & Payroll'], ['updates', 'Updates & backup'], ['logs', 'Logs']];
+    ['users', 'Users'], ['email', 'Email & EOD reports'], ['plugins', 'Plugins (VAS / payments)'], ['portal', 'Customer portal'], ['hrm', 'HR & Payroll'], ['updates', 'Updates & backup'], ['logs', 'Logs']];
   view.innerHTML = page('Settings', '', `<div class="tabs">${tabs.map(([k, l]) => `<a href="#/settings?tab=${k}" class="${k === tab ? 'active' : ''}">${l}</a>`).join('')}</div><div id="sb"></div>`);
   const sb = $('#sb');
   if (tab === 'hrm') { location.hash = '#/hrm?tab=settings'; return; }
   if (tab === 'business') return businessTab(sb);
+  if (tab === 'portal') return (await import('./portalui.js')).portalSettingsTab(sb);
   const s = await GET('/settings');
 
   if (tab === 'company') {

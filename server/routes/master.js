@@ -44,7 +44,7 @@ function crud(path, table, fields, { perm, readPerm, orderBy = 'id', search = []
 crud('categories', 'categories', ['name', 'color', 'station', 'sort_order', 'active'], { perm: 'catalog', orderBy: 'sort_order', search: ['name'] });
 crud('taxes', 'taxes', ['name', 'rate', 'price_includes_tax', 'active'], { perm: 'settings' });
 crud('partners', 'partners', ['name', 'is_customer', 'is_supplier', 'phone', 'email', 'address', 'tax_number', 'credit_limit', 'notes', 'active',
-  'contact_person', 'birthday', 'tags', 'owner_id'],
+  'contact_person', 'birthday', 'tags', 'owner_id', 'marketing_opt_out'],
   { perm: 'partners', orderBy: 'name', search: ['name', 'phone', 'email', 'tags'] });
 crud('terminals', 'pos_terminals', ['name', 'mode', 'active', 'location_id'], { perm: 'settings' });
 crud('payment-methods', 'payment_methods', ['name', 'kind', 'account_code', 'requires_reference', 'plugin_id', 'active', 'sort_order', 'qr_payload', 'qr_label'], { perm: 'settings', orderBy: 'sort_order' });

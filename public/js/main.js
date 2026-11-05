@@ -28,7 +28,15 @@ import * as hireui from './hireui.js';
 import * as clinicui from './clinicui.js';
 import * as importer from './importer.js';
 import * as farmui from './farmui.js';
+import * as campaignui from './campaignui.js';
+import * as recruitui from './recruitui.js';
+import * as welcome from './welcome.js';
+import * as actui from './activationui.js';
+import * as smui from './smartelui.js';
+import * as taxui from './taxui.js';
 import { LANGS, lang, setLang } from './i18n.js';
+import { startTranslator } from './i18n_dom.js';
+import * as trui from './translateui.js';
 import { workbook, tablesToSheets, download } from './xlsx.js';
 
 const APPS = [
@@ -65,6 +73,8 @@ const APPS = [
   { href: '#/clinic', label: 'Patients & dispensing', ico: '🩺', color: '#0e7490', perm: 'patients', mod: 'patients' },
   { href: '#/hire', label: 'Equipment & party hire', ico: '⛺', color: '#a16207', perm: 'hire', mod: 'hire' },
   { href: '#/fleet', label: 'Fleet & trips', ico: '🚚', color: '#365314', perm: 'fleet', mod: 'fleet' },
+  { href: '#/campaigns', label: 'SMS & email campaigns', ico: '📣', color: '#c026d3', perm: 'campaigns', mod: 'campaigns' },
+  { href: '#/recruitment', label: 'Recruitment & appraisals', ico: '🧑‍🎓', color: '#7e22ce', perm: 'hrm', mod: 'recruitment' },
   { href: '#/reminders', label: 'Payment reminders', ico: '📱', color: '#b91c1c', perm: 'reminders', mod: 'reminders' },
   { href: '#/pipeline', label: 'Sales pipeline', ico: '🎯', color: '#be185d', perm: 'crm', mod: 'crm' },
   { href: '#/contracts', label: 'Contracts & repeat invoices', ico: '🔁', color: '#0369a1', perm: 'invoicing', mod: 'contracts' },
@@ -74,6 +84,10 @@ const APPS = [
   { href: '#/rfqs', label: 'Supplier price requests', ico: '📨', color: '#6d28d9', perm: 'purchasing', mod: 'purchasing' },
   { href: '#/locations', label: 'Branches & warehouses', ico: '🏬', color: '#0369a1', perm: 'inventory', mod: 'locations' },
   { href: '#/transfers', label: 'Stock transfers', ico: '🔁', color: '#0891b2', perm: 'inventory', mod: 'locations' },
+  { href: '#/activation', label: 'Activation & KYC', ico: '🪪', color: '#0e7490', perm: 'settings' },
+  { href: '#/tax', label: 'Tax centre (VAT, PAYE, income tax – RSL)', ico: '🧾', color: '#9a3412', perm: 'accounting' },
+  { href: '#/smartel', label: 'Smartel connection (MyWallet services)', ico: '🔗', color: '#047857', perm: 'settings' },
+  { href: '#/translations', label: 'Translations (Sesotho)', ico: '🗣️', color: '#15803d', perm: 'settings' },
   { href: '#/import', label: 'Import data', ico: '⬆️', color: '#0f766e', perm: 'settings' },
   { href: '#/guide', label: 'Setup guide', ico: '🧭', color: '#0d9488', perm: 'settings' },
   { href: '#/settings', label: 'Settings', ico: '⚙️', color: '#475569', perm: 'settings' }
@@ -96,6 +110,7 @@ function shell(html) {
     <div class="user"><select id="lang" class="lang-sel" title="Language of the help notes / Puo ea litaelo">${LANGS.map(([k, l]) => `<option value="${k}" ${lang() === k ? 'selected' : ''}>${k === 'both' ? 'EN + ST' : k.toUpperCase()}</option>`).join('')}</select><span>${esc(state.user.name)}</span><div class="avatar" title="${esc(state.user.role)}">${initials}</div>
       <button class="icon-btn" style="color:#fff" id="logout" title="Log out">⏻</button></div>
   </div>
+  ${actui.banner(state.activation, can('settings'))}
   <div id="view">${html || ''}</div>`;
   $('#logout').onclick = logout;
   $('#lang').onchange = e => { setLang(e.target.value); route(); };
@@ -119,6 +134,7 @@ function home(view) {
     el.innerHTML = `<a class="guide-banner" href="#/guide"><span class="gb-ico">🧭</span><span style="flex:1"><b>Finish setting up your business – ${g.done} of ${g.total} steps done</b><br>
       <small>Next: ${esc(next ? next.title : '')}</small></span><span class="gb-bar"><span style="width:${Math.round(g.done / g.total * 100)}%"></span></span><span class="btn btn-primary btn-sm">Continue →</span></a>`;
   }).catch(() => {});
+  setTimeout(() => { if (location.hash === '' || location.hash === '#/') welcome.tour(); }, 900);
 }
 
 // ---------------- auth screens ----------------
@@ -136,7 +152,9 @@ async function loginScreen() {
       ` : `
         <form id="lf"><label class="field"><span>Username</span><input name="username" autocomplete="username" required></label>
         <label class="field" style="margin-top:10px"><span>Password</span><input name="password" type="password" autocomplete="current-password" required></label>
-        <button class="btn btn-primary btn-block btn-lg" style="margin-top:16px">Sign in</button></form>`}
+        <div class="wz-err" id="caps" style="display:none;margin-top:6px">⇪ Caps Lock is on</div>
+        <button class="btn btn-primary btn-block btn-lg" style="margin-top:16px">Sign in</button>
+        <details style="margin-top:12px"><summary class="muted" style="cursor:pointer">Forgot your password? / U lebetse phasewete?</summary><p class="muted" style="font-size:13px">Staff: ask the owner or manager to set a new one under Settings → Users. Owner: another administrator can reset it; if you are the only administrator, contact your Maluti ERP / My Wallet support.</p></details></form>`}
       ${users.length ? '<button class="btn btn-block" id="clockBtn" style="margin-top:16px">🕐 Clock in / out (start or end your shift)</button>' : ''}
     </div></div>`;
     const cb = $('#clockBtn'); if (cb) cb.onclick = () => { document.onkeydown = null; att.clockDialog(users); };
@@ -144,6 +162,7 @@ async function loginScreen() {
     $$('[data-u]').forEach(a => a.onclick = () => { sel = Number(a.dataset.u); pin = ''; render(); });
     $$('[data-k]').forEach(b => b.onclick = () => keyPress(b.dataset.k));
     const lf = $('#lf');
+    if (lf) lf.password.addEventListener('keyup', e => { const c = e.getModifierState && e.getModifierState('CapsLock'); $('#caps').style.display = c ? 'block' : 'none'; });
     if (lf) lf.onsubmit = async e => {
       e.preventDefault();
       try { const r = await POST('/login', { username: lf.username.value, password: lf.password.value }); afterLogin(r); } catch (e2) { err(e2); }
@@ -166,91 +185,7 @@ function afterLogin(r) {
   if (location.hash === target) route(); else location.hash = target; // hashchange triggers route()
 }
 
-async function dbScreen() {
-  const info = window.maluti ? await window.maluti.info() : null;
-  const emb = state.status && state.status.embedded_available;
-  $('#app').innerHTML = `<div class="auth"><div class="auth-card">
-    <div class="logo">M</div><h1>Choose your database</h1>
-    ${emb ? `<div class="sub">Maluti ERP comes with its own MySQL 8 database – nothing else to install. It runs on this computer and is backed up daily.</div>
-      <button class="btn btn-primary btn-block btn-lg" id="useEmb">Use the built-in database (recommended)</button>
-      <details style="margin-top:16px"><summary class="muted" style="cursor:pointer">Or connect to an existing MySQL / MariaDB server…</summary><div style="margin-top:10px">` : `<div class="sub">Maluti ERP stores all data in a MySQL (or MariaDB) server. Enter its details — the database will be created if it doesn't exist.</div>`}
-    <form id="dbf">${formHtml([
-      { key: 'host', label: 'Server host', default: 'localhost', required: true }, { key: 'port', label: 'Port', type: 'number', default: 3306 },
-      { key: 'user', label: 'MySQL user', default: 'root', required: true }, { key: 'password', label: 'Password', type: 'password' },
-      { key: 'database', label: 'Database name', default: 'maluti_erp', required: true, span: 2 }
-    ], {}, { ctx: 'db' })}
-    <button class="btn ${emb ? '' : 'btn-primary'} btn-block btn-lg" style="margin-top:16px">Connect & continue</button></form>
-    ${emb ? '</div></details>' : ''}
-    ${info && info.desktop ? `<hr style="border:0;border-top:1px solid var(--line);margin:20px 0">
-      <div class="muted" style="margin-bottom:8px">Adding another till? Point this PC at the main Maluti ERP computer instead:</div>
-      <div class="row"><input id="remote" placeholder="http://192.168.1.10:8069"><button class="btn" id="useRemote">Use server</button></div>` : ''}
-  </div></div>`;
-  const ue = $('#useEmb');
-  if (ue) ue.onclick = async () => {
-    ue.disabled = true; ue.textContent = 'Starting the built-in database… (first time takes up to a minute)';
-    try { await POST('/db-embedded', {}); toast('Built-in database ready'); route(); }
-    catch (e2) { err(e2); ue.disabled = false; ue.textContent = 'Use the built-in database (recommended)'; }
-  };
-  const f = $('#dbf');
-  f.onsubmit = async e => {
-    e.preventDefault();
-    const b = f.querySelector('button'); b.disabled = true; b.textContent = 'Connecting…';
-    try { await POST('/db-config', readForm(f, [{ key: 'host' }, { key: 'port', type: 'number' }, { key: 'user' }, { key: 'password' }, { key: 'database' }])); toast('Connected to MySQL'); route(); }
-    catch (e2) { err(e2); b.disabled = false; b.textContent = 'Connect & continue'; }
-  };
-  const ur = $('#useRemote');
-  if (ur) ur.onclick = () => { const v = $('#remote').value.trim(); if (!/^https?:\/\//.test(v)) return err(new Error('Enter a URL like http://192.168.1.10:8069')); window.maluti.setRemote(v); };
-}
 
-async function setupScreen() {
-  const types = await fetch('/api/business-types').then(r => r.json()).catch(() => [{ key: 'retail', name: 'Retail shop', icon: '🛍️', desc: '' }]);
-  $('#app').innerHTML = `<div class="auth"><div class="auth-card wide">
-    <div class="logo">M</div><h1>Set up your business</h1><div class="sub">This runs once. You can change everything later in Settings. The yellow notes under each box explain what to enter.</div>
-    <form id="sf">
-      <h4 style="margin:6px 0 6px">What kind of business is this?</h4>
-      <div class="biz-types">${types.map(t => `<label class="biz-type"><input type="checkbox" name="bt_${t.key}" ${t.key === 'retail' ? 'checked' : ''}><span class="bi">${t.icon}</span><span><b>${esc(t.name)}</b><small>${esc(t.desc)}</small></span></label>`).join('')}</div>
-      <small class="help-note" style="margin-bottom:14px">Tick everything you do – e.g. Butchery + Retail, Lodge + Bar, or Wholesale with branches. Only the apps these need are switched on (change them later under Settings → Business & modules). A step-by-step setup guide for exactly these will open after this page.</small>
-      <h4 style="margin:6px 0 10px">Company</h4>
-      ${formHtml([
-        { key: 'name', label: 'Business name', required: true }, { key: 'phone', label: 'Phone' },
-        { key: 'address', label: 'Address', span: 2 }, { key: 'email', label: 'Email' }, { key: 'tax_number', label: 'VAT / TIN number' },
-        { key: 'currency_code', label: 'Currency code', default: 'LSL' }, { key: 'currency_symbol', label: 'Currency symbol', default: 'M' },
-        { key: 'vat_rate', label: 'Standard VAT %', type: 'number', default: 15 }, { key: 'receipt_footer', label: 'Receipt footer', default: 'Thank you for your business!' }
-      ], {}, { ctx: 'setup' })}
-      <label class="field" style="margin-top:12px"><span>Company logo (optional — printed on receipts & invoices)</span>
-        <div class="row"><input type="file" id="setupLogo" accept="image/*"><img id="setupLogoPrev" style="max-height:48px;display:none"></div>
-        <small class="help-note">PNG or JPG, ideally on a white or transparent background. It is resized automatically and printed in black & white on receipt printers. You can add or change it later in Settings → Company.</small></label>
-      <h4 style="margin:18px 0 10px">Administrator account</h4>
-      ${formHtml([
-        { key: 'a_name', label: 'Full name', required: true, default: 'Administrator' }, { key: 'a_username', label: 'Username', required: true, default: 'admin' },
-        { key: 'a_password', label: 'Password (min 6)', type: 'password', required: true }, { key: 'a_pin', label: 'POS PIN (4–6 digits)', type: 'password' },
-        { key: 'demo', label: 'Load demo products, customers & suppliers', type: 'checkbox', default: 1, span: 2 }
-      ], {}, { ctx: 'setup' })}
-      <button class="btn btn-primary btn-block btn-lg" style="margin-top:18px">Create my company</button>
-    </form></div></div>`;
-  const f = $('#sf');
-  let logoData = null;
-  $('#setupLogo').onchange = async e => {
-    try { logoData = (await imageFileToDataUrl(e.target.files[0])).dataUrl; const p = $('#setupLogoPrev'); p.src = logoData; p.style.display = ''; }
-    catch (x) { logoData = null; err(x); e.target.value = ''; }
-  };
-  f.onsubmit = async e => {
-    e.preventDefault();
-    const v = Object.fromEntries(new FormData(f));
-    delete v.setupLogo;
-    try {
-      const r = await POST('/setup', {
-        company: { name: v.name, phone: v.phone, address: v.address, email: v.email, tax_number: v.tax_number, currency_code: v.currency_code, currency_symbol: v.currency_symbol, vat_rate: Number(v.vat_rate), receipt_footer: v.receipt_footer },
-        admin: { name: v.a_name, username: v.a_username, password: v.a_password, pin: v.a_pin || undefined }, demo: f.demo.checked,
-        business_types: types.map(t => t.key).filter(k => f['bt_' + k] && f['bt_' + k].checked)
-      });
-      setToken(r.token);
-      if (logoData) await PUT('/settings-logo', { data_url: logoData }).catch(err);
-      state.company = await GET('/company'); await ensureLogo();
-      toast('Welcome to Maluti ERP! Follow the setup guide step by step.'); setToken(r.token); state.user = r.user; location.hash = '#/guide';
-    } catch (e2) { err(e2); }
-  };
-}
 
 // ---------------- router ----------------
 const ROUTES = {
@@ -312,7 +247,18 @@ const ROUTES = {
   '#/vehicle': fleetui.vehicle,
   '#/hire': hireui.hire,
   '#/import': importer.importer,
+  '#/activation': actui.activationPage,
+  '#/smartel': smui.smartelPage,
+  '#/tax': taxui.taxPage,
+  '#/translations': trui.translationsPage,
+  '#/taxreturn': taxui.taxReturn,
   '#/farm': farmui.farm,
+  '#/campaigns': campaignui.campaigns,
+  '#/campaign': campaignui.campaign,
+  '#/recruitment': recruitui.recruitment,
+  '#/opening': recruitui.opening,
+  '#/applicant': recruitui.applicant,
+  '#/appraisal': recruitui.appraisal,
   '#/farmgroup': farmui.farmGroup,
   '#/animal': farmui.animal,
   '#/season': farmui.season,
@@ -334,8 +280,7 @@ export async function route() {
   try {
     state.status = await fetch('/api/status').then(r => r.json());
   } catch (e) { $('#app').innerHTML = `<div class="auth"><div class="auth-card"><h1>Server not reachable</h1><p class="muted">${esc(e.message)}</p><button class="btn btn-primary" onclick="location.reload()">Retry</button></div></div>`; return; }
-  if (!state.status.connected) return dbScreen();
-  if (!state.status.initialised) return setupScreen();
+  if (!state.status.connected || !state.status.initialised) return welcome.firstRun();
   state.company = await GET('/company').catch(() => ({}));
   await ensureLogo();
   document.title = (state.company.name || 'Maluti') + ' · ERP';
@@ -347,6 +292,7 @@ export async function route() {
   state.butchery = await GET('/butchery/status').catch(() => null);
   state.biz = await GET('/business').catch(() => null);
   state.locations = null;
+  state.activation = await GET('/activation').catch(() => null);
   if (seq !== routeSeq) return; // a newer navigation started while we were loading
   const [path] = location.hash.split('?');
   if (path === '#/login') { location.hash = '#/'; return; }
@@ -388,4 +334,7 @@ window.addEventListener('hashchange', () => { closeModals(); route(); guide.guid
 if (window.maluti && window.maluti.onUpdateAvailable) window.maluti.onUpdateAvailable(s => {
   if (state.user && can('settings')) toast(`Maluti ERP ${s.version} is available – Settings → Updates & backup`, 'ok', 10000);
 });
+// any action that fails without its own error handling still tells the user in plain words (never a silent button)
+window.addEventListener('unhandledrejection', e => { const m = e.reason && (e.reason.message || String(e.reason)); if (m && !/AbortError|ResizeObserver/.test(m)) { err({ message: m }); e.preventDefault(); } });
+startTranslator();
 route();

@@ -142,7 +142,8 @@ export const A = {
     credit_limit: 'Chelete e kholo ka ho fetisisa eo ba ka u kolotang eona ka mokitlane. 0 = ha ho thekiso ka mokitlane.',
     is_customer: 'U ba rekisetsa.',
     is_supplier: 'U reka ho bona (setopo, sehoai, wholesaler…).',
-    notes: 'Eng kapa eng eo basebetsi ba lokelang ho e tseba, mohl. matsatsi a ho isa thepa kapa litumellano tsa theko.'
+    notes: 'Eng kapa eng eo basebetsi ba lokelang ho e tseba, mohl. matsatsi a ho isa thepa kapa litumellano tsa theko.',
+    marketing_opt_out: 'Tšoaea ha motho a kopile hore a se ke a fumana litheolelo le litaba. Ha a kenyelletsoe molaetseng ofe kapa ofe oa SMS kapa email (li-invoice le likhopotso li ntse li ea).'
   },
   butchery: {
     enabled: 'E bulela lintho tse lekanyetsoang ka boima, li-label tsa sekala, ho arola litopo le ho li sala morao, litšila, li-batch le ho sebetsa nama bakeng sa khoebo eohle.',

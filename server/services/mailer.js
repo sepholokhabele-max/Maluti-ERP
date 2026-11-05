@@ -75,11 +75,11 @@ async function schedule() {
 }
 
 /** Generic send using the configured SMTP account (logged to email_log) */
-async function sendMail({ to, subject, text, html, kind = 'other' }) {
+async function sendMail({ to, subject, text, html, kind = 'other', attachments, replyTo }) {
   const s = await getEmailSettings();
   const t = await transport(s);
   try {
-    await t.sendMail({ from: s.from_address || s.smtp_user, to, subject, text, html });
+    await t.sendMail({ from: s.from_address || s.smtp_user, to, subject, text, html, ...(attachments ? { attachments } : {}), ...(replyTo ? { replyTo } : {}) });
     await log(kind, null, [to], subject, 'sent');
   } catch (e) {
     await log(kind, null, [to], subject, 'failed', e.message);

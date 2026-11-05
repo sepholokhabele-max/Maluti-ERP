@@ -23,6 +23,7 @@ const setPort = p => { serverPort = p; };
 async function baseUrl(req) {
   const s = await settings();
   if (s.base_url) return s.base_url.replace(/\/+$/, '');
+  if (process.env.MALUTI_PUBLIC_URL) return process.env.MALUTI_PUBLIC_URL.replace(/\/+$/, ''); // hosted (web) version
   const lan = lanUrls(serverPort);
   return lan[0] || (req ? `${req.protocol}://${req.get('host')}` : 'http://localhost:8069');
 }

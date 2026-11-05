@@ -108,6 +108,8 @@ async function getOrder(conn, id) {
   o.payments = await conn.query(
     `SELECT p.*, m.name method_name, m.kind FROM payments p JOIN payment_methods m ON m.id = p.method_id WHERE p.order_id = ? ORDER BY p.id`, [id]);
   o.vas = await conn.query('SELECT * FROM vas_transactions WHERE order_id = ?', [id]);
+  o.services = await require('./smartel').orderServices(conn, id);
+  if (o.services.length) o.net_cash = round2(o.services.reduce((a, x) => a + Number(x.cash), 0) + o.payments.filter(p => p.kind === 'cash').reduce((a, p) => a + Number(p.amount), 0));
   // quantities already refunded per original line (matched by product + name)
   const ref = await conn.query(
     `SELECT l.product_id, l.name, SUM(-l.qty) qty FROM order_lines l JOIN orders r ON r.id = l.order_id WHERE r.refund_of = ? GROUP BY l.product_id, l.name`, [id]);
@@ -240,6 +242,7 @@ async function payOrder(conn, user, orderId, { payments, partner_id }) {
   const loc = await terminalLocation(conn, o.terminal_id);
   const number = `POS/${new Date().getFullYear()}/${pad(orderId)}`;
   let cogs = 0;
+  const lots = {};
   for (const l of lines) {
     const pourQty = pourBottles(l);
     if (pourQty !== null) {
@@ -248,7 +251,9 @@ async function payOrder(conn, user, orderId, { payments, partner_id }) {
       cogs += Number(l.qty) * uc;
       await conn.query('UPDATE order_lines SET unit_cost = ? WHERE id = ?', [uc, l.id]);
     } else if (l.product_id && l.type === 'stock') {
-      const cost = await stock.move(conn, { product_id: l.product_id, qty: -Number(l.qty), move_type: 'sale', reference: number, user_id: user.id, location_id: loc });
+      const mo = {};
+      const cost = await stock.move(conn, { product_id: l.product_id, qty: -Number(l.qty), move_type: 'sale', reference: number, user_id: user.id, location_id: loc, out: mo });
+      if (mo.used && mo.used.length) lots[l.id] = mo.used;
       cogs += Number(l.qty) * cost;
       await conn.query('UPDATE order_lines SET unit_cost = ? WHERE id = ?', [cost, l.id]);
     } else if (l.product_id && l.type === 'consumable') {
@@ -271,7 +276,7 @@ async function payOrder(conn, user, orderId, { payments, partner_id }) {
   if (cogs) { jl.push({ code: '5000', debit: cogs }); jl.push({ code: '1200', credit: cogs }); }
   await accounting.post(conn, { reference: number, memo: `POS order ${number}`, source_type: 'pos_order', source_id: orderId, user_id: user.id, location_id: loc, lines: jl });
 
-  return { order_id: orderId, number, change };
+  return { order_id: orderId, number, change, lots };
 }
 
 /** Refund some or all lines of a paid order */

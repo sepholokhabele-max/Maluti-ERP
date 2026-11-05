@@ -3,3 +3,6 @@ dist/
 config.json
 *.log
 vendor/
+.env
+mobile/android/
+mobile/node_modules/

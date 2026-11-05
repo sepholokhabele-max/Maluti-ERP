@@ -7,7 +7,7 @@ const ROLE_PERMS = {
   admin: ['*'],
   manager: ['dashboard', 'pos', 'pos.refund', 'pos.discount', 'pos.void', 'catalog', 'inventory', 'partners', 'purchasing',
     'invoicing', 'accounting', 'reports', 'vas', 'kitchen', 'users', 'sessions', 'crm', 'recon', 'recon.approve', 'hrm', 'payroll',
-    'sales', 'expenses.approve', 'purchase.approve', 'attendance', 'maintenance', 'projects', 'helpdesk', 'property', 'school', 'sites', 'reminders', 'rooms', 'fleet', 'hire', 'patients', 'farm'],
+    'sales', 'expenses.approve', 'purchase.approve', 'attendance', 'maintenance', 'projects', 'helpdesk', 'property', 'school', 'sites', 'reminders', 'rooms', 'fleet', 'hire', 'patients', 'farm', 'campaigns'],
   accountant: ['dashboard', 'partners', 'purchasing', 'invoicing', 'accounting', 'reports', 'inventory', 'crm', 'recon', 'recon.approve', 'hrm', 'payroll',
     'sales', 'expenses.approve', 'attendance', 'projects', 'helpdesk', 'property', 'school', 'reminders', 'rooms', 'fleet', 'hire', 'farm'],
   cashier: ['pos', 'vas', 'helpdesk'],

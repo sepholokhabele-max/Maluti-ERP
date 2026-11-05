@@ -1,0 +1,14 @@
+{
+  "appId": "ls.maluti.erp",
+  "appName": "Maluti ERP",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true,
+    "allowNavigation": ["*"]
+  },
+  "android": {
+    "allowMixedContent": true,
+    "captureInput": true
+  }
+}

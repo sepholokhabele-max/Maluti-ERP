@@ -574,7 +574,7 @@ const ok = (m) => console.log('  ✓', m);
     // ---- business types & modules, branches, transfers, branch profit ----
     let biz = await api('GET', '/business');
     // the setup-guide step above chose butchery + bar, which switched on their modules
-    assert(biz.configured && biz.modules.includes('pos') && biz.modules.includes('butchery') && biz.modules.includes('bar') && biz.modules.includes('restaurant') && biz.modules.includes('locations') && biz.all_types.length === 16 && biz.all_modules.some(m => m.coming));
+    assert(biz.configured && biz.modules.includes('pos') && biz.modules.includes('butchery') && biz.modules.includes('bar') && biz.modules.includes('restaurant') && biz.modules.includes('locations') && biz.all_types.length === 16 && biz.all_modules.length >= 30);
     const sumCheck = async () => { const st = await api('GET', '/locations/stock'); for (const r of st.rows) { const s = Object.values(r.at).reduce((a, x) => a + x.qty, 0); assert(Math.abs(s - r.stock_qty) < 0.001, `${r.name}: locations ${s} vs total ${r.stock_qty}`); } return st; };
     await sumCheck();
     let locs = await api('GET', '/locations'); const MAIN = locs.find(l => l.is_default); const TRANSIT = locs.find(l => l.kind === 'transit');
@@ -1212,6 +1212,317 @@ const ok = (m) => console.log('  ✓', m);
     assert.strictEqual(rep.seasons.find(x => x.id === se.id).cost_per_ha, 250);
     const tbf = await api('GET', '/reports/tb?from=2000-01-01&to=2999-12-31'); assert.strictEqual(tbf.debit, tbf.credit);
     ok('farm: layers fed and vaccinated from stock (next dose due listed), 15 trays of eggs into stock, 3 deaths off the flock, cow calves, calf sold on an invoice, maize field ploughed and 40 bags harvested into stock, results per flock and per hectare');
+  }
+  {
+    // ---- campaigns ----
+    await api('PUT', '/reminders/settings', { sms: { mode: 'log' } });
+    const mkp = (name, phone, extra = {}) => api('POST', '/partners', { name, phone, is_customer: 1, tags: 'gold club', ...extra });
+    const a1 = await mkp('Palesa VIP', '58110001', { birthday: '1990-03-14' }), a2 = await mkp('Thato VIP', '58110002');
+    await mkp('No Phone VIP', null); const a4 = await mkp('Opted Out VIP', '58110004');
+    await api('PUT', `/partners/${a4.id}/opt-out`, { opt_out: 1 });
+    const pv = await api('POST', '/campaigns/preview', { channel: 'sms', audience: { tags: 'gold club' }, message: 'Hi {first_name}, 20% off this weekend at {company}!' });
+    assert.strictEqual(pv.count, 2); assert(/Hi Palesa|Hi Thato/.test(pv.sms_text)); assert.strictEqual(pv.sms_total, 2 * pv.sms_parts);
+    assert.strictEqual((await api('POST', '/campaigns/preview', { channel: 'sms', audience: { tags: 'gold club', birthday_month: 3 } })).count, 1);
+    const cp = await api('POST', '/campaigns', { name: 'Weekend special', channel: 'sms', audience: { tags: 'gold club' }, message: 'Hi {first_name}, 20% off this weekend!' });
+    await api('POST', `/campaigns/${cp.id}/schedule`, { at: '2001-01-01T09:00' }, true); // in the past
+    const res1 = await api('POST', `/campaigns/${cp.id}/send`, {}); assert.strictEqual(res1.sent, 2); assert.strictEqual(res1.failed, 0);
+    await api('POST', `/campaigns/${cp.id}/send`, {}, true); // only once
+    const cd = await api('GET', `/campaigns/${cp.id}`); assert.strictEqual(cd.status, 'sent'); assert(!cd.log.some(x => x.partner_id === a4.id));
+    const later = await api('POST', '/campaigns', { name: 'Later', channel: 'sms', audience: { group: 'customers' }, message: 'Hello' });
+    await api('POST', `/campaigns/${later.id}/schedule`, { at: new Date(Date.now() + 86400000).toISOString().slice(0, 16) });
+    assert.strictEqual((await api('GET', `/campaigns/${later.id}`)).status, 'scheduled');
+    await api('POST', `/campaigns/${later.id}/cancel`);
+    ok('campaigns: VIP audience (opted-out and no-phone skipped), birthday month, personalised SMS sent once to 2, scheduling in the future only');
+  }
+  {
+    // ---- recruitment & appraisals ----
+    const op = await api('POST', '/recruitment/openings', { title: 'Cashier', positions: 1, salary_from: 3500, salary_to: 4500, closing_date: '2026-12-15' });
+    const ap1 = await api('POST', '/recruitment/applicants', { opening_id: op.id, first_name: 'Rethabile', last_name: 'Molapo', phone: '58220001', source: 'facebook', rating: 4 });
+    await api('POST', '/recruitment/applicants', { opening_id: op.id, first_name: 'Dup', phone: '58220001' }, true); // same phone
+    const ap2 = await api('POST', '/recruitment/applicants', { opening_id: op.id, first_name: 'Mpho', phone: '58220002', source: 'walk_in' });
+    await api('POST', `/recruitment/applicants/${ap1.id}/stage`, { stage: 'interview' }, true); // needs a date
+    const iv = await api('POST', `/recruitment/applicants/${ap1.id}/stage`, { stage: 'interview', interview_at: '2026-11-20T10:00', interviewer: 'Manager', notify: 1 });
+    assert.strictEqual(iv.sms, 'sent'); assert.strictEqual(iv.applicant.stage, 'interview');
+    await api('POST', `/recruitment/applicants/${ap2.id}/hire`, { basic_salary: 3800 }, true); // no surname yet
+    const h = await api('POST', `/recruitment/applicants/${ap1.id}/hire`, { basic_salary: 4000, hire_date: '2026-12-01' });
+    const emp = (await api('GET', '/hrm/employees')).find(e => e.id === h.employee_id); assert(emp && emp.job_title === 'Cashier' && Number(emp.basic_salary) === 4000);
+    assert.strictEqual(h.filled, true); assert.strictEqual((await api('GET', `/recruitment/openings/${op.id}`)).status, 'filled');
+    await api('POST', `/recruitment/applicants/${ap2.id}/stage`, { stage: 'rejected', reject_reason: 'position filled', notify: 1 });
+    // appraisal with weighted scores and a salary increase
+    const pr = await api('POST', '/appraisals', { employee_id: h.employee_id, period: '2026' });
+    await api('POST', '/appraisals', { employee_id: h.employee_id, period: '2026' }, true); // one per period
+    await api('POST', `/appraisals/${pr.id}/close`, {}, true); // not scored
+    const scores = pr.scores.map((x, i) => ({ id: x.id, score: i === 0 ? 5 : 3 })); // quality (weight 2) = 5, the other five = 3
+    const up = await api('PUT', `/appraisals/${pr.id}`, { scores, strengths: 'Accurate cash-ups', goals: 'Learn stock counts', increase_pct: 5, status: 'discussed' });
+    assert.strictEqual(Number(up.overall), 3.57);
+    const cl = await api('POST', `/appraisals/${pr.id}/close`, { apply_increase: 1 }); assert.strictEqual(cl.new_salary, 4200);
+    await api('PUT', `/appraisals/${pr.id}`, { strengths: 'x' }, true); // closed
+    ok('recruitment: cashier job, 2 applicants (duplicate phone refused), interview SMS, hired into HR at M 4 000 and job filled, regret SMS; appraisal weighted 3.57 and 5% increase to M 4 200');
+  }
+  {
+    // ---- activation & KYC ----
+    const crypto = require('crypto'); const A = require('../services/activation'); const dbm = require('../db');
+    const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
+    process.env.MALUTI_ACTIVATION_PUBKEYS = publicKey.export({ type: 'spki', format: 'pem' });
+    let st = await api('GET', '/activation'); assert(!st.activated && !st.locked && st.days_left > 20 && /^[0-9A-F]{4}-/.test(st.install_id));
+    // trial over: selling stops, everything else keeps working
+    await dbm.setSetting('activation', { ...(await A.get()), trial_start: '2020-01-01' });
+    st = await api('GET', '/activation'); assert(st.locked);
+    const cust = (await api('GET', '/partners?is_customer=1'))[0];
+    const inv = await api('POST', '/invoices', { kind: 'customer_invoice', partner_id: cust.id, lines: [{ description: 'Test', qty: 1, unit_price: 100, tax_rate: 0 }] });
+    const lockedMsg = await api('POST', `/invoices/${inv.id}/post`, {}, true); assert(/trial has ended/.test(JSON.stringify(lockedMsg)));
+    // new business: documents needed before the request goes out
+    await api('PUT', '/activation/kyc', { path: 'documents' });
+    await api('POST', '/activation/submit', {}, true);
+    const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+    for (const doc of ['owner_id', 'registration', 'address']) st = await api('POST', '/activation/documents', { doc, filename: doc + '.png', data_url: png });
+    assert.strictEqual(st.kyc.ready, true);
+    // existing My Wallet merchant: no documents needed
+    await api('PUT', '/activation/kyc', { path: 'merchant', merchant_no: 'x' }, true);
+    st = await api('PUT', '/activation/kyc', { path: 'merchant', merchant_no: 'MW-104455', merchant_phone: '58001234' }); assert(st.kyc.ready && !st.kyc.missing.length);
+    const sub = await api('POST', '/activation/submit', {}); assert(sub.request_text.includes('MW-104455') && sub.request_text.includes(st.install_id));
+    assert.strictEqual(sub.kyc_email, 'kyc@smartelmoney.com');
+    if (smtpPort) { await new Promise(r => setTimeout(r, 300)); if (!sub.emailed) console.log('KYC email:', sub.email_error, mails.length); assert(sub.emailed && mails.some(m => /kyc@smartelmoney\.com/.test(m) && /ACTIVATION REQUEST/.test(m)), 'KYC request emailed to the Smartel KYC desk'); }
+    const zr = await fetch(base + '/api/activation/pack', { headers: { Authorization: 'Bearer ' + token } }); assert(zr.ok && (zr.headers.get('content-type') || '').includes('zip'));
+    // codes: another install's code, a forged one and the right one
+    await api('POST', '/activation/code', { code: A.makeCode(privateKey, { install_id: 'AAAA-BBBB-CCCC-DDDD', business: 'x' }) }, true);
+    const forged = A.makeCode(crypto.generateKeyPairSync('ed25519').privateKey, { install_id: st.install_id }); await api('POST', '/activation/code', { code: forged }, true);
+    st = await api('POST', '/activation/code', { code: A.makeCode(privateKey, { install_id: st.install_id, business: 'Smoke test', days: 365 }) });
+    assert(st.activated && !st.locked && st.licence.expires);
+    await api('POST', `/invoices/${inv.id}/post`, {});
+    ok('activation: 30-day trial, selling stops after it (rest works), KYC documents or existing My Wallet merchant number, request & KYC pack, only a My Wallet-signed code for this install activates');
+  }
+  {
+    // ---- Smartel POS backend adapter (mock pos-api + syncd): services, digital tenders, sealed envelopes, recalls, Thoki, bulk wages ----
+    const mock = await require('./mock-smartel').start(0);
+    const TID = '7f3c2a10-0000-4000-8000-00000000a001';
+    mock.state.terminals.add(TID); mock.state.otp = '90817';
+    const dbm = require('../db');
+    await api('PUT', '/smartel/settings', { enabled: true, pos_api_url: mock.url, syncd_url: 'ftp://x' }, true); // must be http(s)
+    await api('PUT', '/smartel/settings', { enabled: true, pos_api_url: mock.url, syncd_url: mock.url, auth: 'gateway', merchant_id: 'M-1', npr: 'block', gps_lat: -29.31, gps_lng: 27.48 });
+    await api('PUT', `/smartel/terminals/${retail.id}`, { terminal_uuid: 'not a uuid!' }, true);
+    await api('PUT', `/smartel/terminals/${retail.id}`, { terminal_uuid: TID });
+    const tst = await api('POST', '/smartel/test', {}); assert(tst.pos_api.ok && tst.syncd.ok && tst.till.ok, JSON.stringify(tst));
+    let cat2 = await api('GET', `/pos/catalog?terminal_id=${retail.id}`);
+    assert(cat2.smartel.enabled && cat2.smartel.till_linked && cat2.smartel.ops.length === 9);
+    const MW = cat2.methods.find(m => m.plugin_id === 'smartel:mywallet'); assert(MW && MW.account_code === '1150');
+    assert(!(await api('GET', `/pos/catalog?terminal_id=${rest.id}`)).methods.some(m => m.plugin_id === 'smartel:mywallet')); // not on unlinked tills
+    const tt = (await api('GET', '/pos/terminals')).find(t => t.id === retail.id);
+    const psid = tt.open_session_id || (await api('POST', '/pos/sessions/open', { terminal_id: retail.id, opening_cash: 0 })).id;
+    const before = (await api('GET', `/pos/sessions/${psid}`)).expected_cash_now;
+    // cash deposit: check → confirm → completed, cash into the drawer
+    await api('POST', '/smartel/ops', { pos_session_id: psid, op: 'dep', fields: { cell: '123', amount: 100 } }, true); // not a Lesotho number
+    let r = await api('POST', '/smartel/ops', { pos_session_id: psid, op: 'dep', fields: { cell: '5812 3456', amount: 100 } });
+    const SID = r.session_uuid; assert.strictEqual(r.op.state, 'checked'); assert(r.op.fee > 0 && r.op.counterparty);
+    r = await api('POST', `/smartel/ops/${r.op.id}/confirm`, {}); assert.strictEqual(r.op.state, 'completed'); assert.strictEqual(Number(r.op.cash), 100);
+    // withdrawal with the customer's OTP: wrong PIN refused (and never stored), right one pays out
+    r = await api('POST', '/smartel/ops', { pos_session_id: psid, session_uuid: SID, op: 'wd', fields: { cell: '62123456', amount: 50 } }); assert(r.op.needs_otp);
+    const wdId = r.op.id;
+    await api('POST', `/smartel/ops/${wdId}/confirm`, { otp: '99999' }, true);
+    r = await api('POST', `/smartel/ops/${wdId}/confirm`, { otp: mock.state.otp }); assert.strictEqual(Number(r.op.cash), -50);
+    const stored = await dbm.query('SELECT fields, result FROM smartel_ops'); assert(!JSON.stringify(stored).includes(mock.state.otp), 'OTP must never be stored');
+    // a service MyWallet does not answer stays "unknown", blocks the customer, is never re-sent, then resolves from history
+    r = await api('POST', '/smartel/ops', { pos_session_id: psid, session_uuid: SID, op: 'airtime', fields: { network: 'vcl', cell: '58123456', amount: 777 } });
+    const confirmsBefore = mock.state.confirms;
+    r = await api('POST', `/smartel/ops/${r.op.id}/confirm`, {}); assert.strictEqual(r.op.state, 'unknown'); assert(r.session.blocked);
+    await api('POST', `/smartel/ops/${r.op.id}/confirm`, {}); assert.strictEqual(mock.state.confirms, confirmsBefore + 1, 'never resend an unknown service');
+    await api('POST', `/smartel/ops/${r.op.id}/cancel`, {}, true);
+    const bread = P('White Bread');
+    await api('POST', '/pos/checkout', { session_id: psid, smartel_session: SID, lines: [{ product_id: bread.id, qty: 1 }], payments: [{ method_id: M('Cash').id, amount: 18 }] }, true); // blocked
+    r = await api('POST', `/smartel/ops/${r.op.id}/refresh`, {}); assert.strictEqual(r.op.state, 'completed'); assert(!r.session.blocked);
+    // goods + the three services close as ONE receipt; other tenders than cash/card/MyWallet/Switch are refused on this till
+    await api('POST', '/pos/checkout', { session_id: psid, smartel_session: SID, lines: [{ product_id: bread.id, qty: 1 }], payments: [{ method_id: M('M-Pesa').id, amount: 18, reference: 'X1' }] }, true);
+    let co2 = await api('POST', '/pos/checkout', { session_id: psid, smartel_session: SID, lines: [{ product_id: bread.id, qty: 2 }], payments: [{ method_id: M('Cash').id, amount: 50 }] });
+    assert.strictEqual(co2.order.services.length, 3); assert.strictEqual(co2.order.net_cash, round(100 - 50 + 777 + 36));
+    const after = (await api('GET', `/pos/sessions/${psid}`)).expected_cash_now; assert.strictEqual(round(after - before), round(100 - 50 + 777 + 36), 'drawer = net of every cash effect (BR-07)');
+    assert.strictEqual(mock.state.sessions.get(SID).state, 'closed');
+    // MyWallet tender: request → customer pays on the phone → PAID → sale; a split with cash is refused
+    const cola = P('Dishwashing'); const due = cola.price * 2;
+    let it = await api('POST', '/smartel/intents', { pos_session_id: psid, method_id: MW.id, amount: due });
+    const SID2 = it.session_uuid; assert(it.intent.qr_svg && it.intent.state === 'PRESENTED');
+    await api('POST', '/pos/checkout', { session_id: psid, smartel_session: SID2, lines: [{ product_id: cola.id, qty: 2 }], payments: [{ method_id: MW.id, amount: due, intent_id: it.intent.id }] }, true); // not paid yet
+    it = { intent: await api('GET', `/smartel/intents/${it.intent.id}`) }; assert(it.intent.paid);
+    await api('POST', '/pos/checkout', { session_id: psid, smartel_session: SID2, lines: [{ product_id: cola.id, qty: 2 }], payments: [{ method_id: MW.id, amount: due - 5, intent_id: it.intent.id }, { method_id: M('Cash').id, amount: 5 }] }, true);
+    const co3 = await api('POST', '/pos/checkout', { session_id: psid, smartel_session: SID2, lines: [{ product_id: cola.id, qty: 2 }], payments: [{ method_id: MW.id, amount: due, intent_id: it.intent.id }] });
+    assert(co3.order.payments[0].reference);
+    // services-only customer: non-fiscal session receipt
+    r = await api('POST', '/smartel/ops', { pos_session_id: psid, op: 'lec', fields: { meter: '04123456789', cell: '58123456', amount: 60 } });
+    await api('POST', `/smartel/ops/${r.op.id}/confirm`, {});
+    const fin = await api('POST', `/smartel/sessions/${r.session_uuid}/finish`, {}); assert(/^SVC\//.test(fin.receipt_no) && fin.net_cash === 60);
+    // push: syncd checks every hash and the chain, applies sale v2 envelopes
+    const pu = await api('POST', '/smartel/push', {}); assert.strictEqual(pu.rejected, 0, JSON.stringify(await api('GET', '/smartel/outbox?status=rejected')));
+    assert(mock.state.envelopes.filter(e => e.type === 'sale').length === 3);
+    const sale1 = mock.state.envelopes.find(e => e.body.receiptNo === co2.order.number); assert.strictEqual(sale1.body.svcs.length, 3); assert.strictEqual(sale1.body.netCashMinor, Math.round((100 - 50 + 777 + 36) * 100));
+    assert(sale1.body.lines[0].gtin === '06001234000051' && sale1.body.gps);
+    assert((await api('GET', `/smartel/verify/${retail.id}`)).ok);
+    // books: agency cash clearing holds service cash, commission receivable, digital takings due; TB balances
+    const stt = await api('GET', '/smartel/status');
+    assert.strictEqual(stt.balances.agency_clearing, round(100 - 50 + 777 + 60)); assert.strictEqual(stt.balances.digital_due, due); assert(stt.balances.commission_due > 0);
+    const tbs = await api('GET', '/reports/tb?from=2000-01-01&to=2999-12-31'); assert.strictEqual(tbs.debit, tbs.credit);
+    await api('POST', '/smartel/settle', { kind: 'digital', amount: due }); assert.strictEqual((await api('GET', '/smartel/status')).balances.digital_due, 0);
+    // change log: recall (priority) blocks the product and is acknowledged; catalogue links; price update; Thoki float line
+    mock.addChange('recall', { entity: 'recall', entityId: 'R-1', payload: { recallId: 'R-1', gtin: '06001234000051', reason: 'Mould found' } });
+    mock.addChange('catalogue', { entity: 'catalogue', entityId: 'SP-MILK', payload: { productId: 'SP-MILK', gtin: '06001234000075', name: 'Full Cream Milk 1L' } });
+    mock.addChange('prices', { entity: 'prices', entityId: 'SP-MILK', payload: { productId: 'SP-MILK', priceMinor: 2250 } });
+    mock.addChange('credit', { entity: 'thoki_decision', entityId: 'M-1', payload: { merchantId: 'M-1', asOf: '2026-11-05', float_limit_minor: 250000, arrears_minor: 0, stock_advance_minor: 100000, pd_bp: 420 } });
+    const pl = await api('POST', '/smartel/pull', {}); assert(pl.recall === 1 && pl.catalogue === 1 && pl.prices === 1 && pl.credit === 1, JSON.stringify(pl));
+    cat2 = await api('GET', `/pos/catalog?terminal_id=${retail.id}`); assert.strictEqual(cat2.smartel.blocked[bread.id].kind, 'recalled');
+    assert.strictEqual(cat2.products.find(p => p.id === P('Full Cream').id).price, 22.5);
+    await api('POST', '/pos/checkout', { session_id: psid, lines: [{ product_id: bread.id, qty: 1 }], payments: [{ method_id: M('Cash').id, amount: 18 }] }, true);
+    assert(mock.state.cursors[`${TID}:recall`] === 1);
+    assert.strictEqual((await api('GET', '/smartel/status')).credit.float_limit, 2500);
+    await api('POST', '/smartel/push', {}); assert(mock.state.envelopes.some(e => e.type === 'recall_ack' && e.body.recallId === 'R-1'));
+    // National Product Register: barcodes not registered are refused; scan flag sealed with location
+    mock.state.register.gtins = [{ gtin: '06001234000068', product_name: 'Maize Meal 5kg', status: 'active' }];
+    await api('POST', '/smartel/register', {});
+    cat2 = await api('GET', `/pos/catalog?terminal_id=${retail.id}`); assert.strictEqual(cat2.smartel.blocked[cola.id].kind, 'unregistered'); assert(!cat2.smartel.blocked[P('Maize').id]);
+    await api('POST', '/smartel/flags', { terminal_id: retail.id, kind: 'unregistered', gtin: cola.barcode, raw: cola.barcode });
+    await api('PUT', '/smartel/settings', { npr: 'off' }); mock.addChange('recall', { entityId: 'R-1', op: 'delete', payload: { recallId: 'R-1', gtin: '06001234000051' } }); await api('POST', '/smartel/pull', {});
+    assert(!(await api('GET', `/pos/catalog?terminal_id=${retail.id}`)).smartel.blocked[bread.id]);
+    // heartbeat + GRN from purchase receiving travel on the same chain
+    await api('POST', '/smartel/heartbeat', {});
+    const sup = (await api('GET', '/partners?is_supplier=1'))[0];
+    const po = await api('POST', '/purchases', { supplier_id: sup.id, lines: [{ product_id: P('Maize').id, qty: 10, unit_cost: 50, tax_rate: 15 }] });
+    await api('POST', `/purchases/${po.id}/confirm`, {}).catch(() => api('POST', `/purchases/${po.id}/approve`, {}));
+    await api('POST', `/purchases/${po.id}/receive`, {});
+    const pu2 = await api('POST', '/smartel/push', {}); assert.strictEqual(pu2.rejected, 0);
+    const grn = mock.state.envelopes.find(e => e.type === 'grn'); assert(grn && grn.body.lines[0].qty === 10 && grn.body.lines[0].inputVatMinor === 7500);
+    assert(mock.state.envelopes.some(e => e.type === 'heartbeat') && mock.state.envelopes.some(e => e.type === 'integrity_flag'));
+    assert((await api('GET', `/smartel/verify/${retail.id}`)).ok);
+    // a tampered envelope is caught by syncd and the till is held
+    const last = await dbm.one('SELECT id FROM smartel_outbox ORDER BY id DESC LIMIT 1');
+    await dbm.tx(cx => require('../services/smartel').seal(cx, retail.id, 'heartbeat', 1, { queueDepth: 0, appVersion: 't', registerVersion: 1 }));
+    await dbm.query(`UPDATE smartel_outbox SET body = REPLACE(body, '"queueDepth":0', '"queueDepth":9') WHERE id > ?`, [last.id]);
+    await api('POST', '/smartel/push', {});
+    assert((await api('GET', '/smartel/status')).terminals.find(x => x.pos_terminal_id === retail.id).quarantined);
+    assert(!(await api('GET', `/smartel/verify/${retail.id}`)).ok);
+    await api('POST', '/smartel/ops', { pos_session_id: psid, op: 'dep', fields: { cell: '58123456', amount: 10 } }, true); // held till does no services
+    await dbm.query('DELETE FROM smartel_outbox WHERE id > ?', [last.id]);
+    const lastOk = await dbm.one('SELECT device_seq, hash FROM smartel_outbox WHERE pos_terminal_id = ? ORDER BY device_seq DESC LIMIT 1', [retail.id]);
+    await dbm.query('UPDATE smartel_terminals SET device_seq = ?, head_hash = ? WHERE pos_terminal_id = ?', [lastOk.device_seq, lastOk.hash, retail.id]);
+    mock.state.chain.get(TID).broken = false; await api('POST', `/smartel/terminals/${retail.id}/release`, {});
+    // bulk wages from an approved payroll run: paid lines booked Dr 2300 / Cr 1170, the failed one is left for "mark paid"
+    const emps = await api('GET', '/hrm/employees');
+    await dbm.query(`UPDATE employees SET pay_method = 'mobile_money', phone = ? WHERE id = ?`, ['58001234', emps[0].id]);
+    if (emps[1]) await dbm.query(`UPDATE employees SET pay_method = 'mobile_money', phone = ? WHERE id = ?`, ['+266 6200 1299', emps[1].id]);
+    const run3 = await api('POST', '/hrm/payroll', { period: '2027-01', pay_date: '2027-01-28' }); await api('POST', `/hrm/payroll/${run3.id}/approve`);
+    let bk = await api('POST', `/smartel/bulk/from-payroll/${run3.id}`, {}); assert(bk.lines.length >= 1 && bk.lines[0].msisdn.startsWith('266'));
+    await api('POST', `/smartel/bulk/from-payroll/${run3.id}`, {}, true); // once per run
+    bk = await api('POST', `/smartel/bulk/${bk.id}/send`, {}); assert.strictEqual(bk.state, 'done');
+    const paidBulk = bk.lines.filter(l => l.state === 'paid').reduce((a, l) => a + Number(l.amount), 0);
+    await api('POST', `/hrm/payroll/${run3.id}/pay`, {});
+    const tb3 = await api('GET', '/reports/tb?from=2000-01-01&to=2999-12-31'); assert.strictEqual(tb3.debit, tb3.credit);
+    const net2300 = await dbm.one(`SELECT COALESCE(SUM(l.credit - l.debit),0) b FROM journal_lines l JOIN accounts a ON a.id = l.account_id JOIN journal_entries e ON e.id = l.entry_id WHERE a.code = '2300'`);
+    assert.strictEqual(round(net2300.b), 0, 'net salaries fully cleared (bulk + mark paid, no double payment)');
+    assert(paidBulk > 0);
+    // the old direct My Wallet VAS plugin is refused while the adapter is on
+    await api('PUT', '/smartel/settings', { enabled: false });
+    assert(!(await api('GET', '/pos/catalog')).methods.some(m => m.plugin_id === 'smartel:mywallet'));
+    await mock.close();
+    ok('Smartel adapter: services check→OTP→confirm, unknown never re-sent, one receipt per customer with net cash, MyWallet tender via intent, services-only receipt, sealed hash-chained envelopes accepted by syncd, tampering caught, recall/catalogue/price/Thoki pulls, NPR blocking + flags, GRN, bulk wages without double booking');
+  }
+  {
+    // ---- tax centre: calendar, VAT / PAYE / withholding / FBT / income tax returns from the books, filing, paying RSL (bank and MyWallet via Smartel) ----
+    const dbm = require('../db');
+    await api('PUT', '/tax/settings', { tin: 'TIN/1234/5678', fbt_enabled: 1, vat_registered: 1, cit_rate: 25, fbt_rate: 30, start_month: '2026-04' });
+    await api('PUT', '/tax/settings', { vat_due_day: 40 }, true);
+    const cal = await api('GET', '/tax/calendar?from=2026-09-01&to=2027-07-31');
+    const has = (t, due) => cal.items.some(x => x.tax === t && x.due_date === due);
+    assert(has('vat', '2026-11-20') && has('paye', '2026-12-15') && has('cit_1', '2026-09-30') && has('cit_2', '2026-12-31') && has('cit_3', '2027-03-31') && has('cit_final', '2027-06-30') && has('fbt', '2026-12-31'), JSON.stringify(cal.items.map(x => x.tax + x.due_date)));
+    // VAT for this month from the books
+    const now = new Date(); const ym = now.toISOString().slice(0, 7); const mEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).toISOString().slice(0, 10);
+    let vr = await api('POST', '/tax/returns/prepare', { tax: 'vat', period_from: ym + '-01', period_to: mEnd, due_date: '2099-01-20' });
+    const bv = await api('GET', `/reports/vat?from=${ym}-01&to=${mEnd}`);
+    assert.strictEqual(vr.figures.output_vat, bv.output_vat); assert.strictEqual(vr.figures.input_vat, bv.input_vat); assert(vr.figures.sales.length);
+    assert(vr.figures.checks.length && vr.figures.supplies && vr.figures.supplies.standard > 0, JSON.stringify(vr.figures.checks));
+    const Tx = require('../services/tax');
+    await api('PUT', '/tax/settings', { rsl_fee_fixed: 5, rsl_fee_pct: 1, rsl_fee_max: 20 });
+    assert.strictEqual(await Tx.rslFee(1000), 15); assert.strictEqual(await Tx.rslFee(5000), 20); assert.strictEqual(await Tx.rslFee(1000, 3), 3);
+    assert.strictEqual((await api('GET', '/tax/fee?amount=1000')).fee, 15);
+    await api('POST', `/tax/returns/${vr.id}/pay`, { amount: 1, method: 'bank', reference: 'X' }, true); // file first
+    vr = await api('POST', `/tax/returns/${vr.id}/file`, { filed_ref: 'RSL-E-889' });
+    const net = vr.figures.net;
+    const liab = c => cal2.liabilities.find(x => x.code === c).balance;
+    let cal2 = await api('GET', '/tax/calendar'); if (net > 0) assert.strictEqual(liab('2110'), round(net));
+    if (net > 0) {
+      await api('POST', `/tax/returns/${vr.id}/pay`, { amount: net + 1, method: 'bank', reference: 'EFT1' }, true);
+      await api('POST', `/tax/returns/${vr.id}/pay`, { amount: round(net / 2), method: 'bank', account_code: '1050', reference: 'EFT1' });
+      vr = await api('POST', `/tax/returns/${vr.id}/pay`, { method: 'mpesa', account_code: '1050', reference: 'MP2', fee: 3.5 });
+      assert.strictEqual(vr.status, 'paid'); cal2 = await api('GET', '/tax/calendar'); assert.strictEqual(liab('2110'), 0);
+    }
+    await api('POST', '/tax/returns/prepare', { tax: 'vat', period_from: ym + '-01', period_to: mEnd }, true); // filed: no silent changes
+    // PAYE for November from the payroll run
+    let pr2 = await api('POST', '/tax/returns/prepare', { tax: 'paye', period_from: '2026-11-01', period_to: '2026-11-30', due_date: '2026-12-15' });
+    assert.strictEqual(pr2.amount_due, 942); pr2 = await api('POST', `/tax/returns/${pr2.id}/file`, {});
+    // withholding: deducted from a contractor (certificate) and suffered from a customer (credit against income tax)
+    const sup = (await api('GET', '/partners?is_supplier=1'))[0], cust = (await api('GET', '/partners?is_customer=1'))[0];
+    const w1 = await api('POST', '/tax/withholding', { direction: 'deducted', partner_id: sup.id, kind: 'resident_contractor', gross: 2000, tx_date: '2026-11-03', reference: 'Painting' });
+    assert.strictEqual(Number(w1.amount), 100); assert(/^WHT\/2026\//.test(w1.certificate_no));
+    const cert = await api('GET', `/tax/withholding/${w1.id}/certificate`); assert.strictEqual(cert.tin, 'TIN/1234/5678');
+    await api('POST', '/tax/withholding', { direction: 'suffered', partner_id: cust.id, kind: 'resident_contractor', gross: 1000, tx_date: '2026-11-04', reference: 'CERT-77' });
+    const wr = await api('POST', '/tax/returns/prepare', { tax: 'wht', period_from: '2026-11-01', period_to: '2026-11-30', due_date: '2026-12-15' }); assert.strictEqual(wr.amount_due, 100);
+    // fringe benefits (quarter) and a levy
+    const fb = await api('POST', '/tax/returns/prepare', { tax: 'fbt', period_from: '2026-10-01', period_to: '2026-12-31', due_date: '2026-12-31', inputs: { benefits_value: 5000, details: 'Company car' } });
+    assert.strictEqual(fb.amount_due, 1500); await api('POST', `/tax/returns/${fb.id}/file`, {});
+    // income tax: provisional instalments a third each, the annual return less instalments and WHT credits
+    let c1 = await api('POST', '/tax/returns/prepare', { tax: 'cit_1', period_from: '2026-04-01', period_to: '2027-03-31', due_date: '2026-09-30', inputs: { estimated_income: 120000 } });
+    assert.strictEqual(c1.amount_due, 10000); c1 = await api('POST', `/tax/returns/${c1.id}/file`, {});
+    await api('POST', `/tax/returns/${c1.id}/pay`, { method: 'bank', reference: 'EFT-CIT1' });
+    const c2 = await api('POST', '/tax/returns/prepare', { tax: 'cit_2', period_from: '2026-04-01', period_to: '2027-03-31', due_date: '2026-12-31', inputs: { estimated_income: 150000 } });
+    assert.strictEqual(c2.amount_due, round(150000 * 0.25 * 2 / 3 - 10000));
+    const cf = await api('POST', '/tax/returns/prepare', { tax: 'cit_final', period_from: '2026-04-01', period_to: '2027-03-31', due_date: '2027-06-30', inputs: { add_backs: 1000 } });
+    assert.strictEqual(cf.figures.provisional_paid, 10000); assert.strictEqual(cf.figures.wht_credits, 50);
+    assert.strictEqual(cf.amount_due, round(cf.figures.tax - 10000 - 50));
+    // pay PAYE to RSL through MyWallet (Smartel biller "rsl") at the till – fee shown first, booked once completed
+    const mock = await require('./mock-smartel').start(0); const TID = '7f3c2a10-0000-4000-8000-00000000c001'; mock.state.terminals.add(TID);
+    await api('PUT', '/smartel/settings', { enabled: true, pos_api_url: mock.url, syncd_url: mock.url, auth: 'gateway', npr: 'off' });
+    await api('PUT', `/smartel/terminals/${retail.id}`, { terminal_uuid: TID }).catch(() => {});
+    await dbm.query('UPDATE smartel_terminals SET terminal_uuid = ? WHERE pos_terminal_id = ?', [TID, retail.id]); mock.state.chain.clear && mock.state.chain.clear();
+    const tt = (await api('GET', '/pos/terminals')).find(t => t.id === retail.id);
+    const psid = tt.open_session_id || (await api('POST', '/pos/sessions/open', { terminal_id: retail.id, opening_cash: 0 })).id;
+    const sp = await api('POST', `/tax/returns/${pr2.id}/pay`, { method: 'smartel', pos_session_id: psid, account_code: '1050' });
+    assert.strictEqual(sp.op.state, 'checked'); assert(sp.op.fee > 0); assert.strictEqual(sp.fee, sp.op.fee); assert.strictEqual(sp.total, round(942 + sp.op.fee));
+    const mwOp = [...mock.state.ops.values()].find(o => o.op === 'biller'); assert.strictEqual(mwOp.fields.biller, 'rsl'); assert.strictEqual(mwOp.fields.account, 'TIN/1234/5678');
+    const done = await api('POST', `/tax/payments/${sp.payment_id}/confirm`, {});
+    assert.strictEqual(done.payment.status, 'paid'); assert.strictEqual(done.return.status, 'paid'); assert(done.payment.reference.startsWith('MW'));
+    const fee = await dbm.one(`SELECT COALESCE(SUM(l.debit),0) d FROM journal_lines l JOIN accounts a ON a.id = l.account_id WHERE a.code = '6450'`); assert(Number(fee.d) >= 3.5 + Number(sp.op.fee) - 0.001);
+    assert.strictEqual(mock.state.sessions.get(sp.session_uuid).state, 'closed');
+    await api('PUT', '/smartel/settings', { enabled: false }); await mock.close();
+    const tbt = await api('GET', '/reports/tb?from=2000-01-01&to=2999-12-31'); assert.strictEqual(tbt.debit, tbt.credit);
+    const calF = await api('GET', '/tax/calendar'); assert(calF.payments.total_fees >= 3.5 && calF.payments.rows.some(x => x.tax === 'paye'));
+    ok('tax centre: RSL calendar (VAT 20th, PAYE/WHT 15th, income tax 30 Sep / 31 Dec / 31 Mar / 30 Jun, FBT quarterly), VAT return from the books filed and paid in parts, PAYE from payroll paid via MyWallet (biller rsl, fee booked), WHT certificate and credits, FBT, provisional and annual income tax');
+  }
+  {
+    // ---- customer portal: private link, statement, proof upload, pay online through Smartel (MyWallet intent) ----
+    const dbm = require('../db');
+    const owing = await dbm.one(`SELECT partner_id, SUM(total - amount_paid) due FROM invoices WHERE kind = 'customer_invoice' AND status IN ('posted','partial') GROUP BY partner_id HAVING due > 5 ORDER BY due DESC LIMIT 1`);
+    assert(owing, 'a customer with an open invoice');
+    const lk = await api('POST', `/partners/${owing.partner_id}/portal-link`); const tok = lk.url.split('/p/')[1]; assert(/^[a-f0-9]{32}$/.test(tok) && lk.qr_svg);
+    let pg = await fetch(`${base}/p/${tok}`); assert(pg.ok); let html = await pg.text(); assert(html.includes('You owe') && !html.includes('data-pay="')); // no online payment set up yet
+    assert.strictEqual((await fetch(`${base}/p/${'0'.repeat(32)}`)).status, 404);
+    const png1 = 'data:image/png;base64,' + Buffer.from('fakepng').toString('base64');
+    let pr = await fetch(`${base}/p/${tok}/proof`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: 50, reference: 'FNB-1', filename: 'slip.png', data_url: png1 }) }); assert(pr.ok);
+    assert(await dbm.one(`SELECT id FROM attachments WHERE entity = 'partner' AND entity_id = ? AND note LIKE 'Proof of payment%'`, [owing.partner_id]));
+    // online payment through the Smartel portal till
+    const mock = await require('./mock-smartel').start(0); const TID = '7f3c2a10-0000-4000-8000-00000000d001'; mock.state.terminals.add(TID);
+    await api('PUT', '/smartel/settings', { enabled: true, pos_api_url: mock.url, syncd_url: mock.url, auth: 'gateway', npr: 'off' });
+    await dbm.query('UPDATE smartel_terminals SET terminal_uuid = ? WHERE pos_terminal_id = ?', [TID, retail.id]);
+    await api('PUT', '/portal/settings', { enabled: 1, allow_proof: 1, terminal_id: retail.id });
+    html = await (await fetch(`${base}/p/${tok}`)).text(); assert(html.includes('data-pay="mywallet"'));
+    const balBefore = (await api('GET', `/partners/${owing.partner_id}/balance`)).receivable;
+    const tooMuch = await fetch(`${base}/p/${tok}/pay`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tender: 'mywallet', amount: balBefore + 100 }) }); assert.strictEqual(tooMuch.status, 400);
+    const st = await (await fetch(`${base}/p/${tok}/pay`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tender: 'mywallet', amount: 5 }) })).json();
+    assert(st.id && st.qr_svg, JSON.stringify(st));
+    const chk = await (await fetch(`${base}/p/${tok}/pay/${st.id}`)).json(); assert(chk.paid && chk.allocated);
+    await fetch(`${base}/p/${tok}/pay/${st.id}`); // checking again never books twice
+    assert.strictEqual(round((await api('GET', `/partners/${owing.partner_id}/balance`)).receivable), round(balBefore - 5));
+    const sid = [...mock.state.sessions.values()].find(x => x.receipt_no === `WEB-${st.id}`); assert(sid && sid.state === 'closed');
+    const other = await dbm.one('SELECT id FROM partners WHERE id <> ? AND is_customer = 1 LIMIT 1', [owing.partner_id]);
+    if (other) { const lk2 = await api('POST', `/partners/${other.id}/portal-link`); assert.strictEqual((await fetch(`${base}/p/${lk2.url.split('/p/')[1]}/pay/${st.id}`)).status, 404); } // another customer's link cannot see it
+    await api('POST', `/partners/${owing.partner_id}/portal-link`, { renew: 1 }); assert.strictEqual((await fetch(`${base}/p/${tok}`)).status, 404); // renewed: old link dead
+    await api('PUT', '/smartel/settings', { enabled: false }); await mock.close();
+    const tbp = await api('GET', '/reports/tb?from=2000-01-01&to=2999-12-31'); assert.strictEqual(tbp.debit, tbp.credit);
+    ok('customer portal: private link with QR, balance & statement, proof-of-payment upload becomes a task, MyWallet payment via Smartel put on the account once, links can be renewed');
   }
   const adminToken = token;
   const pin = await api('GET', '/pin-users'); const kat = pin.find(u => u.name === 'Cashier Kat');

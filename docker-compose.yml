@@ -1,0 +1,49 @@
+# Maluti ERP web version: app + MySQL 8. Put HTTPS in front of it (Caddy, nginx or your host's load balancer).
+#   1. copy .env.example to .env and change the passwords and the address
+#   2. docker compose up -d
+#   3. open https://<your address> – the first-run wizard starts
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?set DB_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: maluti_erp
+      MYSQL_USER: maluti
+      MYSQL_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci", "--default-time-zone=+02:00"]
+    volumes: [ "dbdata:/var/lib/mysql" ]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      retries: 12
+  app:
+    build: .
+    image: maluti-erp:latest
+    restart: unless-stopped
+    depends_on: { db: { condition: service_healthy } }
+    environment:
+      DB_HOST: db
+      DB_USER: maluti
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: maluti_erp
+      MALUTI_PUBLIC_URL: ${PUBLIC_URL:-}
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+      MALUTI_KYC_EMAIL: ${MALUTI_KYC_EMAIL:-kyc@smartelmoney.com}
+      MALUTI_SETUP_KEY: ${MALUTI_SETUP_KEY:?set MALUTI_SETUP_KEY in .env – it protects the first-run set-up}
+      TZ: Africa/Maseru
+    ports: [ "127.0.0.1:8069:8069" ]
+    volumes: [ "appdata:/data" ]
+  # optional: automatic HTTPS. Start with: docker compose --profile https up -d   (needs PUBLIC_DOMAIN in .env and ports 80/443 open)
+  caddy:
+    image: caddy:2
+    profiles: ["https"]
+    restart: unless-stopped
+    depends_on: [app]
+    ports: [ "80:80", "443:443" ]
+    command: caddy reverse-proxy --from ${PUBLIC_DOMAIN:-localhost} --to app:8069
+    volumes: [ "caddydata:/data" ]
+volumes:
+  dbdata: {}
+  appdata: {}
+  caddydata: {}

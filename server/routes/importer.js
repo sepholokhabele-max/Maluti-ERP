@@ -24,6 +24,9 @@ const INDEX = {
   vehicles: ['fleet', `SELECT id, reg_no FROM vehicles`],
   fleet_staff: ['fleet', `SELECT id, first_name, last_name FROM employees WHERE status = 'active'`],
   hire_items: ['hire', `SELECT id, name, code FROM hire_items`],
+  water_tariffs: ['water', `SELECT id, name FROM water_tariffs`],
+  water_zones: ['water', `SELECT id, name FROM water_zones`],
+  water_accounts: ['water', `SELECT id, account_no FROM water_accounts`],
   room_types: ['rooms', `SELECT id, name, rate FROM room_types`],
   rooms: ['rooms', `SELECT id, name FROM rooms`],
   equipment: ['maintenance', `SELECT id, name, code, serial_no FROM equipment`],
@@ -38,7 +41,7 @@ r.get('/import/index', ah(async (req, res) => {
   const out = {};
   for (const w of String(req.query.what || '').split(',').filter(Boolean)) {
     const x = INDEX[w]; if (!x) throw bad(`Unknown list ${w}`);
-    if (!can(req.user, x[0]) && !(w === 'partners' && ['invoicing', 'property', 'school', 'sites', 'crm', 'patients', 'hire', 'rooms', 'farm'].some(p => can(req.user, p)))) { out[w] = []; continue; }
+    if (!can(req.user, x[0]) && !(w === 'partners' && ['invoicing', 'property', 'school', 'sites', 'crm', 'patients', 'hire', 'rooms', 'farm', 'water'].some(p => can(req.user, p)))) { out[w] = []; continue; }
     out[w] = await db.query(x[1]).catch(() => []);
   }
   res.json(out);

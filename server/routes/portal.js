@@ -60,6 +60,19 @@ pub.get('/p/:token', async (req, res) => {
     const tName = { mywallet: 'MyWallet', card: lang === 'st' ? 'karete' : 'card', switch: 'Switch' };
     const m = n => `${esc(c.currency_symbol || 'M')} ${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     log(p.id, 'view', null, req);
+    // water customers: their connections, recent use and the last tokens (tokens can be re-typed if a slip is lost)
+    let water = '';
+    const was = await db.query(`SELECT a.id, a.account_no, a.billing, a.status, m.serial FROM water_accounts a LEFT JOIN water_meters m ON m.id = a.meter_id WHERE a.partner_id = ? AND a.status <> 'closed'`, [p.id]).catch(() => []);
+    for (const w of was) {
+      const use = w.billing === 'prepaid'
+        ? await db.query(`SELECT DATE_FORMAT(created_at, '%Y-%m') k, SUM(units_m3) v FROM water_vends WHERE account_id = ? AND status = 'completed' GROUP BY k ORDER BY k DESC LIMIT 6`, [w.id])
+        : await db.query('SELECT period k, consumption v FROM water_bills WHERE account_id = ? ORDER BY period DESC LIMIT 6', [w.id]);
+      const toks = w.billing === 'prepaid' ? await db.query(`SELECT created_at, amount, units_m3, token FROM water_vends WHERE account_id = ? AND status = 'completed' ORDER BY id DESC LIMIT 5`, [w.id]) : [];
+      const st = lang === 'st';
+      water += `<div class="card"><h2>💧 ${st ? 'Metsi' : 'Water'} – ${esc(w.account_no)}</h2><div class="muted">${w.billing === 'prepaid' ? 'Prepaid' : 'Postpaid'} · ${st ? 'metara' : 'meter'} ${esc(w.serial || '—')}${w.status === 'disconnected' ? ` · <b style="color:var(--bad)">${st ? 'e khaotsoe' : 'disconnected'}</b>` : ''}</div>
+<table style="margin-top:8px"><tr><th>${st ? 'Khoeli' : 'Month'}</th><th class="r">m³</th></tr>${use.map(u => `<tr><td>${esc(u.k)}</td><td class="r">${Number(u.v).toLocaleString('en-US', { maximumFractionDigits: 2 })}</td></tr>`).join('')}</table>
+${toks.length ? `<h2 style="margin-top:12px">${st ? 'Li-token tsa ho qetela' : 'Last tokens'}</h2><table>${toks.map(x => `<tr><td>${esc(String(x.created_at).slice(0, 16))}</td><td class="r">${m(x.amount)}</td><td class="r">${Number(x.units_m3).toLocaleString('en-US', { maximumFractionDigits: 2 })} m³</td><td><b>${esc(x.token || '')}</b></td></tr>`).join('')}</table>` : ''}</div>`;
+    }
     res.type('html').send(`<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(c.name || '')} – ${esc(p.name)}</title>
 <style>:root{--b:#3f3d9e;--ok:#15803d;--bad:#b91c1c} *{box-sizing:border-box} body{margin:0;background:#eef0f6;font-family:Segoe UI,Roboto,Arial,sans-serif;color:#1e2233}
 .wrap{max-width:760px;margin:0 auto;padding:14px} .card{background:#fff;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,.07);padding:18px;margin-bottom:14px}
@@ -72,6 +85,7 @@ pub.get('/p/:token', async (req, res) => {
 <div class="card hd">${logo ? `<img src="${logo.data_url}" alt="">` : ''}<div style="flex:1"><h1>${esc(c.name || '')}</h1><div class="muted">${esc(c.address || '')}${c.phone ? ' · ' + esc(c.phone) : ''}</div></div><a class="muted noprint" href="?lang=${lang === 'st' ? 'en' : 'st'}">${t.lang}</a></div>
 <div class="card"><div class="muted">${t.hello} ${esc(p.name)}</div><div class="big" style="color:${a.balance > 0 ? 'var(--bad)' : 'var(--ok)'}">${a.balance > 0 ? m(a.balance) : a.balance < 0 ? m(-a.balance) : m(0)}</div><div class="muted">${a.balance > 0 ? t.owe : a.balance < 0 ? t.credit : t.nothing}</div>
 ${a.balance > 0 && tenders.length ? `<div class="row noprint" style="margin-top:12px"><input id="amt" type="number" step="0.01" min="1" value="${a.balance.toFixed(2)}" style="max-width:160px">${tenders.map(x => `<button class="btn" data-pay="${x}">${t.pay} ${t.with} ${tName[x]}</button>`).join('')}</div>` : ''}</div>
+${water}
 ${a.open.length ? `<div class="card"><h2>${t.open}</h2><table><tr><th>${t.inv}</th><th>${t.date}</th><th>${t.due}</th><th class="r">${t.total}</th><th class="r">${t.left}</th></tr>${a.open.map(i => `<tr><td><a href="/p/${esc(req.params.token)}/i/${i.id}?lang=${lang}">${esc(i.number)}</a></td><td>${esc(String(i.invoice_date).slice(0, 10))}</td><td>${esc(String(i.due_date || '').slice(0, 10))}</td><td class="r">${m(i.total)}</td><td class="r"><b>${m(Number(i.total) - Number(i.amount_paid))}</b></td></tr>`).join('')}</table></div>` : ''}
 <div class="card"><div class="row"><h2 style="flex:1">${t.stmt}</h2><button class="btn ghost noprint" onclick="print()">${t.print}</button></div><table><tr><th>${t.date}</th><th></th><th class="r">+</th><th class="r">−</th><th class="r">${t.bal}</th></tr>${a.statement.map(s => `<tr><td>${esc(s.d)}</td><td>${esc(s.ref || '')} <span class="muted">${esc(s.memo || '')}</span></td><td class="r">${s.debit ? m(s.debit) : ''}</td><td class="r">${s.credit ? m(s.credit) : ''}</td><td class="r">${m(s.balance)}</td></tr>`).join('')}</table></div>
 ${ps.allow_proof ? `<div class="card noprint"><h2>${t.proof}</h2><div class="muted">${t.proofTxt}</div><form id="pf"><label>${t.amount}</label><input name="amount" type="number" step="0.01" min="1" required><label>${t.ref}</label><input name="reference" maxlength="60" required><label>${t.file}</label><input name="file" type="file" accept="image/*,application/pdf" required><div style="margin-top:12px"><button class="btn">${t.send}</button> <span id="pfm"></span></div></form></div>` : ''}

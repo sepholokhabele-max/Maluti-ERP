@@ -1,4 +1,121 @@
-## S-ERP 1.22.0
+## S-ERP 1.26.0
+
+**Organisation & governance – the organogram decides who approves what.**
+
+- **Organogram:** units (board, executive, departments, sections, committees) and positions with reporting lines, holders, employee records, grades and acting appointments (always with an end date). Shown as an interactive chart that exports to PDF / Word. Start from a standard or water-utility structure.
+- **Delegation of authority:** a matrix of positions × documents with approval limits and "must agree first" (concurrence) rights. It now drives approvals in every module:
+  - purchase orders, expense claims, manual journals, payroll runs, leave (in days), approval to procure, procurement waivers, contract awards, budgets, asset disposals and write-offs, policies and legal documents.
+  - The approver is the first manager up the requester's reporting line with enough authority; concurring positions (e.g. Finance) sign first.
+  - Nobody approves their own request; a person acting in a position signs for it; requests waiting longer than the unit's escalation period appear for the next level up.
+  - The organogram overrides role permissions: a supervisor with a plain staff login can approve what the DoA gives them, and a manager outside the line cannot.
+  - Document types with no authorities defined keep the module's previous approval rules.
+- **Approvals inbox:** everything routed to a person from any module, with the full approval path; an "Approvals (n)" tile appears on their home screen. "Who approves?" simulator and a full approval history for audit.
+- **Decision rights (RACI)** and **communication:** for every position – who it reports to, direct reports, peers, escalation path, communication style, channels and meetings. Every user gets a "My role" page.
+
+**Policies.**
+
+- 29 editable templates across governance & ethics, finance, procurement, human resources, IT, operations / health & safety and customer service (including water disconnection and billing).
+- The Delegation of Authority policy is filled from the live organogram. Drafts and numbered versions; approval through the DoA; "read and acknowledge" tracking with an unread-policies tile.
+
+**Legal.**
+
+- 17 Lesotho document templates (employment contract under the Labour Act, 2024; NDA; supply, service-level and consultancy agreements; lease; loan; letter of demand; warning, hearing and termination letters; board resolution; power of attorney; MOU; contract from a tender award; water connection agreement; privacy notice).
+- Documents are filled from S-ERP records; missing details are highlighted. They can be edited in the browser and exported to Word / PDF.
+- "Legal document" buttons on employee, water account and awarded tender pages.
+- Contract register: approval by contract value through the DoA, signing freezes the text, renewal / expiry alerts, renew and terminate.
+- Compliance register: statutory obligations (Companies Act, licensing, tax, workmen's compensation, data protection, LEWA) with recurring due dates.
+- Every template carries a notice to have it reviewed by a Lesotho legal practitioner. Figures not confirmed in the law are left for you to fill in.
+
+## S-ERP 1.25.0
+
+**Finance centre – Sage-level general ledger.**
+
+- **Chart of accounts:** each account sits in its place in the financial statements (current / non-current assets and liabilities, equity, revenue, cost of sales, other income, operating expenses, finance costs, tax) and in the cash flow statement. Control accounts (debtors, creditors, stock, VAT, payroll) can only be changed by their own documents. Accounts with a balance cannot be made inactive.
+- **Cost centres:** departments, projects, branches and funds on every journal line, with reports per cost centre.
+- **Journals:** numbered, saved as drafts, approved by a second person above your limit, reversed automatically on a chosen date (accruals and prepayments) and recurring (monthly, quarterly, yearly). A posted entry is never edited or deleted – it is reversed.
+- **Periods:** lock the books up to a date. Year-end closes income and expenses to retained earnings, and a year can be reopened by an administrator (by reversal). There is also a month-end close checklist covering bank recs, depreciation, journals, tills, VAT, payroll, the trial balance and the lock.
+- **Reports:**
+  - trial balance with opening, movement and closing balances;
+  - general ledger with running balance and drill-down to every entry;
+  - classified income statement against last year, the prior period or the budget, and month by month;
+  - classified balance sheet with comparatives;
+  - cash flow statement (indirect method), checked against the movement in cash;
+  - financial ratios (liquidity, margins, debtor / creditor / stock days, gearing).
+  - Every report exports to PDF, Word and Excel.
+- **Budgets:** per account, month and cost centre. A budget can be started from last year's actuals plus a %, and is approved by a second person.
+
+**Audit.**
+
+- **Tamper-evident ledger:** every journal entry is sealed into a SHA-256 hash chain; any later change to an entry or its lines is detected.
+- **Integrity checks:** unbalanced or empty entries, and postings to inactive accounts.
+- **Control account reconciliations:** debtors and creditors per customer / supplier, stock, fixed assets.
+- **Exception reports:** manual journals to control accounts, back-dated, after-hours and round-amount journals, large self-posted journals, possible duplicate supplier bills, suppliers sharing details with staff, large cash payments, refunds and voids by cashier, invoice number gaps, failed logins. Plus Benford's law analysis.
+- **Audit trail:** every change made by anyone, and login history.
+- **Audit queries:** raised on an entry and answered by staff.
+- **Audit pack:** the year-end pack for the external auditors, with every schedule, in one Excel workbook.
+- **Roles:** a read-only external auditor role.
+
+**Internal audit.**
+
+- Audit universe with risk scores, and a risk-based annual plan.
+- Engagements with standard work programmes: cash, procurement, payroll, inventory, revenue, journals, fixed assets, IT, water billing, fleet. Steps are linked to the data tests, so evidence comes straight from the books.
+- Independent review.
+- Findings written as condition / criteria / cause / effect / recommendation with a risk rating, management responses and action plans.
+- Action owners update their own actions; internal audit verifies them.
+- Audit committee dashboard, and a full engagement report exported to PDF, Word and Excel.
+- An internal auditor role, independent of management.
+
+### Also in 1.24.0
+
+**New module: e-Procurement – tenders, RFQs and waivers, with nationality and gender scorecards.**
+
+- Methods: open tender (with a public tender page where suppliers register themselves), restricted tender, request for quotations and waiver (direct procurement) – with your thresholds, e.g. no RFQ above M 1 000 000.
+- Supplier register: registration, tax clearance and trader's licence with expiry alerts, and ownership – Basotho citizen %, women %, youth %, disability, business size. Suppliers can be suspended or debarred.
+- Each step is approved and recorded: approval to procure (not by the person who prepared it), invitations, online sealed bids on each supplier's private page (prices hidden until opening, each bid fingerprinted), questions and addenda, closing time enforced, bid opening with at least two committee members, conflict-of-interest declarations before scoring, committee scoring, evaluation, recommendation, award approval (not by the recommender or a committee member), standstill period with challenges, contract as a purchase order, supplier rating. A full audit trail and a printable evaluation report.
+- Scoring: technical + price + preference points adding to 100 (e.g. 80/20, 90/10, or 70/20/10 quality-and-cost). Preference points come from the ownership scorecard (citizen, women, youth, disability, SMME), with the shares set in Settings.
+- Scorecards: spend by citizen / joint / foreign ownership, women-, youth- and disability-owned and SMME suppliers, by district and by procurement method, the share of awards made through waivers, savings against estimates and days from approval to award. Plus a waiver register and a list of expiring supplier documents.
+
+**New module: Asset register.**
+
+- Asset categories with their accounts and depreciation rules (straight line or reducing balance, useful life, residual value). Assets can be bought for cash, bought on account, already on a supplier bill, brought in with depreciation to date, or donated.
+- Monthly depreciation posted to the books (missed months are caught up). Moves between locations and custodians are recorded. Physical asset counts with QR labels. Disposal or write-off with the gain or loss booked.
+- The cost and depreciation roll-forward for the annual financial statements, plus warranty and insurance alerts.
+
+**Fleet management, upgraded.**
+
+- Service schedules by km and months, with service and repair records posted to the books. Driver licence and PrDP expiry. One "Due & alerts" list for services, papers and licences.
+- Staff ask for a pool vehicle; the fleet office approves only vehicles that are free and have enough seats (no double booking). Keys handed over and returned with the odometer.
+- Fines, accidents and insurance claims. Cost per km including depreciation from the asset register, and fuel efficiency against the expected km per litre (warns at below 80%).
+
+**Kind of organisation.**
+
+- The first-run wizard and Settings → Company ask what kind of organisation it is: informal trader, sole trader, partnership, private company, public company / corporate, parastatal, government body, NGO, cooperative or trust.
+- The tax centre follows it: company tax, personal tax, or no income tax for government and exempt NGOs.
+- The KYC documents follow it: an informal trader is not asked for a registration certificate.
+- Parastatals and government bodies get e-Procurement, the asset register and fleet switched on.
+
+### Also in 1.23.0
+
+**New module: Water utility – prepaid and postpaid water in one place.**
+
+- **Connections**: every customer gets a water account with a meter, a tariff, a zone and prepaid or postpaid billing. New connections, meter installs and replacements, disconnections and reconnections are field jobs; the connection and reconnection fees are invoiced automatically and store materials used come off stock.
+- **Tariffs**: stepped (block) prices per m³ with a cheap lifeline block, a monthly service charge, sewerage as a % of water, a minimum charge and VAT – with a calculator to try them.
+- **Postpaid**: a meter reading sheet that works on a phone (or printed), checks for readings that go backwards, very high or zero use, estimated bills when a meter could not be read, one-click monthly billing that makes ordinary customer invoices, and printable bills with a usage chart.
+- **Prepaid**: sell water at the office or from any POS till (💧 Water button). Old debt is recovered with a % of every purchase, the monthly service charge comes off the first purchase, and the rest is turned into m³ at the tariff. Tokens come from your STS vending server through a plugin (TEST tokens for training).
+- **Money**: bill payments at the till land in the cash-up, deposits are held on their own account (2430) and pay the final bill when an account is closed. New accounts: 4870 Water sales, 4875 Service & sewer charges, 4876 Connection & reconnection fees, 5500 Network materials used.
+- **Collections**: a disconnection list by your own rules, "Water bills" in payment reminders (SMS / WhatsApp / email), and the customer link now shows water use and the last tokens.
+- **Water loss**: type each zone's bulk meter and see how much water was not billed or sold (non-revenue water).
+- **WASCO tariffs in one click** (Water utility → Tariffs → Load WASCO tariffs): domestic bands A–D (M6.11 / 10.39 / 18.29 / 25.24 per kl), business & industry, government, schools, churches and standpipes with their standing charges; no standing charge while a domestic customer stays in band A; sewerage M9.85 per kl on 85% (waterborne) or 65% (non-waterborne) of the water used – choose the sewer type on each connection; VAT 15% by default (changeable per tariff).
+- **Meter readers**: a new "meterreader" role that only sees the reading sheet and their jobs. Water utility is a new business type with setup-guide steps, help notes in English and Sesotho, and an importer for existing water customers.
+
+**New module: Payment partners – let M-Pesa, EcoCash, banks, agents and shops collect for you.**
+
+- Add a partner, give their developers a test key and the built-in API guide; when they are ready, "Go live" gives them a live key.
+- The collections API (/api/collect/v1): look up an account (water account, meter number or invoice number) and show the customer's name and amount due; send a payment and get back the receipt – or the prepaid water token; ask about a payment; download the day's transactions for reconciliation.
+- Safe by design: keys are stored only as fingerprints, a test key can never move real money, every payment carries the partner's own reference and is never recorded twice, optional IP allow-list, per-partner limits and the kinds of payment allowed, suspend at any time, and a log of every call.
+- Money they collect is owed to you (1180 Collections due from payment partners) until they pay it over; "Record settlement" puts it in the bank and books their commission (6420).
+
+### Also in 1.22.0
 
 **Maluti ERP is now S-ERP, by Smartel Money.**
 

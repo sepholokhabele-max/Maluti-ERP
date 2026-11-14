@@ -13,6 +13,7 @@ async function initialise({ company, admin, demo }) {
     await c.query(`INSERT INTO settings (k, v) VALUES ('company', ?)`, [JSON.stringify({
       name: company.name || 'My Business', address: company.address || '', phone: company.phone || '',
       email: company.email || '', tax_number: company.tax_number || '',
+      entity_type: require('./entity').byKey(company.entity_type) ? company.entity_type : null, reg_no: company.reg_no ? String(company.reg_no).slice(0, 60) : '',
       currency_code: company.currency_code || 'LSL', currency_symbol: company.currency_symbol || 'M',
       receipt_footer: company.receipt_footer || 'Thank you for your business!',
       default_vat: Number(company.vat_rate ?? 15)

@@ -47,23 +47,37 @@ async function accountId(conn, code) {
  * Post a journal entry. lines: [{ code, debit, credit, partner_id, description }]
  * Lines with zero amounts are skipped. Throws if not balanced.
  */
-async function post(conn, { date, reference, memo, source_type, source_id, user_id, lines, location_id }) {
+/** the books are closed up to this date (Finance → Periods); nothing may be posted on or before it */
+async function lockDate(conn) {
+  const r = await conn.one(`SELECT v FROM settings WHERE k = 'finance'`).catch(() => null);
+  if (!r || !r.v) return null;
+  const v = typeof r.v === 'string' ? JSON.parse(r.v) : r.v;
+  return v && v.lock_date ? String(v.lock_date).slice(0, 10) : null;
+}
+const localToday = () => { const d = new Date(); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
+async function post(conn, { date, reference, memo, source_type, source_id, user_id, lines, location_id, cost_centre_id, number, reverses_id, batch_id, allowLocked }) {
   const clean = lines
     .map(l => ({ ...l, debit: round2(l.debit || 0), credit: round2(l.credit || 0) }))
+    // a negative debit is a credit (and the other way round): the ledger only stores positive amounts
+    .map(l => { const net = round2(l.debit - l.credit); return { ...l, debit: net > 0 ? net : 0, credit: net < 0 ? -net : 0 }; })
     .filter(l => l.debit !== 0 || l.credit !== 0);
   if (!clean.length) return null;
   const dr = round2(clean.reduce((s, l) => s + l.debit, 0));
   const cr = round2(clean.reduce((s, l) => s + l.credit, 0));
   if (Math.abs(dr - cr) > 0.009) throw bad(`Unbalanced journal entry ${reference}: debit ${dr} vs credit ${cr}`);
+  const lock = allowLocked ? null : await lockDate(conn);
+  const eff = date ? String(date).slice(0, 10) : localToday();
+  if (lock && eff <= lock) throw bad(`The books are closed up to ${lock}. Post this on a later date, or ask the accountant to reopen the period (Finance → Periods).`);
   const r = await conn.query(
-    `INSERT INTO journal_entries (entry_date, reference, memo, source_type, source_id, user_id, location_id)
-     VALUES (COALESCE(?, CURDATE()), ?, ?, ?, ?, ?, ?)`,
-    [date || null, reference || null, memo || null, source_type || null, source_id || null, user_id || null, location_id || null]);
+    `INSERT INTO journal_entries (entry_date, reference, memo, source_type, source_id, user_id, location_id, number, reverses_id, batch_id)
+     VALUES (COALESCE(?, CURDATE()), ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [date || null, reference || null, memo || null, source_type || null, source_id || null, user_id || null, location_id || null, number || null, reverses_id || null, batch_id || null]);
   for (const l of clean) {
     await conn.query(
-      'INSERT INTO journal_lines (entry_id, account_id, partner_id, description, debit, credit) VALUES (?, ?, ?, ?, ?, ?)',
-      [r.insertId, await accountId(conn, l.code), l.partner_id || null, l.description || null, l.debit, l.credit]);
+      'INSERT INTO journal_lines (entry_id, account_id, partner_id, description, debit, credit, cost_centre_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [r.insertId, await accountId(conn, l.code), l.partner_id || null, l.description || null, l.debit, l.credit, Number(l.cost_centre_id || cost_centre_id) || null]);
   }
+  if (reverses_id) await conn.query('UPDATE journal_entries SET reversed_by_id = ? WHERE id = ?', [r.insertId, reverses_id]);
   return r.insertId;
 }
 
@@ -72,13 +86,13 @@ async function reverseSource(conn, source_type, source_id, { reference, user_id 
   const entries = await conn.query('SELECT id FROM journal_entries WHERE source_type = ? AND source_id = ?', [source_type, source_id]);
   for (const e of entries) {
     const lines = await conn.query(
-      'SELECT a.code, l.debit, l.credit, l.partner_id, l.description FROM journal_lines l JOIN accounts a ON a.id = l.account_id WHERE l.entry_id = ?', [e.id]);
+      'SELECT a.code, l.debit, l.credit, l.partner_id, l.description, l.cost_centre_id FROM journal_lines l JOIN accounts a ON a.id = l.account_id WHERE l.entry_id = ?', [e.id]);
     await post(conn, {
       reference: reference || `REV-${source_type}-${source_id}`, memo: 'Reversal',
       source_type: `${source_type}_reversal`, source_id, user_id,
-      lines: lines.map(l => ({ code: l.code, debit: l.credit, credit: l.debit, partner_id: l.partner_id, description: l.description }))
+      lines: lines.map(l => ({ code: l.code, debit: l.credit, credit: l.debit, partner_id: l.partner_id, description: l.description, cost_centre_id: l.cost_centre_id }))
     });
   }
 }
 
-module.exports = { DEFAULT_ACCOUNTS, post, reverseSource, accountId, clearCache: () => accountCache.clear() };
+module.exports = { DEFAULT_ACCOUNTS, post, reverseSource, accountId, lockDate, clearCache: () => accountCache.clear() };

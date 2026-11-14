@@ -51,7 +51,9 @@ pub.post('/setup', ah(async (req, res) => {
   // remember the kinds of business for the setup guide; butchery mode is switched on straight away
   const types = Array.isArray(req.body.business_types) ? req.body.business_types : [];
   // a brand-new business: only the modules its types need are switched on
-  if (types.length) { const M = require('../services/modules'); await M.save({ types, modules: M.defaultsFor(types) }); }
+  const ent = require('../services/entity').byKey((company || {}).entity_type);
+  if (types.length) { const M = require('../services/modules'); await M.save({ types, modules: [...new Set([...M.defaultsFor(types), ...((ent && ent.suggest) || [])])] }); }
+  if (ent) { const T = require('../services/tax'); await T.saveSettings({ ...(await T.settings()), entity: ent.tax }).catch(() => {}); }
   const A = require('../services/activation'); await A.get();
   const k = req.body.kyc || {};
   if (k.path === 'merchant' && k.merchant_no) await A.save({ kyc: { path: 'merchant', merchant_no: String(k.merchant_no).slice(0, 40), merchant_phone: String(k.merchant_phone || '').slice(0, 40) } });
@@ -60,7 +62,17 @@ pub.post('/setup', ah(async (req, res) => {
   res.json(await auth.login(admin.username, admin.password));
 }));
 
-pub.post('/login', ah(async (req, res) => res.json(await auth.login(req.body.username, req.body.password))));
+pub.post('/login', ah(async (req, res) => {
+  // every login, good or bad, goes into the audit trail with the IP address
+  try {
+    const out = await auth.login(req.body.username, req.body.password);
+    db.query(`INSERT INTO audit_log (user_id, action, entity, details, ip) VALUES (?, 'login', 'users', ?, ?)`, [out.user.id, JSON.stringify({ username: out.user.username }), String(req.ip || '').slice(0, 64)]).catch(() => {});
+    res.json(out);
+  } catch (e) {
+    if (e.status === 401) db.query(`INSERT INTO audit_log (action, entity, details, ip) VALUES ('login_failed', 'users', ?, ?)`, [JSON.stringify({ username: String(req.body.username || '').slice(0, 60) }), String(req.ip || '').slice(0, 64)]).catch(() => {});
+    throw e;
+  }
+}));
 pub.post('/pin-login', ah(async (req, res) => res.json(await auth.pinLogin(req.body.user_id, req.body.pin))));
 // staff list for the PIN lock screen (names only)
 pub.get('/pin-users', ah(async (req, res) => {
@@ -130,8 +142,16 @@ priv.put('/settings/:key', auth.requirePerm('settings'), ah(async (req, res) => 
     if (typeof v.recipients === 'string') v.recipients = v.recipients.split(/[,;\s]+/).filter(Boolean);
     v = { ...cur, ...v };
   }
+  let entityChanged = null;
+  if (key === 'company') {
+    const E = require('../services/entity'), cur = (await db.getSetting('company', {})) || {};
+    if (v.entity_type !== undefined && v.entity_type !== '' && v.entity_type !== null && !E.byKey(v.entity_type)) throw bad('Unknown kind of organisation');
+    if (v.entity_type && v.entity_type !== cur.entity_type) entityChanged = E.byKey(v.entity_type);
+  }
   await db.setSetting(key, v);
   if (key === 'email') await mailer.schedule();
+  // a new kind of organisation changes the income-tax treatment in the tax centre
+  if (entityChanged) { const T = require('../services/tax'); await T.saveSettings({ ...(await T.settings()), entity: entityChanged.tax }).catch(() => {}); }
   res.json({ ok: true });
 }));
 priv.get('/settings-qr', auth.requirePerm('settings'), ah(async (req, res) => {

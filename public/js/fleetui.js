@@ -1,5 +1,6 @@
 // Fleet & trips: vehicles with document expiry, fuel, trips charged per trip / km / ton / seat / day, taxi & bus takings, profit per vehicle
 import { reportDialog } from './ops.js';
+import * as plus from './fleetplusui.js';
 import { state, GET, POST, PUT, esc, $, $$, toast, err, can, money, qty, modal, formHtml, readForm, tableHtml, badge, page, d, today, query } from './core.js';
 
 const VS = { available: ['available', 'ok'], on_trip: ['on a trip', 'draft'], in_repair: ['in repair', 'cancelled'], sold: ['sold', 'closed'] };
@@ -14,12 +15,13 @@ const docWarn = v => (v.expiring || []).map(x => badge(`${x.doc} ${x.expired ? '
 
 export async function fleet(view) {
   const q = query(); const tab = q.tab || 'vehicles';
-  const tabs = [['vehicles', 'Vehicles'], ['trips', 'Trips'], ['report', 'Cost & income per vehicle']];
+  const tabs = [['vehicles', 'Vehicles'], ['trips', 'Trips'], ...plus.TAB_LABELS, ['report', 'Income per vehicle']];
   view.innerHTML = page('Fleet & trips', `<button class="btn" id="nv">＋ Vehicle</button><button class="btn btn-primary" id="nt">＋ Trip</button>`,
     `<div class="tabs">${tabs.map(([k, l]) => `<a href="#/fleet?tab=${k}" class="${k === tab ? 'active' : ''}">${l}</a>`).join('')}</div><div id="fb"></div>`);
   $('#nv').onclick = () => vehicleDialog(null, id => { location.hash = '#/vehicle/' + id; });
   $('#nt').onclick = () => tripDialog({}, () => { location.hash = '#/fleet?tab=trips&_=' + Date.now(); });
   const fb = $('#fb');
+  if (plus.TABS[tab]) return plus.TABS[tab](fb);
   if (tab === 'vehicles') {
     const vs = await GET('/vehicles');
     const warn = vs.filter(v => v.expiring.length);
@@ -108,13 +110,15 @@ export async function vehicle(view, [idq]) {
   const id = (idq || '').split('?')[0];
   const v = await GET('/vehicles/' + id);
   const tab = query().tab || 'fuel';
-  const tabs = [['fuel', 'Fuel'], ['trips', 'Trips'], ['takings', 'Takings'], ['repairs', 'Repairs']];
-  view.innerHTML = page(`${v.reg_no}${v.name ? ' · ' + v.name : ''}`, `<button class="btn" id="vf">⛽ Fuel</button><button class="btn" id="vk">💵 Takings</button><button class="btn" id="vt">＋ Trip</button>${v.equipment_id ? '<button class="btn" id="vr">🔧 Repair</button>' : ''}<button class="btn" id="ve">Edit</button>`,
+  const tabs = [['fuel', 'Fuel'], ...plus.VTAB_LABELS, ['trips', 'Trips'], ['takings', 'Takings'], ['repairs', 'Repairs (maintenance)']];
+  view.innerHTML = page(`${v.reg_no}${v.name ? ' · ' + v.name : ''}`, `<button class="btn" id="vf">⛽ Fuel</button><button class="btn" id="vk">💵 Takings</button><button class="btn" id="vt">＋ Trip</button>${v.equipment_id ? '<button class="btn" id="vr">🔧 Repair</button>' : ''}<button class="btn" id="vs">🛠 Service</button><button class="btn" id="vi">⚠ Fine / accident</button><button class="btn" id="vset">⚙ Setup</button><button class="btn" id="ve">Edit</button>`,
     `<div class="cols cols-4" style="margin-bottom:14px"><div class="kpi"><div class="label">Status</div><div class="value" style="font-size:18px">${vsBadge(v.status)}</div><div class="hint">${esc([v.make, v.model, v.year].filter(Boolean).join(' '))}</div></div>
       <div class="kpi"><div class="label">Odometer</div><div class="value">${qty(v.odometer)} km</div></div><div class="kpi"><div class="label">Driver</div><div class="value" style="font-size:18px">${esc(v.driver_name || '–')}</div></div>
       <div class="kpi"><div class="label">Papers</div><div class="hint">${[['licence_expiry', 'Licence'], ['insurance_expiry', 'Insurance'], ['fitness_expiry', 'Fitness'], ['permit_expiry', 'Permit']].map(([k, l]) => v[k] ? `${l}: <b style="color:${d(v[k]) < today() ? 'var(--bad)' : 'inherit'}">${esc(d(v[k]))}</b>` : '').filter(Boolean).join('<br>') || 'no dates entered'}</div></div></div>
     <div class="tabs">${tabs.map(([k, l]) => `<a href="#/vehicle/${v.id}?tab=${k}" class="${k === tab ? 'active' : ''}">${l}</a>`).join('')}</div><div class="card" id="vb"></div>`, { back: '#/fleet' });
   const vb = $('#vb'); const reload = () => vehicle(view, [id]);
+  if (plus.VTAB_LABELS.some(([k]) => k === tab)) await plus.vehicleTab(tab, vb, v, reload);
+  plus.vehicleButtons(v, reload);
   if (tab === 'fuel') vb.innerHTML = tableHtml([{ key: 'fill_date', label: 'Date', fmt: d }, { key: 'litres', label: 'Litres', right: 1, fmt: qty }, { key: 'amount', label: 'Amount', right: 1, fmt: money }, { key: 'amount', label: 'Per litre', right: 1, fmt: (a, f) => money(a / f.litres) },
     { key: 'odometer', label: 'Odometer', right: 1, fmt: o => o == null ? '' : qty(o) }, { key: 'full_tank', label: 'Full', fmt: x => x ? '✓' : '' }, { key: 'station', label: 'Station' }, { key: 'driver_name', label: 'Driver' }], v.fuel_logs, { empty: 'No fuel recorded yet.' });
   if (tab === 'trips') {

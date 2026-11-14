@@ -61,7 +61,7 @@ async function saveSettings(p) {
   for (const k of ['vat_due_day', 'paye_due_day', 'wht_due_day']) { n[k] = Math.round(Number(n[k])); if (!(n[k] >= 1 && n[k] <= 28)) throw bad('A due day must be 1–28'); }
   n.year_end_month = Math.round(Number(n.year_end_month)); if (!(n.year_end_month >= 1 && n.year_end_month <= 12)) throw bad('Year-end month must be 1–12');
   for (const [k, v] of Object.entries(n.wht_rates || {})) { const r = Number(v); if (!(r >= 0 && r <= 60)) throw bad(`Withholding rate for ${k} must be 0–60 %`); n.wht_rates[k] = r; }
-  if (!['company', 'individual'].includes(n.entity)) n.entity = 'company';
+  if (!['company', 'individual', 'exempt'].includes(n.entity)) n.entity = 'company';
   if (n.tin && !/^[\w\-/ ]{3,30}$/.test(n.tin)) throw bad('The TIN may only have letters, digits, - and /');
   n.vat_registered = !!Number(n.vat_registered) || n.vat_registered === true;
   n.fbt_enabled = !!Number(n.fbt_enabled) || n.fbt_enabled === true;
@@ -99,6 +99,7 @@ async function schedule(from, to) {
       out.push({ tax: 'fbt', period_from: `${qy}-${String(qm).padStart(2, '0')}-01`, period_to: pt, period_label: `Quarter to ${label}`, due_date: pt });
     }
     const ty = taxYear(pt, E);
+    if (s.entity === 'exempt') continue; // government, exempt NGOs: no income tax instalments or returns
     if (monthsAfterYE === 6) out.push({ tax: 'cit_1', period_from: ty.from, period_to: ty.to, period_label: `Tax year ${ty.label}`, due_date: pt });
     if (monthsAfterYE === 9) out.push({ tax: 'cit_2', period_from: ty.from, period_to: ty.to, period_label: `Tax year ${ty.label}`, due_date: pt });
     if (monthsAfterYE === 0) out.push({ tax: 'cit_3', period_from: ty.from, period_to: ty.to, period_label: `Tax year ${ty.label}`, due_date: pt });

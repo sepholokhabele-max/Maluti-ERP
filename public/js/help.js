@@ -1,6 +1,60 @@
 // Explanation notes shown under every input on the setup and configuration screens.
 // formHtml(fields, values, { ctx: 'company' }) looks up HELP[ctx][field.key]; a field's own `help` wins.
 export const HELP = {
+  water_account: {
+    sewer_type: 'Waterborne: connected to the sewer network. Non-waterborne: conservancy tank / VIP. Sewerage is charged on a share of the water used.',
+    billing: 'Postpaid: the meter is read every month and the customer gets a bill (an invoice). Prepaid: the customer buys water first and gets a token to type on the meter.',
+    tariff_id: 'The price list for this kind of customer – domestic, commercial, standpipe… Make tariffs under Water utility → Tariffs.',
+    zone_id: 'The area this connection is in. Each zone is one meter reading route and is used to measure water loss.',
+    route_seq: 'Position on the reader\'s walking route (1, 2, 3…). The reading sheet is printed in this order.',
+    debt_recovery_pct: 'When a prepaid customer still owes old bills, this share of every purchase pays the debt first. Empty uses the standard % from Settings.',
+    account_no: 'Only when moving a customer from an old system – keep their old account number. Leave empty and S-ERP gives the next number.',
+    meter_serial: 'If the meter is already in the ground, type its serial number here. Otherwise open a "New connection" job and the plumber records it.',
+    initial_reading: 'The number on the meter today. The first bill counts from this reading.',
+    gps: 'Latitude,longitude – e.g. -29.3167,27.4833. Helps plumbers and readers find the meter.'
+  },
+  water_tariff: {
+    service_charge: 'The standing charge: a fixed amount every month (meter rental, admin). Prepaid customers pay it from a purchase each month.',
+    service_free_upto: 'WASCO domestic: no standing charge while the month\'s use stays in band A (5 m³). Prepaid: charged only once the month\'s water goes past this.',
+    sewer_rate: 'WASCO: M9.85 per kilolitre, charged on a share of the water used.',
+    sewer_wb_pct: 'Connections on the waterborne sewer pay sewerage on this % of the water they use (WASCO: 85%).',
+    sewer_nwb_pct: 'Connections with conservancy tanks / VIP (non-waterborne) pay on this % of the water used (WASCO: 65%).',
+    effective_from: 'The date these prices were approved from (LEWA reviews WASCO tariffs). For your records.',
+    sewer_pct: 'Sewerage charge as a % of the water charge. 0 if this customer is not on the sewer.',
+    min_m3: 'Postpaid only: bill at least this many m³ each month, even if less was used.',
+    tax_rate: 'VAT on water – the standard rate in Lesotho is 15%. Confirm the treatment of your water sales with RSL.',
+    category: 'Used for reports and for choosing the right tariff when adding connections.'
+  },
+  water_settings: {
+    due_days: 'Days after the bill date before a bill is late.',
+    estimate_months: 'When a meter could not be read, the bill is the average of this many past months. It is corrected automatically when the next real reading comes in.',
+    high_use_factor: 'A reading is marked "very high use" when it is this many times the customer\'s normal use – often a leak or a misread.',
+    token_provider: 'Sandbox prints TEST tokens for training. Use the plugin to get real STS tokens from your meter supplier\'s vending server.',
+    debt_recovery_pct: 'Share of each prepaid purchase that pays old bills first.',
+    min_vend: 'The smallest amount a customer may buy.',
+    max_vend: 'The largest single purchase – protects against typing mistakes.',
+    connection_fee: 'Invoiced when a "New connection" job is opened. 0 for no fee.',
+    reconnection_fee: 'Invoiced when a "Reconnection" job is opened after a cut-off.',
+    deposit_postpaid: 'Suggested deposit for postpaid customers. It is held (not income) and pays the final bill when the account is closed.',
+    disconnect_after_days: 'A postpaid customer appears on the disconnection list when a bill is this many days late…',
+    disconnect_min_amount: '…and they owe at least this much.',
+    account_prefix: 'Account numbers look like W00001.'
+  },
+  water_job: {
+    kind: 'New connection, meter install / replace, disconnection, reconnection, leak, burst, complaint or inspection.',
+    fee: 'Connection and reconnection jobs charge the standard fee unless you type another amount (0 for free).',
+    meter_serial: 'Serial number on the meter the plumber installed. It becomes the connection\'s meter.',
+    reading: 'The number on the new meter when it was installed.',
+    old_reading: 'The last number on the old meter – the customer is billed up to here.'
+  },
+  water_reading: {
+    reading: 'All the black digits on the meter (whole m³). Red digits are litres – leave them out.',
+    rollover: 'Only when the meter went past its highest number and started again from 0.'
+  },
+  water_zone: {
+    bulk_meter_no: 'The meter where water enters this zone. Its monthly reading against what customers used shows water lost.',
+    reader_id: 'This person sees this zone first on the reading sheet.'
+  },
   portal: {
     enabled: 'Customers can open their private link (balance, invoices, statement). Switch off to close every link at once.',
     allow_proof: 'Customers who paid at the bank can upload the slip. It lands on their contact as a file, with a task for the office to check it.',

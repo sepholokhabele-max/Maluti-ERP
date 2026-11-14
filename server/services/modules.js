@@ -36,6 +36,10 @@ const MODULES = [
   { key: 'hire', name: 'Equipment & party hire', icon: '⛺', group: 'Sector', desc: 'Tents, chairs, scaffolding, mixers, generators: hire with day/week/month rates, no over-booking, deposits, part returns, damage and losses, utilisation per item.' },
   { key: 'farm', name: 'Farm', icon: '🌾', group: 'Sector', desc: 'Herds and flocks with tagged animals, births, health and vaccinations due, feed and inputs used, eggs/milk/wool produced into stock, fields and crop seasons, profit per flock and per field.' },
   { key: 'recruitment', name: 'Recruitment & appraisals', icon: '🧑‍🎓', group: 'People', desc: 'Job adverts, applicants with CVs moving from new to hired, interview SMS, hiring straight into HR, and staff appraisals with scores, goals and salary increases.' },
+  { key: 'water', name: 'Water utility', icon: '💧', group: 'Sector', desc: 'Water connections on prepaid or postpaid billing: meters, reading routes, block tariffs with service and sewer charges, monthly billing runs, prepaid tokens at the till, deposits, disconnections and reconnections, field jobs and water losses per zone.' },
+  { key: 'paypartners', name: 'Payment partners', icon: '🤝', group: 'Money', desc: 'Let M-Pesa, EcoCash, banks, agents and shops collect for you on their own platforms through a secure API: account lookup, bill payments and prepaid water tokens, daily statements and settlements with commission' },
+  { key: 'assets', name: 'Asset register', icon: '🏷️', group: 'Money', desc: 'Fixed assets with categories, custodians and locations, monthly depreciation posted to the books, transfers, physical counts with QR labels, disposals with gain or loss, and the cost / depreciation roll-forward for the annual financial statements' },
+  { key: 'procurement', name: 'e-Procurement', icon: '📑', group: 'Stock', desc: 'Tenders, restricted tenders, requests for quotations and waivers with approvals; supplier register with citizen, women and youth ownership; online sealed bids, clarifications, bid opening, committee scoring with conflict-of-interest declarations, preference points, award approval, standstill and challenges, contracts and spend scorecards' },
   { key: 'campaigns', name: 'SMS & email campaigns', icon: '📣', group: 'Sales', desc: 'Specials, events and news to chosen customers (by tag, last purchase, birthday month, tenants, parents, patients) by SMS or email, scheduled or now, with opt-out.' },
 ];
 
@@ -70,6 +74,8 @@ const TYPES = [
     modules: ['reminders', 'sites', 'contracts', 'crm', 'sales', 'hrm', 'attendance', 'expenses', 'bank', 'recruitment'] },
   { key: 'cleaning', name: 'Cleaning company', icon: '🧽', desc: 'Office, school and hospital cleaning, hygiene services, gardening',
     modules: ['reminders', 'sites', 'contracts', 'crm', 'sales', 'inventory', 'purchasing', 'hrm', 'attendance', 'bank', 'recruitment'] },
+  { key: 'water', name: 'Water utility', icon: '💧', desc: 'Water supplier, village water scheme, borehole or estate water: prepaid and postpaid customers',
+    modules: ['water', 'paypartners', 'procurement', 'assets', 'fleet', 'pos', 'reminders', 'crm', 'inventory', 'purchasing', 'maintenance', 'hrm', 'attendance', 'bank', 'campaigns'], till: 'retail' },
   { key: 'agriculture', name: 'Agriculture', icon: '🌾', desc: 'Crop farm, poultry, piggery, dairy, wool & mohair',
     modules: ['farm', 'sales', 'purchasing', 'inventory', 'locations', 'hrm', 'attendance'] }
 ];

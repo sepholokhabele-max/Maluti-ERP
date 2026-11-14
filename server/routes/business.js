@@ -5,6 +5,7 @@ const stock = require('../services/stock');
 const accounting = require('../services/accounting');
 const reports = require('../services/reports');
 const { requirePerm } = require('../auth');
+const gov = require('../services/governance');
 const { ah, bad, notFound, round2, lineAmounts, pad, today } = require('../util');
 
 const r = express.Router();
@@ -74,8 +75,16 @@ r.put('/purchases/:id', requirePerm('purchasing'), ah(async (req, res) => {
 r.post('/purchases/:id/confirm', requirePerm('purchasing'), ah(async (req, res) => {
   const po = await db.one('SELECT * FROM purchase_orders WHERE id = ?', [req.params.id]);
   if (!po || po.status !== 'draft') throw bad('Only draft orders can be confirmed');
-  // orders above the approval limit wait for a manager
   const lim = Number(((await db.getSetting('approvals', {})) || {}).po_limit || 0);
+  // the organogram decides who approves (orders up to the no-approval limit, if one is set, are confirmed straight away)
+  if (await gov.isGoverned('purchase_order') && !(lim > 0 && Number(po.total) <= lim)) {
+    const r2 = await db.tx(async c => {
+      await c.query(`UPDATE purchase_orders SET status = 'to_approve' WHERE id = ?`, [po.id]);
+      return gov.request(c, { doc_type: 'purchase_order', doc_id: po.id, amount: Number(po.total), requester_id: req.user.id, summary: `${po.number || 'PO ' + po.id} – M ${Number(po.total).toFixed(2)}`, link: `#/purchase/${po.id}` });
+    });
+    return res.json({ ok: true, status: 'to_approve', message: `Waiting for approval by ${r2.next}` });
+  }
+  // orders above the approval limit wait for a manager
   const { can } = require('../auth');
   if (lim > 0 && Number(po.total) > lim && !can(req.user, 'purchase.approve')) {
     await db.query(`UPDATE purchase_orders SET status = 'to_approve' WHERE id = ?`, [po.id]);
@@ -84,14 +93,24 @@ r.post('/purchases/:id/confirm', requirePerm('purchasing'), ah(async (req, res) 
   await db.query(`UPDATE purchase_orders SET status = 'confirmed', approved_by = ?, approved_at = IF(? > 0 AND total > ?, NOW(), NULL) WHERE id = ?`, [req.user.id, lim, lim, po.id]);
   res.json({ ok: true, status: 'confirmed' });
 }));
-r.post('/purchases/:id/approve', requirePerm('purchase.approve'), ah(async (req, res) => {
-  const x = await db.query(`UPDATE purchase_orders SET status = 'confirmed', approved_by = ?, approved_at = NOW() WHERE id = ? AND status = 'to_approve'`, [req.user.id, req.params.id]);
-  if (!x.affectedRows) throw bad('This order is not waiting for approval');
-  res.json({ ok: true });
+r.post('/purchases/:id/approve', gov.gate('purchase_order', 'purchase.approve'), ah(async (req, res) => {
+  const out = await db.tx(async c => {
+    const po = await c.one(`SELECT * FROM purchase_orders WHERE id = ? FOR UPDATE`, [req.params.id]);
+    if (!po || po.status !== 'to_approve') throw bad('This order is not waiting for approval');
+    const g = await gov.authorize(c, req.user, { doc_type: 'purchase_order', doc_id: po.id, amount: Number(po.total), requester_id: po.user_id, summary: `${po.number || 'PO ' + po.id} – M ${Number(po.total).toFixed(2)}`, link: `#/purchase/${po.id}`, note: req.body.note });
+    if (!g.final) return { ok: true, status: 'to_approve', message: g.message };
+    await c.query(`UPDATE purchase_orders SET status = 'confirmed', approved_by = ?, approved_at = NOW() WHERE id = ?`, [req.user.id, po.id]);
+    return { ok: true, status: 'confirmed' };
+  });
+  res.json(out);
 }));
-r.post('/purchases/:id/reject', requirePerm('purchase.approve'), ah(async (req, res) => {
-  const x = await db.query(`UPDATE purchase_orders SET status = 'draft', notes = CONCAT(COALESCE(notes,''), ?) WHERE id = ? AND status = 'to_approve'`, [` [Sent back: ${String(req.body.reason || '').slice(0, 120)}]`, req.params.id]);
-  if (!x.affectedRows) throw bad('This order is not waiting for approval');
+r.post('/purchases/:id/reject', gov.gate('purchase_order', 'purchase.approve'), ah(async (req, res) => {
+  await db.tx(async c => {
+    const po = await c.one(`SELECT * FROM purchase_orders WHERE id = ? FOR UPDATE`, [req.params.id]);
+    if (!po || po.status !== 'to_approve') throw bad('This order is not waiting for approval');
+    await gov.reject(c, req.user, { doc_type: 'purchase_order', doc_id: po.id, note: req.body.reason });
+    await c.query(`UPDATE purchase_orders SET status = 'draft', notes = CONCAT(COALESCE(notes,''), ?) WHERE id = ?`, [` [Sent back: ${String(req.body.reason || '').slice(0, 120)}]`, po.id]);
+  });
   res.json({ ok: true });
 }));
 r.post('/purchases/:id/cancel', requirePerm('purchasing'), ah(async (req, res) => {

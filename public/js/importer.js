@@ -317,6 +317,22 @@ export const KINDS = [
       F('deposit', 'Deposit', 'num'), F('replacement_cost', 'Replacement cost', 'num', { aka: ['replacement', 'value'] })],
     exists: async (r, ctx) => (await ctx.list('hire_items')).find(x => norm(x.name) === norm(r.name)),
     async run(r) { await POST('/hire/items', r); } },
+  { key: 'water_accounts', group: 'Sector', perm: 'water', mod: 'water', title: ['Water connections', 'Likhokahano tsa metsi'], desc: ['Your water customers with account number, meter, tariff and the last reading.', 'Bareki ba metsi ka nomoro ea ak’haonte, metara, theko le palo ea ho qetela.'],
+    note: ['Make the tariffs first (Water utility → Tariffs) – the tariff column must match a tariff name. Zones are created if missing. Old unpaid bills: import "What customers owe" with the customer\'s name.', 'Etsa litheko pele. Libaka li etsoa haeba li le sieo.'],
+    fields: [F('account_no', 'Account number', 'text', { aka: ['account', 'acc no', 'account no', 'customer number'] }), F('customer', 'Customer', 'text', { req: 1, aka: ['name', 'customer name', 'consumer', 'moreki'] }),
+      F('phone', 'Phone', 'text', { aka: ['mobile', 'cell', 'mohala'] }), F('email', 'Email', 'text'), F('address', 'Address', 'text', { aka: ['village', 'location', 'physical address'] }), F('plot_no', 'Plot / site', 'text', { aka: ['plot', 'site', 'stand'] }),
+      F('billing', 'Prepaid or postpaid', 'text', { aka: ['type', 'billing', 'meter type'] }), F('tariff', 'Tariff', 'text', { req: 1, aka: ['tariff name', 'category', 'class'] }), F('sewer', 'Sewer (waterborne / non-waterborne / none)', 'text', { aka: ['sewer', 'sewerage', 'sanitation'] }), F('zone', 'Zone', 'text', { aka: ['area', 'route', 'zone name'] }),
+      F('route_seq', 'Route order', 'int', { aka: ['walk order', 'sequence', 'seq'] }), F('meter_serial', 'Meter serial', 'text', { aka: ['meter', 'meter no', 'meter number', 'serial'] }),
+      F('initial_reading', 'Last reading', 'num', { aka: ['reading', 'current reading', 'last reading'] }), F('connection_date', 'Connected on', 'date', { aka: ['connection date', 'date connected'] })],
+    exists: async (r, ctx) => r.account_no && (await ctx.list('water_accounts')).find(x => norm(x.account_no) === norm(r.account_no)),
+    async run(r, ctx) {
+      const t = (await ctx.list('water_tariffs')).find(x => norm(x.name) === norm(r.tariff)); if (!t) throw L(`No tariff called "${r.tariff}" – add it first`, `Ha ho theko e bitsoang "${r.tariff}"`);
+      let zone_id = null;
+      if (r.zone) { const zs = await ctx.list('water_zones'); let z = zs.find(x => norm(x.name) === norm(r.zone)); if (!z) { z = { ...(await POST('/water/zones', { name: r.zone, active: 1 })), name: r.zone }; zs.push(z); } zone_id = z.id; }
+      const partner_id = await ctx.partner(r.customer, { is_customer: 1, phone: r.phone, email: r.email, tags: 'water' });
+      await POST('/water/accounts', { partner_id, account_no: r.account_no || '', billing: /pre/i.test(r.billing || '') ? 'prepaid' : 'postpaid', tariff_id: t.id, zone_id, sewer_type: /non/i.test(r.sewer || '') ? 'non_waterborne' : /water|yes|borne/i.test(r.sewer || '') ? 'waterborne' : 'none', route_seq: r.route_seq || null,
+        address: r.address, plot_no: r.plot_no, meter_serial: r.meter_serial || '', initial_reading: r.initial_reading ?? null, connection_date: r.connection_date || null });
+    } },
   { key: 'vehicles', group: 'Sector', perm: 'fleet', mod: 'fleet', title: ['Vehicles', 'Likoloi'], desc: ['Trucks, buses, taxis and cars with their papers\' expiry dates.', 'Literaka, libese, litekesi le likoloi.'],
     fields: [F('reg_no', 'Registration', 'text', { req: 1, aka: ['reg', 'registration', 'reg no', 'number plate', 'plate'] }), F('name', 'Nickname', 'text'),
       F('kind', 'Type', 'enum', { values: [['car', 'sedan'], ['bakkie', 'ldv', 'pickup', 'pick-up'], ['truck', 'lorry'], ['bus'], ['taxi', 'quantum', 'minibus'], ['motorbike', 'motorcycle'], ['trailer'], ['other']] }),
@@ -388,7 +404,7 @@ const GROUP_ST = { Stock: 'Setoko', Contacts: 'Bareki le barekisi', 'Opening bal
 const kindsFor = () => KINDS.filter(k => can(k.perm) && (!k.mod || hasMod(k.mod)));
 // which import a screen offers (for the "⬆ Import" button on each module)
 export const ROUTE_KINDS = { '#/products': 'products', '#/inventory': 'stock', '#/partners': 'customers', '#/crm': 'customers', '#/purchases': 'suppliers', '#/invoices': 'customer_balances', '#/accounting': 'trial_balance',
-  '#/hrm': 'employees', '#/clinic': 'patients', '#/school': 'learners', '#/property': 'leases', '#/hire': 'hire_items', '#/fleet': 'vehicles', '#/rooms': 'rooms', '#/maintenance': 'equipment', '#/sites': 'sites', '#/pipeline': 'leads', '#/farm': 'farm_animals' };
+  '#/hrm': 'employees', '#/clinic': 'patients', '#/school': 'learners', '#/property': 'leases', '#/hire': 'hire_items', '#/water': 'water_accounts', '#/fleet': 'vehicles', '#/rooms': 'rooms', '#/maintenance': 'equipment', '#/sites': 'sites', '#/pipeline': 'leads', '#/farm': 'farm_animals' };
 
 /* ---------------------------------------------------------------- templates */
 export function template(k) {
@@ -413,7 +429,7 @@ export async function importer(view) {
     $$('[data-tpl]').forEach(b => b.onclick = () => template(KINDS.find(x => x.key === b.dataset.tpl)));
     return;
   }
-  view.innerHTML = page(`${L('Import', 'Kenya')}: ${esc(L(...k.title))}`, `<button class="btn" id="tpl">⬇ ${L('Template', 'Template')}</button>`,
+  view.innerHTML = page(`${L('Import', 'Kenya')}: ${L(...k.title)}`, `<button class="btn" id="tpl">⬇ ${L('Template', 'Template')}</button>`,
     `<div class="card" style="margin-bottom:12px"><p style="margin-top:0">${esc(L(...k.desc))}</p>${k.note ? `<small class="help-note">${esc(L(...k.note))}</small>` : ''}
       <div class="row wrap" style="gap:14px;margin-top:10px"><label class="field"><span>${L('Excel (.xlsx) or CSV file', 'Faele ea Excel (.xlsx) kapa CSV')}</span><input type="file" id="ff" accept=".xlsx,.xlsm,.csv,.txt,text/csv"></label>
       <label class="field"><span>${L('Dates in the file are written', 'Matsatsi a ngotsoe')}</span><select id="mdy"><option value="">${L('day/month/year (31/01/2026)', 'letsatsi/khoeli/selemo (31/01/2026)')}</option><option value="1">${L('month/day/year (01/31/2026)', 'khoeli/letsatsi/selemo')}</option></select></label>

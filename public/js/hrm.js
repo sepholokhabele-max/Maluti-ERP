@@ -1,4 +1,5 @@
 // HR & Payroll with Lesotho PAYE
+import { docButton } from './legalui.js';
 import { state, GET, POST, PUT, DEL, esc, $, $$, toast, err, can, money, modal, confirmBox, promptBox, formHtml, readForm, tableHtml, badge, page, d, dt, today, query, printHtml, round2 } from './core.js';
 
 const TABS = [['employees', 'Employees'], ['leave', 'Leave'], ['payroll', 'Payroll'], ['paye', 'PAYE return'], ['settings', 'Settings']];
@@ -76,7 +77,7 @@ export async function employee(view, [id]) {
   const depts = await GET('/hrm/departments');
   const f = EMP_FIELDS(depts, await GET('/users').catch(() => []));
   const p = e.pay_preview;
-  view.innerHTML = page(`${fullName(e)} ${e.code ? `· ${e.code}` : ''}`, `<button class="btn" id="edit">Edit details</button>${can('payroll') ? '<button class="btn btn-primary" id="addItem">＋ Allowance / deduction</button>' : ''}<button class="btn" id="addLeave">＋ Leave</button>`, `
+  view.innerHTML = page(`${fullName(e)} ${e.code ? `· ${e.code}` : ''}`, `<button class="btn" id="edit">Edit details</button>${can('legal') || can('hrm') ? docButton('employment', e.id) : ''}${can('payroll') ? '<button class="btn btn-primary" id="addItem">＋ Allowance / deduction</button>' : ''}<button class="btn" id="addLeave">＋ Leave</button>`, `
     <div class="cols cols-4" style="margin-bottom:14px">
       <div class="kpi"><div class="label">Basic salary</div><div class="value">${money(e.basic_salary)}</div><div class="hint">${esc(e.job_title || '')} · ${esc(e.department || 'no department')}</div></div>
       <div class="kpi"><div class="label">Gross this month</div><div class="value">${money(p.gross)}</div><div class="hint">Taxable ${money(p.taxable)}</div></div>
@@ -130,7 +131,7 @@ async function leaveDialog({ employee: emp, onSaved }) {
   modal({ title: `Book leave${emp ? ' — ' + fullName(emp) : ''}`, size: 'lg', body: formHtml(f, { start_date: today(), end_date: today() }),
     actions: [{ label: 'Cancel' }, { label: 'Save request', cls: 'btn-primary', onClick: async (c, r) => {
       const v = readForm(r, f); if (v.days === null) delete v.days;
-      const x = await POST('/hrm/leave', { ...v, employee_id: emp ? emp.id : v.employee_id }); c(); toast(`Leave request saved (${x.days} day${x.days == 1 ? '' : 's'})`); onSaved && onSaved();
+      const x = await POST('/hrm/leave', { ...v, employee_id: emp ? emp.id : v.employee_id }); c(); toast(`Leave request saved (${x.days} day${x.days == 1 ? '' : 's'})${x.message ? ' – ' + x.message : ''}`); onSaved && onSaved();
     } }] });
 }
 
@@ -201,7 +202,7 @@ export async function payrun(view, [id]) {
   const reload = () => payrun(view, [id]);
   const on = (sel, fn) => { const el = $(sel); if (el) el.onclick = async () => { el.disabled = true; try { await fn(); } catch (e) { err(e); } el.disabled = false; }; };
   on('#recalc', async () => { await POST(`/hrm/payroll/${id}/recalculate`); toast('Recalculated'); reload(); });
-  on('#approve', async () => { if (!(await confirmBox(`Approve payroll for ${periodLabel(run.period)}? Gross ${money(run.gross_total)}, PAYE ${money(run.paye_total)}, net ${money(run.net_total)} will be posted to the accounts.`, { okLabel: 'Approve & post' }))) return; await POST(`/hrm/payroll/${id}/approve`); toast('Payroll approved'); reload(); });
+  on('#approve', async () => { if (!(await confirmBox(`Approve payroll for ${periodLabel(run.period)}? Gross ${money(run.gross_total)}, PAYE ${money(run.paye_total)}, net ${money(run.net_total)} will be posted to the accounts.`, { okLabel: 'Approve & post' }))) return; const s = await POST(`/hrm/payroll/${id}/approve`); toast(s.message || 'Payroll approved'); reload(); });
   on('#paid', async () => { if (!(await confirmBox(`Record that net salaries of ${money(run.net_total)} have been paid (bank / cash / mobile money per employee)?`, { okLabel: 'Mark paid' }))) return; await POST(`/hrm/payroll/${id}/pay`, {}); toast('Salaries marked paid'); reload(); });
   on('#reopen', async () => { if (!(await confirmBox('Reopen this run? Its ledger postings will be reversed.', { danger: true, okLabel: 'Reopen' }))) return; await POST(`/hrm/payroll/${id}/reopen`); reload(); });
   on('#del', async () => { if (!(await confirmBox('Delete this draft payroll run?', { danger: true, okLabel: 'Delete' }))) return; await DEL('/hrm/payroll/' + id); location.hash = '#/hrm?tab=payroll'; });

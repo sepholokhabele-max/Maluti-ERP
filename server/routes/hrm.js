@@ -3,6 +3,7 @@ const express = require('express');
 const db = require('../db');
 const payroll = require('../services/payroll');
 const { requirePerm } = require('../auth');
+const gov = require('../services/governance');
 const { ah, bad, notFound, round2, pick, today } = require('../util');
 
 const r = express.Router();
@@ -155,9 +156,13 @@ r.post('/leave', requirePerm('hrm'), ah(async (req, res) => {
   if (overlap) throw bad('This employee already has leave booked in those dates');
   const ins = await db.query('INSERT INTO leave_requests (employee_id, leave_type_id, start_date, end_date, days, reason, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
     [b.employee_id, b.leave_type_id, b.start_date, b.end_date, days, b.reason || null, req.user.id]);
-  res.json({ id: ins.insertId, days });
+  const e = await db.one('SELECT first_name, last_name, user_id FROM employees WHERE id = ?', [b.employee_id]);
+  const g = await db.tx(c => gov.request(c, { doc_type: 'leave', doc_id: ins.insertId, amount: days, requester_id: (e && e.user_id) || req.user.id, employee_id: b.employee_id,
+    summary: `Leave: ${e ? e.first_name + ' ' + e.last_name : ''} – ${days} day(s) from ${b.start_date}`, link: '#/hrm?tab=leave' }));
+  res.json({ id: ins.insertId, days, ...(g.governed ? { message: `Sent to ${g.next} for approval` } : {}) });
 }));
-r.post('/leave/:id/:action(approve|reject|cancel)', requirePerm('hrm'), ah(async (req, res) => {
+const leaveGate = (req, res, next) => req.params.action === 'cancel' ? requirePerm('hrm')(req, res, next) : gov.gate('leave', 'hrm')(req, res, next);
+r.post('/leave/:id/:action(approve|reject|cancel)', leaveGate, ah(async (req, res) => {
   const l = await db.one('SELECT * FROM leave_requests WHERE id = ?', [req.params.id]);
   if (!l) throw notFound('Leave request');
   const to = { approve: 'approved', reject: 'rejected', cancel: 'cancelled' }[req.params.action];
@@ -167,8 +172,18 @@ r.post('/leave/:id/:action(approve|reject|cancel)', requirePerm('hrm'), ah(async
     if (bal && Number(bal.days_per_year) > 0 && Number(l.days) > Number(bal.balance) && !req.body.allow_negative)
       throw bad(`Only ${bal.balance} day(s) of ${bal.name} left. Approve anyway with "allow negative".`);
   }
-  await db.query('UPDATE leave_requests SET status = ?, decided_by = ?, decided_at = NOW() WHERE id = ?', [to, req.user.id, l.id]);
-  res.json({ ok: true });
+  const e = await db.one('SELECT user_id FROM employees WHERE id = ?', [l.employee_id]);
+  const msg = await db.tx(async c => {
+    if (req.params.action === 'reject') await gov.reject(c, req.user, { doc_type: 'leave', doc_id: l.id, note: req.body.reason });
+    if (req.params.action === 'cancel') await c.query(`UPDATE approval_requests SET status = 'cancelled', decided_at = NOW() WHERE doc_type = 'leave' AND doc_id = ? AND status = 'pending'`, [l.id]);
+    if (req.params.action === 'approve') {
+      const g = await gov.authorize(c, req.user, { doc_type: 'leave', doc_id: l.id, amount: Number(l.days), requester_id: (e && e.user_id) || l.created_by, employee_id: l.employee_id, link: '#/hrm?tab=leave', note: req.body.note });
+      if (!g.final) return g.message;
+    }
+    await c.query('UPDATE leave_requests SET status = ?, decided_by = ?, decided_at = NOW() WHERE id = ?', [to, req.user.id, l.id]);
+    return null;
+  });
+  res.json({ ok: true, ...(msg ? { status: 'pending', message: msg } : {}) });
 }));
 
 // ---------- payroll runs ----------
@@ -221,7 +236,7 @@ r.delete('/payroll/:id', requirePerm('payroll'), ah(async (req, res) => {
   if (!x.affectedRows) throw bad('Only draft runs can be deleted');
   res.json({ ok: true });
 }));
-r.post('/payroll/:id/approve', requirePerm('payroll'), ah(async (req, res) => { await payroll.approve(req.user, Number(req.params.id)); res.json({ ok: true }); }));
+r.post('/payroll/:id/approve', gov.gate('payroll', 'payroll'), ah(async (req, res) => { const m = await payroll.approve(req.user, Number(req.params.id)); res.json({ ok: true, ...(m ? { status: 'draft', message: m } : {}) }); }));
 r.post('/payroll/:id/pay', requirePerm('payroll'), ah(async (req, res) => { await payroll.markPaid(req.user, Number(req.params.id), req.body); res.json({ ok: true }); }));
 r.post('/payroll/:id/reopen', requirePerm('payroll'), ah(async (req, res) => { await payroll.reopen(req.user, Number(req.params.id)); res.json({ ok: true }); }));
 

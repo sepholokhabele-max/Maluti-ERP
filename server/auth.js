@@ -5,12 +5,12 @@ const { HttpError } = require('./util');
 
 const ROLE_PERMS = {
   admin: ['*'],
-  manager: ['dashboard', 'pos', 'pos.refund', 'pos.discount', 'pos.void', 'catalog', 'inventory', 'partners', 'purchasing',
+  manager: ['dashboard', 'governance', 'legal', 'audit', 'finance.close', 'assets', 'paypartners', 'procurement', 'procurement.approve', 'pos', 'pos.refund', 'pos.discount', 'pos.void', 'catalog', 'inventory', 'partners', 'purchasing',
     'invoicing', 'accounting', 'reports', 'vas', 'kitchen', 'users', 'sessions', 'crm', 'recon', 'recon.approve', 'hrm', 'payroll',
-    'sales', 'expenses.approve', 'purchase.approve', 'attendance', 'maintenance', 'projects', 'helpdesk', 'property', 'school', 'sites', 'reminders', 'rooms', 'fleet', 'hire', 'patients', 'farm', 'campaigns'],
-  accountant: ['dashboard', 'partners', 'purchasing', 'invoicing', 'accounting', 'reports', 'inventory', 'crm', 'recon', 'recon.approve', 'hrm', 'payroll',
-    'sales', 'expenses.approve', 'attendance', 'projects', 'helpdesk', 'property', 'school', 'reminders', 'rooms', 'fleet', 'hire', 'farm'],
-  cashier: ['pos', 'vas', 'helpdesk'],
+    'sales', 'expenses.approve', 'purchase.approve', 'attendance', 'maintenance', 'projects', 'helpdesk', 'property', 'school', 'sites', 'reminders', 'rooms', 'fleet', 'hire', 'patients', 'farm', 'campaigns', 'water', 'water.vend'],
+  accountant: ['dashboard', 'legal', 'finance.close', 'assets', 'paypartners', 'procurement', 'partners', 'purchasing', 'invoicing', 'accounting', 'reports', 'inventory', 'crm', 'recon', 'recon.approve', 'hrm', 'payroll',
+    'sales', 'expenses.approve', 'attendance', 'projects', 'helpdesk', 'property', 'school', 'reminders', 'rooms', 'fleet', 'hire', 'farm', 'water'],
+  cashier: ['pos', 'vas', 'helpdesk', 'water.vend'],
   waiter: ['pos'],
   bartender: ['pos', 'vas'],
   kitchen: ['kitchen'],
@@ -19,12 +19,17 @@ const ROLE_PERMS = {
   supervisor: ['sites', 'attendance'],
   receptionist: ['rooms', 'pos', 'crm', 'patients'],
   clinician: ['patients', 'helpdesk'],
-  farmworker: ['farm', 'attendance']
+  farmworker: ['farm', 'attendance'],
+  meterreader: ['water.read', 'attendance'],
+  // external auditors: read the books and run the audit tools, change nothing
+  auditor: ['audit', 'accounting.view', 'reports', 'dashboard'],
+  // the internal audit function: independent of management, reports to the audit committee
+  internal_auditor: ['internal_audit', 'audit', 'accounting.view', 'reports', 'dashboard']
 };
 
 function can(user, perm) {
   const perms = ROLE_PERMS[user.role] || [];
-  return perms.includes('*') || perms.includes(perm);
+  return perms.includes('*') || String(perm).split('|').some(p => perms.includes(p));
 }
 
 async function issueToken(userId) {
@@ -67,8 +72,9 @@ async function requireAuth(req, res, next) {
   } catch (e) { next(e); }
 }
 
+/** requirePerm('accounting') or requirePerm('accounting|accounting.view') – any one of them */
 const requirePerm = perm => (req, res, next) => {
-  if (!req.user || !can(req.user, perm)) return next(new HttpError(403, `You do not have permission: ${perm}`));
+  if (!req.user || !String(perm).split('|').some(p => can(req.user, p))) return next(new HttpError(403, `You do not have permission: ${String(perm).split('|')[0]}`));
   next();
 };
 

@@ -14,7 +14,8 @@ const SOURCES = {
   school: 'i.learner_id IS NOT NULL',
   contracts: 'i.contract_id IS NOT NULL AND i.lease_id IS NULL',
   hire: 'i.hire_order_id IS NOT NULL',
-  invoices: 'i.lease_id IS NULL AND i.learner_id IS NULL AND i.contract_id IS NULL AND i.hire_order_id IS NULL'
+  water: 'i.water_account_id IS NOT NULL',
+  invoices: 'i.lease_id IS NULL AND i.learner_id IS NULL AND i.contract_id IS NULL AND i.hire_order_id IS NULL AND i.water_account_id IS NULL'
 };
 const DEFAULT_TEMPLATES = {
   sms: 'Dear {name}, M{amount} is overdue on your {company} account since {oldest_date}{details}. Please pay soon. Queries: {phone}',

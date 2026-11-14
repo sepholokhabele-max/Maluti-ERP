@@ -44,12 +44,17 @@ async function status() {
   const daysLeft = Math.ceil((new Date(trialEnds + 'T23:59:59Z') - Date.now()) / 86400000);
   const docs = await db.query(`SELECT id, note doc, filename, size, created_at FROM attachments WHERE entity = 'kyc' ORDER BY id`).catch(() => []);
   const kyc = a.kyc || {};
-  const missing = kyc.path === 'merchant' ? [] : KYC_DOCS.filter(d => d.required && !docs.some(x => x.doc === d.key)).map(d => d.key);
+  // the documents needed depend on the kind of organisation (an informal trader has no registration certificate)
+  const ent = require('./entity').byKey(((await db.getSetting('company', {})) || {}).entity_type);
+  const docTypes = KYC_DOCS.map(d => ({ ...d, required: ent && ent.kyc[d.key] !== undefined ? ent.kyc[d.key] : d.required,
+    ...(d.key === 'registration' && ent && ent.key === 'informal' ? { name: 'Market / hawker\'s permit or a letter from the chief or council (if you have one)', name_st: 'Tumello ea ho rekisa kapa lengolo la morena (haeba u na le lona)' } : {}),
+    ...(d.key === 'registration' && ent && ent.key === 'government' ? { name: 'Letter of authority from the accounting officer', name_st: 'Lengolo la tumello le tsoang ho ofisiri ea lichelete' } : {}) }));
+  const missing = kyc.path === 'merchant' ? [] : docTypes.filter(d => d.required && !docs.some(x => x.doc === d.key)).map(d => d.key);
   return {
     activated: valid, licence: lic ? { business: lic.b, issued: lic.d, expires: lic.e || null } : null, expired_licence: !!lic && !valid,
     trial_ends: trialEnds, days_left: Math.max(0, daysLeft), locked: !valid && daysLeft <= 0, install_id: a.install_id,
     kyc: { path: kyc.path || null, merchant_no: kyc.merchant_no || null, merchant_phone: kyc.merchant_phone || null, submitted_at: kyc.submitted_at || null, ready: !!kyc.path && !missing.length, missing },
-    documents: docs, doc_types: KYC_DOCS, kyc_email: KYC_EMAIL
+    documents: docs, doc_types: docTypes, entity_type: ent ? ent.key : null, kyc_email: KYC_EMAIL
   };
 }
 

@@ -5,8 +5,6 @@ const assert = require('assert');
 const { start } = require('../app');
 
 const DB = { host: process.env.DB_HOST || 'localhost', port: 3306, user: process.env.DB_USER || 'erp', password: process.env.DB_PASSWORD || 'erp123', database: process.env.DB_NAME || 'maluti_smoke' };
-// the test passes the DB in through /db-config itself; don't let the server think it's admin-managed
-delete process.env.DB_HOST; delete process.env.DB_USER; delete process.env.DB_PASSWORD; delete process.env.DB_NAME;
 let base, token;
 
 async function api(method, url, body, expectFail) {
@@ -576,7 +574,7 @@ const ok = (m) => console.log('  ✓', m);
     // ---- business types & modules, branches, transfers, branch profit ----
     let biz = await api('GET', '/business');
     // the setup-guide step above chose butchery + bar, which switched on their modules
-    assert(biz.configured && biz.modules.includes('pos') && biz.modules.includes('butchery') && biz.modules.includes('bar') && biz.modules.includes('restaurant') && biz.modules.includes('locations') && biz.all_types.length === 16 && biz.all_modules.length >= 30);
+    assert(biz.configured && biz.modules.includes('pos') && biz.modules.includes('butchery') && biz.modules.includes('bar') && biz.modules.includes('restaurant') && biz.modules.includes('locations') && biz.all_types.length === 17 && biz.all_modules.length >= 30);
     const sumCheck = async () => { const st = await api('GET', '/locations/stock'); for (const r of st.rows) { const s = Object.values(r.at).reduce((a, x) => a + x.qty, 0); assert(Math.abs(s - r.stock_qty) < 0.001, `${r.name}: locations ${s} vs total ${r.stock_qty}`); } return st; };
     await sumCheck();
     let locs = await api('GET', '/locations'); const MAIN = locs.find(l => l.is_default); const TRANSIT = locs.find(l => l.kind === 'transit');
@@ -1536,6 +1534,558 @@ const ok = (m) => console.log('  ✓', m);
     await api('PUT', '/smartel/settings', { enabled: false }); await mock.close();
     const tbp = await api('GET', '/reports/tb?from=2000-01-01&to=2999-12-31'); assert.strictEqual(tbp.debit, tbp.credit);
     ok('customer portal: private link with QR, balance & statement, proof-of-payment upload becomes a task, MyWallet payment via Smartel put on the account once, links can be renewed');
+  }
+  { // ---------- water utility: prepaid + postpaid
+    await api('PUT', '/water/settings', { connection_fee: 115, reconnection_fee: 230, due_days: 21, debt_recovery_pct: 25, token_provider: 'sandbox', disconnect_after_days: 30, disconnect_min_amount: 50, min_vend: 5, max_vend: 5000 });
+    const z = await api('POST', '/water/zones', { name: 'Ha Thetsane', bulk_meter_no: 'BULK-1', active: 1 });
+    await api('POST', '/water/tariffs', { name: 'Domestic', category: 'domestic', blocks: [{ upto: 6 }], service_charge: 20, tax_rate: 0, active: 1 }, true); // a block needs a price
+    const t = await api('POST', '/water/tariffs', { name: 'Domestic', category: 'domestic', blocks: [{ upto: 6, price: 5 }, { upto: 15, price: 10 }, { upto: null, price: 20 }], service_charge: 20, sewer_pct: 0, tax_rate: 0, active: 1 });
+    const calc = await api('GET', `/water/tariffs/${t.id}/calc?m3=12`); assert.strictEqual(Number(calc.water || calc.water_amount), 90, JSON.stringify(calc));
+    // WASCO (LEWA) tariffs: domestic bands, standing charge free in band A, sewerage per kl on 85% / 65% of the water used, VAT 15%
+    const wp = await api('POST', '/water/tariffs/preset/wasco', { tax_rate: 15 }); assert.strictEqual(wp.tariffs.length, 6);
+    assert.strictEqual((await api('POST', '/water/tariffs/preset/wasco', {})).tariffs.filter(x => x.updated).length, 6); // loading again updates, never duplicates
+    const wt = await api('GET', '/water/tariffs'), WD = wt.find(x => x.name === 'WASCO Domestic');
+    let wc = await api('GET', `/water/tariffs/${WD.id}/calc?m3=4`); assert.deepStrictEqual([wc.water, wc.service, wc.sewer, wc.total], [24.44, 0, 0, 28.11]);
+    wc = await api('GET', `/water/tariffs/${WD.id}/calc?m3=12&sewer_type=waterborne`); assert.deepStrictEqual([wc.water, wc.service, wc.sewer, wc.vat, wc.total], [119.08, 49.82, 100.47, 40.41, 309.78]);
+    wc = await api('GET', `/water/tariffs/${WD.id}/calc?m3=10&sewer_type=non_waterborne`); assert.strictEqual(wc.sewer, 64.03); // 6.5 kl × 9.85
+    const WB = wt.find(x => x.name === 'WASCO Industry & business'); wc = await api('GET', `/water/tariffs/${WB.id}/calc?m3=100`); assert.strictEqual(wc.net, 2143.17); // 100 × 16.64 + 479.17
+    { const C = await api('POST', '/water/accounts', { customer_name: 'Ausi Wasco', billing: 'prepaid', sewer_type: 'waterborne', tariff_id: WD.id, zone_id: z.id, meter_serial: 'PP-9001', initial_reading: 0 });
+      const v1 = await api('POST', '/water/vend', { account_id: C.id, amount: 50, method_id: M('Cash').id }); assert.strictEqual(v1.service_recovered, 0); assert.strictEqual(v1.units_m3, 3.002); // band A: no standing charge
+      const v3 = await api('POST', '/water/vend', { account_id: C.id, amount: 200, method_id: M('Cash').id }); assert.strictEqual(v3.service_recovered, 57.29); assert(v3.units_m3 > 1.998 && v3.sewer_net > 0); // past band A: standing charge incl. VAT
+      const tb0 = await api('GET', '/reports/tb?from=2000-01-01&to=2999-12-31'); assert.strictEqual(tb0.debit, tb0.credit); }
+    // postpaid customer moving in from an old system with the meter already in the ground
+    const A = await api('POST', '/water/accounts', { customer_name: 'Mpho Water', phone: '58000111', billing: 'postpaid', tariff_id: t.id, zone_id: z.id, route_seq: 1, address: 'Ha Thetsane', meter_serial: 'WM-1001', initial_reading: 100, connection_date: '2026-01-05' });
+    let a = await api('GET', '/water/accounts/' + A.id); assert.strictEqual(a.status, 'active'); assert(/^W\d+/.test(a.account_no));
+    await api('POST', '/water/readings', { account_id: A.id, reading: 90, reading_date: '2026-02-03' }, true); // less than last time
+    const rd = await api('POST', '/water/readings', { account_id: A.id, reading: 112, reading_date: '2026-02-03' }); assert.strictEqual(Number(rd.consumption), 12);
+    const route = await api('GET', `/water/route?period=2026-02&zone_id=${z.id}`); assert.strictEqual(route.read, 1);
+    const pv = await api('GET', '/water/billing/preview?period=2026-02'); assert.strictEqual(pv.bills.length, 1); assert.strictEqual(pv.total, 110); // 6×5 + 6×10 + 20 service
+    const run = await api('POST', '/water/billing/run', { period: '2026-02', run_date: '2026-02-05' }); assert.strictEqual(run.bills, 1); assert.strictEqual(run.total, 110);
+    await api('POST', '/water/billing/run', { period: '2026-02', run_date: '2026-02-05' }, true); // never twice
+    a = await api('GET', '/water/accounts/' + A.id); assert.strictEqual(a.arrears, 110); assert.strictEqual(a.bills[0].invoice_number.slice(0, 4), 'INV/');
+    // pay part of the bill at the till: lands in the cash-up
+    const tt = (await api('GET', '/pos/terminals')).find(x => x.id === retail.id); const sid = tt.open_session_id || (await api('POST', '/pos/sessions/open', { terminal_id: retail.id, opening_cash: 0 })).id;
+    const before = (await api('GET', '/pos/sessions/' + sid)).expected_cash_now;
+    const py = await api('POST', `/water/accounts/${A.id}/pay`, { amount: 50, method_id: M('Cash').id, session_id: sid }); assert.strictEqual(py.amount, 50);
+    assert.strictEqual(round((await api('GET', '/pos/sessions/' + sid)).expected_cash_now - before), 50);
+    // prepaid customer: new connection job → fee invoice → plumber installs the meter → active
+    const B = await api('POST', '/water/accounts', { customer_name: 'Lineo Prepaid', phone: '58000222', billing: 'prepaid', tariff_id: t.id, zone_id: z.id });
+    assert.strictEqual((await api('GET', '/water/accounts/' + B.id)).status, 'pending');
+    await api('POST', '/water/vend', { account_id: B.id, amount: 50, method_id: M('Cash').id }, true); // not connected yet
+    const job = await api('POST', '/water/jobs', { kind: 'new_connection', account_id: B.id }); assert(/^WJ\//.test(job.number));
+    await api('POST', '/water/jobs', { kind: 'new_connection', account_id: B.id }, true); // one open at a time
+    await api('POST', '/water/meters', { serials: 'PP-2001\nPP-2002', kind: 'prepaid' });
+    await api('POST', `/water/jobs/${job.id}/done`, { meter_serial: 'WM-1001' }, true); // already on another connection
+    await api('POST', `/water/jobs/${job.id}/done`, { meter_serial: 'PP-2001', reading: 0, result: 'Connected' });
+    let b = await api('GET', '/water/accounts/' + B.id); assert.strictEqual(b.status, 'active'); assert.strictEqual(b.arrears, 115); assert.strictEqual(b.meter_serial, 'PP-2001');
+    const q = await api('GET', `/water/vend/quote?account_id=${B.id}&amount=100`); assert.strictEqual(q.debt_recovered, 25); assert.strictEqual(q.service_recovered, 20); assert.strictEqual(q.units_m3, 8.5);
+    const v = await api('POST', '/water/vend', { lookup: 'PP-2001', amount: 100, method_id: M('Cash').id, session_id: sid });
+    assert(/^TEST \d{4}-/.test(v.token)); assert.strictEqual(v.units_m3, 8.5); assert(/^WV\//.test(v.number));
+    const v2 = await api('POST', '/water/vend', { account_id: B.id, amount: 40, method_id: M('Cash').id }); assert.strictEqual(v2.service_recovered, 0); assert.strictEqual(v2.units_m3, 3); // 10 to old debt, 30 buys 3 m³ in the second block
+    b = await api('GET', '/water/accounts/' + B.id); assert.strictEqual(b.arrears, 80); assert.strictEqual(b.month_m3, 11.5);
+    await api('POST', '/water/vend', { account_id: A.id, amount: 50, method_id: M('Cash').id }, true); // postpaid cannot buy tokens
+    // disconnection for the late postpaid bill, pay up, reconnection fee
+    const dl = await api('GET', '/water/disconnections'); assert(dl.due.find(x => x.id === A.id && x.arrears === 60));
+    const dj = await api('POST', '/water/disconnections', { account_ids: [A.id] }); assert.strictEqual(dj.jobs.length, 1);
+    await api('POST', `/water/jobs/${dj.jobs[0].id}/done`, { result: 'Cut at the stopcock' });
+    assert.strictEqual((await api('GET', '/water/accounts/' + A.id)).status, 'disconnected');
+    await api('POST', `/water/accounts/${A.id}/pay`, { amount: 60, method_id: M('Cash').id });
+    assert((await api('GET', '/water/disconnections')).ready_to_reconnect.find(x => x.id === A.id));
+    const rj = await api('POST', '/water/jobs', { kind: 'reconnection', account_id: A.id }); await api('POST', `/water/jobs/${rj.id}/done`, {});
+    a = await api('GET', '/water/accounts/' + A.id); assert.strictEqual(a.status, 'active'); assert.strictEqual(a.arrears, 230);
+    // deposit, then close with a final reading: the deposit pays what is owed and the rest is refunded
+    await api('POST', `/water/accounts/${A.id}/deposit`, { amount: 400, method_id: M('Cash').id });
+    const cl = await api('POST', `/water/accounts/${A.id}/close`, { final_reading: 115, refund_method_id: M('Cash').id });
+    assert.strictEqual(cl.deposit_applied, 245); assert.strictEqual(cl.deposit_refunded, 155); // 230 reconnection + 3 m³ × 5
+    a = await api('GET', '/water/accounts/' + A.id); assert.strictEqual(a.status, 'closed'); assert.strictEqual(a.arrears, 0);
+    // water loss for the zone, dashboard, reminders source
+    await api('PUT', `/water/zones/${z.id}/bulk`, { period: '2026-02', bulk_m3: 20 });
+    const nrw = (await api('GET', '/water/nrw?period=2026-02')).zones.find(x => x.zone_id === z.id); assert.strictEqual(Number(nrw.lost), 8); assert.strictEqual(Number(nrw.loss_pct), 40);
+    const dash = await api('GET', '/water/dashboard?period=' + new Date().toISOString().slice(0, 7)); assert.strictEqual(dash.prepaid.sales, 4); assert.strictEqual(round(dash.prepaid.amount), 390);
+    await api('GET', '/reminders/due?source=water');
+    const tbw = await api('GET', '/reports/tb?from=2000-01-01&to=2999-12-31'); assert.strictEqual(tbw.debit, tbw.credit);
+    const bal = code => { const r = (tbw.rows || tbw.accounts || []).find(x => x.code === code); return r ? round(Number(r.credit || 0) - Number(r.debit || 0)) : 0; };
+    assert.strictEqual(bal('4876'), 345); assert.strictEqual(bal('2430'), 0); assert(bal('4870') > 0 && bal('4875') > 0, 'water sales and service charges booked');
+    ok('water utility: tariffs with blocks, postpaid reading → bill run → till payment in the cash-up, prepaid connection job → STS sandbox token with debt recovery, disconnection / reconnection, deposit and close, water loss per zone, books balance');
+  }
+  { // ---------- payment partners: M-Pesa collects water bills, prepaid tokens and invoices through the collections API
+    const C = async (key, method, url, body) => { const r = await fetch(base + '/api/collect/v1' + url, { method, headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: 'Bearer ' + key } : {}) }, body: body ? JSON.stringify(body) : undefined }); return { status: r.status, body: await r.json() }; };
+    const t = (await api('GET', '/water/tariffs')).find(x => x.name === 'WASCO Domestic');
+    const P1 = await api('POST', '/water/accounts', { customer_name: 'Ntate Collect', billing: 'postpaid', tariff_id: t.id, meter_serial: 'WM-7001', initial_reading: 10, connection_date: '2026-02-01' });
+    await api('POST', '/water/readings', { account_id: P1.id, reading: 18, reading_date: '2026-03-02' });
+    await api('POST', '/water/billing/run', { period: '2026-03', run_date: '2026-03-03', account_ids: [P1.id] });
+    const due0 = (await api('GET', '/water/accounts/' + P1.id)).arrears; assert(due0 > 100);
+    const P2 = await api('POST', '/water/accounts', { customer_name: 'Mme Token', billing: 'prepaid', tariff_id: t.id, meter_serial: 'PP-7001', initial_reading: 0 });
+    const pp = await api('POST', '/paypartners', { name: 'M-Pesa (Vodacom Lesotho)', kind: 'mobile_money', commission_pct: 1, commission_fixed: 0.5, min_amount: 5, max_amount: 5000, scopes: ['water_bill', 'water_token', 'invoice'] });
+    assert(/^sk_test_[a-f0-9]{48}$/.test(pp.key));
+    assert.strictEqual((await C(null, 'GET', '/ping')).status, 401); assert.strictEqual((await C('sk_test_' + '0'.repeat(48), 'GET', '/ping')).status, 401);
+    assert.strictEqual((await C(pp.key, 'GET', '/ping')).body.mode, 'test');
+    let lk = await C(pp.key, 'GET', '/accounts/' + (await api('GET', '/water/accounts/' + P1.id)).account_no); assert.strictEqual(lk.body.type, 'water_bill'); assert.strictEqual(lk.body.amount_due, due0); assert.strictEqual(lk.body.customer, 'Ntate C.');
+    assert.strictEqual((await C(pp.key, 'GET', '/accounts/NOPE-1')).body.error.code, 'ACCOUNT_NOT_FOUND');
+    const acc1 = lk.body.account;
+    let x = await C(pp.key, 'POST', '/payments', { reference: 'T-1', account: acc1, amount: 50 }); assert.strictEqual(x.body.status, 'test'); // test mode: nothing recorded
+    assert.strictEqual((await api('GET', '/water/accounts/' + P1.id)).arrears, due0);
+    const live = await api('POST', `/paypartners/${pp.id}/key`, { mode: 'live' }); assert(/^sk_live_/.test(live.key));
+    assert.strictEqual((await C(pp.key, 'GET', '/ping')).status, 401); // the old key stopped working
+    x = await C(live.key, 'POST', '/payments', { reference: 'MP-0001', account: acc1, amount: 50, payer_phone: '+266 5812 3456' }); assert.strictEqual(x.body.status, 'completed', JSON.stringify(x.body));
+    assert.strictEqual(x.body.balance_after, round(due0 - 50)); assert.strictEqual((await api('GET', '/water/accounts/' + P1.id)).arrears, round(due0 - 50));
+    const again = await C(live.key, 'POST', '/payments', { reference: 'MP-0001', account: acc1, amount: 50 }); assert.strictEqual(again.body.duplicate, true); // never twice
+    assert.strictEqual((await api('GET', '/water/accounts/' + P1.id)).arrears, round(due0 - 50));
+    assert.strictEqual((await C(live.key, 'POST', '/payments', { reference: 'MP-0001', account: acc1, amount: 60 })).body.error.code, 'REFERENCE_REUSED');
+    assert.strictEqual((await C(live.key, 'POST', '/payments', { reference: 'MP-0002', account: acc1, amount: 0.001 })).body.error.code, 'AMOUNT_INVALID');
+    assert.strictEqual((await C(live.key, 'POST', '/payments', { reference: 'MP-0002', account: acc1, amount: 6000 })).body.error.code, 'AMOUNT_OUT_OF_RANGE');
+    // a prepaid token bought on the M-Pesa menu by meter number
+    x = await C(live.key, 'POST', '/payments', { reference: 'MP-0003', account: 'PP-7001', amount: 60 }); assert.strictEqual(x.status, 200, JSON.stringify(x.body));
+    assert(/^TEST \d{4}-/.test(x.body.token) && x.body.units_m3 > 0 && /^WV\//.test(x.body.receipt));
+    // the rest of the water bill paid by its invoice number
+    const invNo = (await api('GET', '/water/accounts/' + P1.id)).balance.invoices[0].number;
+    lk = await C(live.key, 'GET', '/accounts/' + encodeURIComponent(invNo)); assert.strictEqual(lk.body.type, 'invoice');
+    x = await C(live.key, 'POST', '/payments', { reference: 'MP-0004', account: invNo, amount: lk.body.amount_due }); assert.strictEqual(x.body.status, 'completed');
+    assert.strictEqual((await api('GET', '/water/accounts/' + P1.id)).arrears, 0);
+    // restrictions: kinds of payment and IP addresses
+    await api('PUT', '/paypartners/' + pp.id, { scopes: ['water_bill'] });
+    assert.strictEqual((await C(live.key, 'POST', '/payments', { reference: 'MP-0005', account: 'PP-7001', amount: 20 })).body.error.code, 'NOT_ALLOWED');
+    await api('PUT', '/paypartners/' + pp.id, { scopes: ['water_bill', 'water_token', 'invoice'], ip_allow: '10.9.9.9' });
+    assert.strictEqual((await C(live.key, 'GET', '/ping')).body.error.code, 'IP_NOT_ALLOWED');
+    await api('PUT', '/paypartners/' + pp.id, { ip_allow: '' });
+    await api('PUT', '/paypartners/' + pp.id, { status: 'suspended' }); assert.strictEqual((await C(live.key, 'GET', '/ping')).status, 403); await api('PUT', '/paypartners/' + pp.id, { status: 'active' });
+    // reconciliation: the partner's statement and ours agree; settlement clears 1180 and books commission
+    const st = (await C(live.key, 'GET', '/transactions?from=' + new Date().toISOString().slice(0, 10))).body;
+    const collected = round(50 + 60 + Number(lk.body.amount_due)); assert.strictEqual(st.count, 3); assert.strictEqual(st.total, collected);
+    const ppl = (await api('GET', '/paypartners')).find(p => p.id === pp.id); assert.strictEqual(round(ppl.unsettled), collected);
+    const stl = await api('POST', `/paypartners/${pp.id}/settle`, { method_id: M('Card').id, reference: 'SLB-778' });
+    assert.strictEqual(stl.collected, collected); assert.strictEqual(stl.commission, st.commission); assert.strictEqual(stl.received, round(collected - st.commission));
+    await api('POST', `/paypartners/${pp.id}/settle`, { method_id: M('Card').id }, true); // nothing left to settle
+    const tbp = await api('GET', '/reports/tb?from=2000-01-01&to=2999-12-31'); assert.strictEqual(tbp.debit, tbp.credit);
+    const bal = code => { const r = tbp.rows.find(y => y.code === code); return r ? round(Number(r.debit) - Number(r.credit)) : 0; };
+    assert.strictEqual(bal('1180'), 0); assert.strictEqual(bal('6420'), st.commission);
+    assert((await api('GET', '/paypartners/log')).some(l => l.status === 401));
+    ok('payment partners: test and live API keys, account lookup, idempotent bill payments, prepaid tokens and invoices through the API, scope / IP / suspension checks, statement, settlement with commission');
+  }
+  { // ---------- e-procurement: restricted tender with sealed online bids, committee scoring, preference points, standstill, challenge, contract; waiver; open notice
+    const dbm = require('../db');
+    const mk = async (name, username, role) => { await api('POST', '/users', { name, username, password: username + '1234', role, pin: String(Math.floor(1000 + Math.random() * 8999)) }); return { token: (await api('POST', '/login', { username, password: username + '1234' })).token, id: (await api('GET', '/users')).find(u => u.username === username).id }; };
+    const AP = await mk('Mme Approver', 'approver1', 'manager'), E1 = await mk('Ntate Chair', 'eval1', 'staff'), E2 = await mk('Ausi Member', 'eval2', 'staff');
+    const as = async (u, m, url, body, fail) => { const keep = token; token = u.token; try { return await api(m, url, body, fail); } finally { token = keep; } };
+    const S = async (name, pr) => (await api('POST', '/procurement/suppliers', { name, email: name.replace(/\W/g, '').toLowerCase() + '@example.ls', status: 'approved', tax_clearance_expiry: '2027-06-30', ...pr })).id;
+    const S1 = await S('Basali Build (Pty) Ltd', { citizen_pct: 100, women_pct: 100, size: 'small', district: 'Maseru' });
+    const S2 = await S('Foreign Mega Corp', { citizen_pct: 0, size: 'large', country: 'South Africa' });
+    const S3 = await S('Bacha Youth Works', { citizen_pct: 60, youth_pct: 60, size: 'medium', district: 'Leribe' });
+    const S4 = await S('Banned Traders', { status: 'debarred', debar_reason: 'Fraudulent documents in 2025' });
+    const sup = await api('GET', '/procurement/suppliers/' + S1); assert.strictEqual(sup.women_owned, true); assert.strictEqual(sup.pref_pct, 80);
+    const closing = new Date(Date.now() + 2 * 3600e3).toISOString();
+    const base0 = { title: 'Pipe fittings and installation', category: 'works', method: 'restricted', closing_at: closing, budget_code: '5500', department: 'Operations',
+      lines: [{ description: 'HDPE pipe 50 mm (100 m roll)', qty: 10, est_unit: 120 }, { description: 'Installation', qty: 1, est_unit: 600 }],
+      criteria: [{ kind: 'mandatory', name: 'Valid tax clearance' }, { kind: 'technical', name: 'Experience', max_points: 60 }, { kind: 'technical', name: 'Method statement', max_points: 40 }],
+      tech_weight: 50, price_weight: 40, pref_weight: 10, min_tech_pct: 50, committee: [{ user_id: E1.id, role: 'chair' }, { user_id: E2.id, role: 'member' }] };
+    await api('POST', '/tenders', { ...base0, method: 'rfq', estimated_value: 2000000 }, true); // above the RFQ limit
+    await api('POST', '/tenders', { ...base0, tech_weight: 60 }, true); // weights must add to 100
+    const T = (await api('POST', '/tenders', base0)).id;
+    await api('POST', `/tenders/${T}/submit`);
+    await api('POST', `/tenders/${T}/approve`, {}, true); // the preparer cannot approve
+    await as(E1, 'POST', `/tenders/${T}/approve`, {}, true); // no approval right
+    await as(AP, 'POST', `/tenders/${T}/approve`, { note: 'Budget available on 5500' });
+    await api('POST', `/tenders/${T}/publish`, { partner_ids: [S1, S2] }, true); // a restricted tender needs 3
+    await api('POST', `/tenders/${T}/publish`, { partner_ids: [S1, S2, S4] }, true); // debarred
+    const pub = await api('POST', `/tenders/${T}/publish`, { partner_ids: [S1, S2, S3] }); assert.strictEqual(pub.invited, 3);
+    const links = await api('GET', `/tenders/${T}/links`), L = pid => links.find(x => x.partner_id === pid).url.replace(/^https?:\/\/[^/]+/, base);
+    const page = await fetch(L(S1)); assert.strictEqual(page.status, 200); assert((await page.text()).includes('Submit your sealed bid'));
+    const tl = (await api('GET', '/tenders/' + T)).lines;
+    const bidFor = async (pid, p1, p2, extra = {}) => { const r = await fetch(L(pid) + '/bid', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lines: [{ line_id: tl[0].id, unit_price: p1 }, { line_id: tl[1].id, unit_price: p2 }], vat_rate: 15, delivery_days: 14, declaration: true, ...extra }) }); return { status: r.status, body: await r.json() }; };
+    assert.strictEqual((await bidFor(S1, 100, 500, { declaration: false })).status, 400); // must sign the declaration
+    assert.strictEqual((await bidFor(S1, 100, 500)).status, 200);
+    assert.strictEqual((await bidFor(S2, 85, 400)).status, 200); assert.strictEqual((await bidFor(S2, 80, 400)).body.replaced, true); // changed before closing
+    assert.strictEqual((await bidFor(S3, 90, 450)).status, 200);
+    await fetch(L(S2) + '/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: 'Is the pipe PN10 or PN16?' }) });
+    let t = await api('GET', '/tenders/' + T); assert(t.sealed && t.bids.length === 3 && t.bids.every(b => b.total === undefined)); // nobody sees prices before opening
+    await api('POST', `/tenders/clarifications/${t.clarifications[0].id}/answer`, { answer: 'PN16' });
+    await api('POST', `/tenders/${T}/addendum`, { text: 'Bring proof of HDPE welding certification.' });
+    await as(E1, 'POST', `/tenders/${T}/open`, { present: [E2.id] }, true); // still before closing
+    await dbm.query('UPDATE tenders SET closing_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 MINUTE) WHERE id = ?', [T]);
+    assert.strictEqual((await bidFor(S1, 1, 1)).status, 400); // late bid refused
+    assert.strictEqual((await api('GET', '/tenders/' + T)).status, 'closed');
+    await as(E1, 'POST', `/tenders/${T}/open`, {}, true); // two members must be present
+    await as(E1, 'POST', `/tenders/${T}/open`, { present: [E2.id] });
+    t = await as(E1, 'GET', '/tenders/' + T); assert.strictEqual(t.status, 'opened'); assert.strictEqual(t.bids.find(b => b.partner_id === S2).total, 1380);
+    const crit = t.criteria, B = pid => t.bids.find(b => b.partner_id === pid).id;
+    const sc = (pid, e, x) => as(E1, 'POST', `/tenders/${T}/score`, { bid_id: B(pid), scores: [{ criterion_id: crit.find(k => k.kind === 'mandatory').id, score: 1 }, { criterion_id: crit.find(k => k.name === 'Experience').id, score: e }, { criterion_id: crit.find(k => k.name === 'Method statement').id, score: x }] });
+    await sc(S1, 60, 40).then(() => assert.fail('scored without declaring'), () => {});
+    await as(E1, 'POST', `/tenders/${T}/declare`, { conflict: false });
+    await as(E2, 'POST', `/tenders/${T}/declare`, { conflict: true, note: 'My brother works at Bacha Youth Works' });
+    await as(E2, 'POST', `/tenders/${T}/score`, { bid_id: B(S3), scores: [] }, true); // conflicted member may not score
+    await as(E1, 'POST', `/tenders/${T}/score`, { bid_id: B(S1), scores: [{ criterion_id: crit[1].id, score: 99 }] }, true); // above the maximum
+    await sc(S1, 60, 40); await sc(S2, 30, 20); await sc(S3, 50, 30);
+    await as(E1, 'POST', `/tenders/${T}/evaluate`);
+    t = await as(E1, 'GET', '/tenders/' + T);
+    const bS = pid => t.bids.find(b => b.partner_id === pid);
+    assert.deepStrictEqual([bS(S1).price_score, bS(S1).pref_score, bS(S1).total_score, bS(S1).rank_no], [32, 8, 90, 1]); // 40 × 1380/1725, 10 × 80%, 50 × 100%
+    assert.deepStrictEqual([bS(S3).price_score, bS(S3).pref_score, bS(S3).total_score, bS(S3).rank_no], [35.56, 3.9, 79.46, 2]);
+    assert.deepStrictEqual([bS(S2).total_score, bS(S2).rank_no], [65, 3]); // cheapest, but weakest technically and no preference points
+    await api('POST', `/tenders/${T}/recommend`, { bid_id: B(S3) }, true); // not the top bid without reasons
+    await api('POST', `/tenders/${T}/recommend`, { bid_id: B(S1), reason: 'Highest score' });
+    const aw = await as(AP, 'POST', `/tenders/${T}/award`, {}); assert(aw.standstill_until > new Date().toISOString().slice(0, 10));
+    const ch = await fetch(L(S2) + '/challenge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'We were the cheapest bidder and our experience was under-scored by the committee.' }) }); assert.strictEqual(ch.status, 200);
+    assert.strictEqual((await fetch(L(S1) + '/challenge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'x'.repeat(40) }) })).status, 400); // the winner cannot
+    await api('POST', `/tenders/${T}/contract`, {}, true); // challenged
+    t = await api('GET', '/tenders/' + T); assert.strictEqual(t.status, 'challenged');
+    await as(AP, 'POST', `/tenders/challenges/${t.clarifications.find(q => q.kind === 'challenge').id}`, { decision: 'dismissed', answer: 'Scores were checked against the evaluation criteria; price carries 40 points only.' });
+    await api('POST', `/tenders/${T}/contract`, {}, true); // standstill still running
+    await dbm.query('UPDATE tenders SET standstill_until = DATE_SUB(CURDATE(), INTERVAL 1 DAY) WHERE id = ?', [T]);
+    const ct = await api('POST', `/tenders/${T}/contract`, { contract_end: '2027-03-31' }); assert.strictEqual(ct.total, 1725); assert(/^PO\//.test(ct.number));
+    await api('POST', `/tenders/${T}/rate`, { rating: 4, note: 'On time' });
+    assert.strictEqual(Number((await api('GET', '/procurement/suppliers/' + S1)).rating), 4);
+    // a waiver (direct procurement) with full justification
+    const wv = { title: 'Spare parts for the Grundfos borehole pump', category: 'goods', method: 'waiver', waiver_reason: 'proprietary', waiver_supplier_id: S2, lines: [{ description: 'Impeller kit', qty: 2, est_unit: 4000 }] };
+    await api('POST', '/tenders', { ...wv, waiver_justification: 'Needed' }, true);
+    const W = (await api('POST', '/tenders', { ...wv, waiver_justification: 'Only the manufacturer\'s agent supplies original impeller kits; non-original parts void the pump warranty.' })).id;
+    await api('POST', `/tenders/${W}/submit`); await as(AP, 'POST', `/tenders/${W}/approve`);
+    await api('POST', `/tenders/${W}/publish`, { partner_ids: [] }, true);
+    await api('POST', `/tenders/${W}/bid`, { partner_id: S1, lines: [], declaration: true }, true); // only the named supplier
+    const wb = await api('POST', `/tenders/${W}/bid`, { partner_id: S2, lines: [{ line_id: (await api('GET', '/tenders/' + W)).lines[0].id, unit_price: 3900 }], vat_rate: 15, declaration: true });
+    await api('POST', `/tenders/${W}/recommend`, { bid_id: wb.id }); const wa = await as(AP, 'POST', `/tenders/${W}/award`); assert.strictEqual(wa.standstill_until, null);
+    assert.strictEqual((await api('POST', `/tenders/${W}/contract`)).total, 8970);
+    // scorecards: spend by ownership and method
+    const card = await api('GET', '/procurement/scorecard');
+    assert(card.groups.find(g => g.label === 'Women-owned').value >= 1725); assert(card.ownership.find(g => g.label === 'Foreign-owned').value >= 8970);
+    assert(card.methods.find(m => m.method === 'waiver').awards === 1 && card.waiver_pct > 0);
+    // an open tender: public notice, suppliers register themselves
+    const O = (await api('POST', '/tenders', { ...base0, method: 'open', title: 'Cleaning services for 2027', category: 'services', committee: [{ user_id: E1.id, role: 'chair' }, { user_id: E2.id, role: 'member' }] })).id;
+    await api('POST', `/tenders/${O}/submit`); await as(AP, 'POST', `/tenders/${O}/approve`);
+    const op = await api('POST', `/tenders/${O}/publish`, {}); assert(/^[a-f0-9]{16}$/.test(op.slug));
+    assert((await (await fetch(`${base}/tenders`)).text()).includes('Cleaning services for 2027'));
+    const reg = async b => (await fetch(`${base}/tenders/${op.slug}/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) })).json();
+    const r1 = await reg({ name: 'Mahlaku Cleaning', email: 'info@mahlaku.ls', citizen_pct: 100, women_pct: 51 }); assert(/^\/s\/[a-f0-9]{32}$/.test(r1.link));
+    const r2 = await reg({ name: 'Pretender', email: 'info@mahlaku.ls' }); assert(!r2.link); // an existing email never shows the link on screen
+    await api('POST', `/tenders/${O}/cancel`, { reason: 'Budget withdrawn for 2027' });
+    assert((await api('GET', '/tenders?status=active')).every(x => x.id !== O));
+    ok('e-procurement: thresholds, approvals with segregation of duties, debarment, sealed online bids, clarifications, addenda, late bids refused, bid opening quorum, conflict of interest, scoring and 50/40/10 evaluation with preference points, challenge, standstill, contract PO, supplier rating, waiver, open-tender self-registration, spend scorecards');
+  }
+  { // ---------- asset register: acquisition, monthly depreciation (straight line, reducing balance, opening balances), transfer, count, disposal
+    const cats = await api('GET', '/assets/categories'), C = n => cats.find(k => k.name.startsWith(n)).id;
+    const lap = (await api('POST', '/assets', { name: 'Dell laptop – finance', category_id: C('Computer'), cost: 18000, vat_amount: 2700, in_service_date: '2026-01-15', purchase_date: '2026-01-15', source: 'paid', method_id: M('Cash').id, serial_no: 'DL-5520-01', location: 'Head office', custodian: 'Lerato' })).id;
+    let a = await api('GET', '/assets/' + lap); assert(/^FA-\d{5}$/.test(a.asset_no)); assert.strictEqual(a.life_months, 36); assert.strictEqual(a.monthly, 500);
+    const veh = (await api('POST', '/assets', { name: 'Toyota Hilux 2.4 GD', category_id: C('Motor'), cost: 300000, in_service_date: '2024-01-01', source: 'opening', opening_accum_dep: 100000, depreciated_upto: '2025-12' })).id;
+    const pl = (await api('POST', '/assets', { name: 'Borehole pump', category_id: C('Plant'), cost: 100000, method: 'reducing_balance', rate_pct: 20, residual_value: 0, in_service_date: '2026-01-01', source: 'supplier', supplier_id: (await api('GET', '/partners?is_supplier=1'))[0].id })).id;
+    await api('POST', '/assets', { name: 'x', category_id: C('Computer'), cost: 100, in_service_date: '2099-01-01', source: 'paid', method_id: M('Cash').id }, true); // future
+    await api('POST', '/assets/depreciation', { upto: '2099-01' }, true);
+    const run = await api('POST', '/assets/depreciation', { upto: '2026-10' }); assert.strictEqual(run.assets, 3);
+    assert.strictEqual((await api('POST', '/assets/depreciation', { upto: '2026-10' })).total, 0); // never twice
+    a = await api('GET', '/assets/' + lap); assert.strictEqual(Number(a.accum_dep), 5000); assert.strictEqual(a.depreciation.length, 10); // Jan–Oct × 500
+    const v = await api('GET', '/assets/' + veh); assert(Math.abs(Number(v.accum_dep) - (100000 + 47222.2)) < 0.1, v.accum_dep); // (300 000 − 100 000 − 30 000 residual) ÷ 36 months left × 10
+    const p1 = await api('GET', '/assets/' + pl); assert.strictEqual(Number(p1.depreciation[p1.depreciation.length - 1].amount), 1666.67); // 20% a year on the balance
+    await api('POST', `/assets/${lap}/transfer`, { location: 'Head office', custodian: 'Lerato' }, true); // nothing changes
+    await api('POST', `/assets/${lap}/transfer`, { location: 'Mafeteng branch', custodian: 'Thabo', note: 'Branch accountant' });
+    const cnt = (await api('POST', '/assets/counts', { name: 'Year-end count 2026' })).id;
+    await api('POST', `/assets/counts/${cnt}/scan`, { code: a.asset_no, condition_now: 'fair' });
+    await api('POST', `/assets/counts/${cnt}/scan`, { asset_id: pl, found: false, note: 'Not on site' });
+    const cc = await api('GET', '/assets/counts/' + cnt); assert.strictEqual(cc.seen, 1); assert.strictEqual(cc.missing, 1);
+    await api('POST', `/assets/counts/${cnt}/close`); assert.strictEqual((await api('GET', '/assets/' + lap)).condition_now, 'fair');
+    const mv0 = await api('GET', '/assets/movement?from=2026-01-01&to=2026-10-31');
+    const d = await api('POST', `/assets/${lap}/dispose`, { date: new Date().toISOString().slice(0, 10), proceeds: 12000, method_id: M('Cash').id, note: 'Sold to staff member' });
+    assert.strictEqual(d.book_value, 13000); assert.strictEqual(d.gain, -1000);
+    await api('POST', `/assets/${lap}/dispose`, { note: 'again' }, true);
+    const mv = await api('GET', '/assets/movement?from=2026-01-01&to=' + new Date().toISOString().slice(0, 10));
+    const comp = mv.rows.find(r => r.category.startsWith('Computer')); assert.strictEqual(comp.additions, 18000); assert.strictEqual(comp.disposals_cost, 18000); assert.strictEqual(comp.cost_close, 0); assert.strictEqual(comp.dep_close, 0);
+    const mot = mv0.rows.find(r => r.category.startsWith('Motor')); assert.strictEqual(mot.cost_open, 300000); assert.strictEqual(mot.dep_open, 100000); assert.strictEqual(mot.nbv_close, round(300000 - Number(v.accum_dep)));
+    const sm = await api('GET', '/assets/summary'); assert.strictEqual(sm.assets, 2);
+    const lb = await api('GET', `/assets/labels?ids=${veh},${pl}`); assert(lb[0].qr_svg.includes('<svg'));
+    const tba = await api('GET', '/reports/tb?from=2000-01-01&to=2999-12-31'); assert.strictEqual(tba.debit, tba.credit);
+    const bal = code => { const r = tba.rows.find(y => y.code === code); return r ? round(Number(r.debit) - Number(r.credit)) : 0; };
+    assert.strictEqual(bal('1640'), 0); assert.strictEqual(bal('1645'), 0); assert.strictEqual(bal('6960'), 1000); assert.strictEqual(bal('1610'), 300000);
+    ok('asset register: acquisition (paid with VAT, on account, opening balance), straight-line / reducing-balance depreciation with catch-up, transfer, physical count, disposal with loss, IAS 16 roll-forward, QR labels, books balance');
+
+    // ---------- fleet management: schedule, services, drivers, pool requests, fines & claims, cost per km
+    const vh = (await api('POST', '/vehicles', { reg_no: 'B 777 WTR', kind: 'bakkie', make: 'Toyota', model: 'Hilux', odometer: 45000, seats: 2 })).id;
+    await api('PUT', `/assets/${veh}`, { vehicle_id: vh });
+    await api('PUT', `/vehicles/${vh}/setup`, { service_interval_km: 10000, service_interval_months: 12, last_service_km: 35400, last_service_date: '2026-03-01', pool: 1, expected_km_per_litre: 10 });
+    let more = await api('GET', `/vehicles/${vh}/more`); assert.strictEqual(more.schedule.next_km, 45400); assert.strictEqual(more.schedule.due, true); assert.strictEqual(more.asset.asset_no, v.asset_no);
+    assert((await api('GET', '/fleet/due')).items.some(i => i.reg_no === 'B 777 WTR' && i.what === 'Service'));
+    await api('POST', `/vehicles/${vh}/services`, { kind: 'service', odometer: 45300, cost: 2500, description: '45 000 km service' }, true); // how was it paid?
+    await api('POST', `/vehicles/${vh}/services`, { kind: 'service', odometer: 45300, cost: 2500, method_id: M('Cash').id, workshop: 'Maseru Toyota', description: '45 000 km service' });
+    more = await api('GET', `/vehicles/${vh}/more`); assert.strictEqual(more.schedule.next_km, 55300); assert.strictEqual(more.schedule.due, false);
+    const emp = (await api('GET', '/fleet/staff'))[0];
+    await api('PUT', `/fleet/drivers/${emp.id}`, { licence_no: 'LS123456', licence_codes: 'b, c1', licence_expiry: new Date(Date.now() + 5 * 864e5).toISOString().slice(0, 10) });
+    assert((await api('GET', '/fleet/due')).items.some(i => i.what === 'Driving licence'));
+    const at = (h) => new Date(Date.now() + h * 3600e3).toISOString();
+    const rq = await api('POST', '/fleet/requests', { purpose: 'Site visit to Ha Thetsane reservoir', destination: 'Ha Thetsane', depart_at: at(24), return_at: at(30), passengers: 2 }); assert(/^VR\//.test(rq.number));
+    await api('POST', '/fleet/requests', { purpose: 'Back to front', depart_at: at(5), return_at: at(4) }, true);
+    const rq2 = await api('POST', '/fleet/requests', { purpose: 'Meter audit Ha Abia', depart_at: at(26), return_at: at(28), passengers: 1 });
+    assert((await api('GET', `/fleet/available?from=${encodeURIComponent(at(24))}&to=${encodeURIComponent(at(30))}`)).some(x => x.id === vh));
+    await api('POST', `/fleet/requests/${rq.id}/decide`, { approve: true, vehicle_id: vh, driver_id: emp.id });
+    assert(!(await api('GET', `/fleet/available?from=${encodeURIComponent(at(25))}&to=${encodeURIComponent(at(27))}`)).some(x => x.id === vh)); // booked
+    await api('POST', `/fleet/requests/${rq2.id}/decide`, { approve: true, vehicle_id: vh }, true); // double booking refused
+    await api('POST', `/fleet/requests/${rq.id}/out`, { odo_out: 45000 }, true); // odometer went back
+    await api('POST', `/fleet/requests/${rq.id}/out`, { odo_out: 45320 });
+    const back = await api('POST', `/fleet/requests/${rq.id}/in`, { odo_in: 45410 }); assert.strictEqual(back.km, 90);
+    await api('POST', `/vehicles/${vh}/fuel`, { litres: 40, amount: 800, odometer: 45410, method_id: M('Cash').id, full_tank: 1 });
+    await api('POST', `/vehicles/${vh}/fuel`, { litres: 50, amount: 1000, odometer: 45710, method_id: M('Cash').id, full_tank: 1 });
+    const fine = await api('POST', `/vehicles/${vh}/incidents`, { kind: 'fine', description: 'Speeding 80 in a 60 zone', place: 'Kingsway', amount: 500, method_id: M('Cash').id, driver_id: emp.id, recover_from_driver: true });
+    const acc = await api('POST', `/vehicles/${vh}/incidents`, { kind: 'accident', description: 'Rear bumper damaged in parking', amount: 4200, method_id: M('Cash').id, claim_no: 'CLM-2026-88' });
+    await api('PUT', `/fleet/incidents/${acc.id}`, { claim_status: 'paid', claim_amount: 3700, method_id: M('Cash').id });
+    void fine;
+    const costs = (await api('GET', '/fleet/costs')).rows.find(x => x.vehicle_id === vh);
+    assert.strictEqual(costs.fuel, 1800); assert.strictEqual(costs.servicing, 2500); assert.strictEqual(costs.fines, 500); assert.strictEqual(costs.damage, 4200);
+    assert(costs.depreciation > 0 && costs.km >= 410 && costs.per_km > 0); assert.strictEqual(costs.km_per_litre, round(costs.km / 50)); // the first fill (40 l) is left out of the efficiency
+    const tbf = await api('GET', '/reports/tb?from=2000-01-01&to=2999-12-31'); assert.strictEqual(tbf.debit, tbf.credit);
+    ok('fleet: service schedule by km / months, service records posted, driver licence alerts, pool requests with availability, double-booking refused, logbook km, fines and accident claims, cost per km with depreciation');
+  }
+  { // ---------- kind of organisation: tax treatment and KYC documents follow it
+    const et = await (await fetch(base + '/api/entity-types')).json(); assert(et.length >= 10 && et.some(e => e.key === 'informal') && et.some(e => e.key === 'parastatal'));
+    const co = (await api('GET', '/settings')).company;
+    await api('PUT', '/settings/company', { ...co, entity_type: 'nonsense' }, true);
+    await api('PUT', '/settings/company', { ...co, entity_type: 'government', reg_no: 'VOTE-21' });
+    assert.strictEqual((await api('GET', '/tax/settings')).settings.entity, 'exempt');
+    const newCit = c => c.items.filter(i => i.tax.startsWith('cit_') && !i.return_id).length;
+    assert.strictEqual(newCit(await api('GET', '/tax/calendar')), 0); // no new income-tax obligations for a government body (returns already made stay listed)
+    let act = await api('GET', '/activation'); assert.strictEqual(act.entity_type, 'government'); assert.strictEqual(act.doc_types.find(x => x.key === 'registration').required, false);
+    await api('PUT', '/settings/company', { ...co, entity_type: 'informal' });
+    assert.strictEqual((await api('GET', '/tax/settings')).settings.entity, 'individual');
+    act = await api('GET', '/activation'); assert(/permit|chief/.test(act.doc_types.find(x => x.key === 'registration').name));
+    await api('PUT', '/settings/company', { ...co, entity_type: 'private_company', reg_no: 'A2026/1234' });
+    assert.strictEqual((await api('GET', '/tax/settings')).settings.entity, 'company'); assert(newCit(await api('GET', '/tax/calendar')) > 0);
+    act = await api('GET', '/activation'); assert.strictEqual(act.doc_types.find(x => x.key === 'registration').required, true);
+    ok('kind of organisation: informal trader to government body – income-tax treatment (company / individual / exempt) and KYC documents follow it');
+  }
+  { // ---------- finance centre (Sage-level): control accounts, cost centres, journals with approval / reversing / recurring, statements, budgets, period lock, year-end
+    const dbm = require('../db'), today = new Date().toISOString().slice(0, 10);
+    const mkU = async (name, username, role) => { await api('POST', '/users', { name, username, password: username + '1234', role, pin: String(3000 + Math.floor(Math.random() * 6000)) }); return { id: (await api('GET', '/users')).find(u => u.username === username).id, token: (await api('POST', '/login', { username, password: username + '1234' })).token }; };
+    const as = async (u, m, url, body, fail) => { const keep = token; token = u.token; try { return await api(m, url, body, fail); } finally { token = keep; } };
+    const MG = await mkU('Ntate Finance Manager', 'finmgr', 'manager'), AUD = await mkU('Mme External Auditor', 'extaud', 'auditor'), IAU = await mkU('Ntate Internal Auditor', 'intaud', 'internal_auditor'), OWN = await mkU('Ausi Process Owner', 'owner1', 'staff');
+    const fa = await api('GET', '/finance/accounts'); assert(fa.accounts.find(a => a.code === '1100').is_control); assert.strictEqual(fa.accounts.find(a => a.code === '6950').category, 'operating_expense');
+    const OPS = (await api('POST', '/finance/cost-centres', { code: 'ops', name: 'Operations', kind: 'department' })).id;
+    await api('POST', '/finance/accounts', { code: '6150', name: 'Consulting fees', category: 'operating_expense', description: 'External advisers' });
+    await api('POST', '/finance/accounts', { code: '6150', name: 'Dup', category: 'operating_expense' }, true);
+    await api('POST', '/finance/journals', { entry_date: today, lines: [{ code: '1100', debit: 100 }, { code: '1050', credit: 100 }] }, true); // control account
+    await api('POST', '/finance/journals', { entry_date: today, lines: [{ code: '6150', debit: 100 }, { code: '1050', credit: 90 }] }, true); // unbalanced
+    const nm = new Date(); nm.setDate(1); nm.setMonth(nm.getMonth() + 1); const firstNext = nm.toISOString().slice(0, 10);
+    const j1 = (await api('POST', '/finance/journals', { entry_date: today, reference: 'ACCR-001', memo: 'Accrue consulting fees', reverse_on: firstNext, lines: [{ code: '6150', debit: 1500, cost_centre_id: OPS }, { code: '1050', credit: 1500 }] })).id;
+    const p1 = await api('POST', `/finance/journals/${j1}/submit`); assert.strictEqual(p1.status, 'posted'); assert(p1.reversal_entry_id);
+    await api('PUT', '/finance/settings', { manual_approval_limit: 10000 });
+    const j2 = (await api('POST', '/finance/journals', { entry_date: today, reference: 'RECLASS', lines: [{ code: '6150', debit: 20000 }, { code: '6000', credit: 20000 }] })).id;
+    assert.strictEqual((await api('POST', `/finance/journals/${j2}/submit`)).status, 'submitted');
+    await api('POST', `/finance/journals/${j2}/approve`, {}, true); // the preparer cannot approve
+    await as(AUD, 'POST', `/finance/journals/${j2}/approve`, {}, true); // auditor cannot change anything
+    const ap2 = await as(MG, 'POST', `/finance/journals/${j2}/approve`, { note: 'Checked to invoice' }); assert.strictEqual(ap2.status, 'posted');
+    await api('POST', `/finance/entries/${ap2.entry_id}/reverse`, { reason: 'Wrong period' });
+    await api('POST', `/finance/entries/${ap2.entry_id}/reverse`, {}, true); // never twice
+    const docEntry = (await dbm.one(`SELECT id FROM journal_entries WHERE source_type = 'invoice' LIMIT 1`)) || (await dbm.one(`SELECT id FROM journal_entries WHERE source_type NOT IN ('manual','manual_reversal','opening') LIMIT 1`));
+    await api('POST', `/finance/entries/${docEntry.id}/reverse`, {}, true); // a document's entry is reversed by the document
+    const start = new Date(); start.setMonth(start.getMonth() - 3); const startD = start.toISOString().slice(0, 10);
+    await api('POST', '/finance/recurring', { name: 'Monthly insurance', frequency: 'monthly', next_date: startD, auto_post: 1, lines: [{ code: '6000', debit: 850, cost_centre_id: OPS }, { code: '1050', credit: 850 }] });
+    const rr = await api('POST', '/finance/recurring/run'); assert(rr.made.length >= 3 && rr.made.every(x => x.status === 'posted'), JSON.stringify(rr));
+    assert.strictEqual((await api('POST', '/finance/recurring/run')).made.length, 0);
+    // statements
+    const y0 = `${today.slice(0, 4)}-01-01`;
+    const tb = await as(AUD, 'GET', `/finance/tb?from=${y0}&to=${today}`); assert(tb.balanced); assert.strictEqual(tb.totals.debit, tb.totals.credit);
+    const gl = await api('GET', `/finance/gl?from=${y0}&to=${today}&accounts=6150`); const g6 = gl.accounts[0]; assert.strictEqual(g6.closing, round(g6.opening + g6.debit - g6.credit)); assert.strictEqual(g6.transactions[g6.transactions.length - 1].balance, g6.closing);
+    const is = await api('GET', `/finance/income-statement?from=${y0}&to=${today}`); const pl = await api('GET', `/reports/pl?from=${y0}&to=${today}`);
+    assert.strictEqual(is.totals.net_profit, pl.net_profit); assert(is.sections.find(x => x.key === 'revenue').total > 0);
+    const isCC = await api('GET', `/finance/income-statement?from=${y0}&to=${today}&cost_centre_id=${OPS}&compare=none`); assert.strictEqual(isCC.sections.find(x => x.key === 'operating_expense').total, round(1500 + 850 * rr.made.filter(x => x.date >= y0).length - (firstNext <= today ? 1500 : 0)));
+    const bs = await api('GET', `/finance/balance-sheet?as_of=${today}`); assert(bs.balanced, JSON.stringify([bs.total_assets, bs.total_equity_liabilities]));
+    const cf = await api('GET', `/finance/cash-flow?from=${y0}&to=${today}`); assert(Math.abs(cf.difference) < 0.01, 'cash flow does not reconcile: ' + cf.difference);
+    const ra = await api('GET', `/finance/ratios?as_of=${today}`); assert(ra.current_ratio !== undefined);
+    const years = (await api('GET', '/finance/years')).years; const cy = years.find(y => String(y.start_date).slice(0, 10) <= today && String(y.end_date).slice(0, 10) >= today);
+    const bid = (await api('POST', '/finance/budgets', { fin_year_id: cy.id, name: 'Budget v1', from_actuals: true, uplift_pct: 10 })).id;
+    await api('PUT', `/finance/budgets/${bid}/lines`, { rows: [{ account_id: (await api('GET', '/finance/accounts')).accounts.find(a => a.code === '6150').id, amounts: [1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000] }] });
+    const bva = await api('GET', `/finance/income-statement?from=${String(cy.start_date).slice(0, 10)}&to=${today}&budget_id=${bid}`); assert(bva.budget_totals && bva.sections.find(x => x.key === 'operating_expense').lines.find(l => l.code === '6150').budget > 0);
+    await api('POST', `/finance/budgets/${bid}/approve`); // admin may approve own
+    await api('PUT', `/finance/budgets/${bid}/lines`, { rows: [] }, true); // approved: frozen
+    const ck = await api('GET', '/finance/checklist?month=' + today.slice(0, 7)); assert(ck.items.length >= 8);
+    // period lock
+    const yday = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+    await api('POST', '/finance/lock', { lock_date: yday });
+    await api('POST', '/finance/journals', { entry_date: yday, lines: [{ code: '6150', debit: 10 }, { code: '1050', credit: 10 }] }, true);
+    await api('POST', '/expenses', { date: yday, account_code: '6000', amount: 10, method_id: M('Cash').id, description: 'late' }, true); // every module respects the lock
+    await api('POST', '/finance/lock', { lock_date: null });
+    // year-end: close every finished year (oldest first), check, then reopen
+    const toClose = years.filter(y => String(y.end_date).slice(0, 10) < today).sort((a, b) => String(a.start_date).localeCompare(String(b.start_date)));
+    for (const y of toClose) await api('POST', `/finance/years/${y.id}/close`);
+    if (toClose.length) {
+      const last = toClose[toClose.length - 1], s0 = String(last.start_date).slice(0, 10), e0 = String(last.end_date).slice(0, 10);
+      const plY = await api('GET', `/reports/pl?from=${s0}&to=${e0}`), isY = await api('GET', `/finance/income-statement?from=${s0}&to=${e0}&compare=none`); assert.strictEqual(plY.net_profit, isY.totals.net_profit); // closing entries do not hide the year's profit
+      assert((await api('GET', `/finance/balance-sheet?as_of=${today}`)).balanced);
+      await api('POST', '/finance/journals', { entry_date: e0, lines: [{ code: '6150', debit: 10 }, { code: '1050', credit: 10 }] }, true); // closed year
+      await as(MG, 'POST', `/finance/years/${last.id}/reopen`, {}, true); // only an administrator reopens
+      for (const y of toClose.slice().reverse()) await api('POST', `/finance/years/${y.id}/reopen`);
+      assert.strictEqual((await api('GET', '/finance/years')).lock_date, null);
+    }
+    await api('PUT', '/finance/settings', { manual_approval_limit: 0 });
+    ok('finance centre: classified chart with control accounts, cost centres, journals (control block, approval by a second person, auto-reversal, reversal not deletion), recurring journals, TB / GL / income statement by cost centre and vs budget / balance sheet / cash flow reconcile, ratios, period lock across modules, year-end close and reopen');
+
+    // ---------- audit: hash chain, tamper detection, control reconciliations, exceptions, Benford, trail, queries, pack
+    await api('POST', '/audit/seal', { all: true });
+    let ch = await as(AUD, 'GET', '/audit/chain'); assert(ch.intact && ch.checked > 100 && ch.unsealed === 0, JSON.stringify(ch).slice(0, 300));
+    const victim = await dbm.one(`SELECT l.id, l.debit FROM journal_lines l JOIN journal_entries e ON e.id = l.entry_id WHERE e.source_type = 'manual' AND l.debit > 0 ORDER BY l.id LIMIT 1`);
+    await dbm.query('UPDATE journal_lines SET debit = debit + 1 WHERE id = ?', [victim.id]); // someone edits the database directly
+    ch = await as(AUD, 'GET', '/audit/chain'); assert(!ch.intact && ch.broken.length === 1);
+    const ig = await as(AUD, 'GET', '/audit/integrity'); assert(ig.unbalanced.length >= 1);
+    await dbm.query('UPDATE journal_lines SET debit = ? WHERE id = ?', [victim.debit, victim.id]);
+    assert((await as(AUD, 'GET', '/audit/chain')).intact);
+    const cr = await as(AUD, 'GET', '/audit/control-recon'); assert(cr.accounts.find(a => a.code === '1100') && cr.accounts.find(a => a.code === '2000'));
+    const ex = await as(AUD, 'GET', `/audit/exceptions?from=${startD}&to=${today}`);
+    assert(ex.tests.find(t => t.key === 'backdated').count >= 2); assert(ex.tests.find(t => t.key === 'round').count >= 1); assert(ex.tests.find(t => t.key === 'failed_logins'));
+    const bf = await as(AUD, 'GET', `/audit/benford?from=2000-01-01&to=${today}`); assert.strictEqual(bf.digits.length, 9); assert(bf.amounts > 0);
+    await fetch(base + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'extaud', password: 'wrong' }) });
+    const tr = await as(AUD, 'GET', '/audit/trail?action=login'); assert(tr.some(x => x.action === 'login_failed') && tr.some(x => x.action === 'login'));
+    assert((await as(AUD, 'GET', '/audit/trail?action=api.post')).length > 10);
+    const qid = (await as(AUD, 'POST', '/audit/queries', { entity: 'journal_entry', entity_id: ap2.entry_id, subject: 'Reclassification of M 20 000', question: 'Please provide the invoice supporting the reclassification and explain why it was reversed.', assigned_to: MG.id, risk: 'high' })).id;
+    await as(OWN, 'POST', `/audit/queries/${qid}/answer`, { answer: 'x' }, true); // not assigned to them
+    await as(MG, 'POST', `/audit/queries/${qid}/answer`, { answer: 'Posted to the wrong period; reversed and re-posted in the next month. Invoice attached.' });
+    await as(AUD, 'POST', `/audit/queries/${qid}/close`);
+    assert.strictEqual((await as(AUD, 'GET', '/audit/queries')).find(q => q.id === qid).status, 'closed');
+    await as(AUD, 'POST', '/finance/journals', { lines: [] }, true); await as(AUD, 'GET', '/finance/journals');
+    const pk = await as(AUD, 'GET', `/audit/pack?from=${y0}&to=${today}`); assert(pk.journals.length > 50 && pk.trial_balance.balanced && pk.chain.intact);
+    ok('audit: ledger sealed in a SHA-256 hash chain, a direct database edit is detected and cleared when undone, control-account reconciliations, exception tests (back-dated, round, failed logins…), Benford, login and activity trail, auditor queries, read-only auditor role, audit pack');
+
+    // ---------- internal audit: universe, engagement with work programme and data tests, review by someone else, findings, actions, follow-up
+    const uni = await as(IAU, 'GET', '/ia/universe'); assert(uni.length >= 8 && uni[0].risk_score >= uni[uni.length - 1].risk_score);
+    await as(MG, 'GET', '/ia/universe', null, true); // management cannot see into internal audit
+    const gj = uni.find(u => u.area === 'journals');
+    const eg = (await as(IAU, 'POST', '/ia/engagements', { title: 'Review of journals and period close', universe_id: gj.id, kind: 'financial', objectives: 'Assess controls over manual journals.', scope: 'All manual journals this financial year.', programme: 'journals', auditee: 'Finance', planned_start: today })).id;
+    let e = await as(IAU, 'GET', '/ia/engagements/' + eg); assert.strictEqual(e.steps.length, 5); assert(/^IA\/\d{4}\/\d{3}$/.test(e.number));
+    await as(IAU, 'POST', `/ia/engagements/${eg}/advance`);
+    const g1 = e.steps.find(s => s.ref === 'G1'), g2 = e.steps.find(s => s.ref === 'G2');
+    const t2 = await as(IAU, 'POST', `/ia/steps/${g2.id}/test`, { from: startD, to: today }); assert(t2.count >= 0);
+    await as(IAU, 'POST', `/ia/engagements/${eg}/advance`, {}, true); // steps not done
+    for (const st of e.steps) await as(IAU, 'PUT', `/ia/engagements/${eg}/steps/${st.id}`, { result: st.id === g2.id ? 'exceptions' : 'satisfactory', sample_size: 25, exceptions: st.id === g2.id ? 3 : 0 });
+    await as(IAU, 'POST', `/ia/engagements/${eg}/advance`); // → review
+    await as(IAU, 'POST', `/ia/engagements/${eg}/advance`, {}, true); // the lead cannot review own work
+    const fid = (await as(IAU, 'POST', `/ia/engagements/${eg}/findings`, { title: 'Recurring journals captured months after their date', rating: 'high', condition_text: 'Three recurring journals were captured on one day for the previous three months.', criteria: 'Journals must be recorded in the month they relate to.', cause: 'No monthly run of recurring journals.', effect: 'Monthly management accounts were understated.', recommendation: 'Run recurring journals as part of the month-end checklist and lock each month after review.' })).id;
+    await api('POST', `/ia/engagements/${eg}/advance`); // reviewed by someone else → draft report
+    await as(IAU, 'POST', `/ia/engagements/${eg}/advance`, {}, true); // no summary / responses yet
+    await as(IAU, 'PUT', `/ia/engagements/${eg}/findings/${fid}`, { management_response: 'Agreed. The checklist will be enforced from next month.', response_by: 'Finance manager', agreed: 1 });
+    await as(IAU, 'POST', `/ia/findings/${fid}/actions`, { action_text: 'Add recurring journals and period lock to the month-end checklist; sign off monthly.', owner: 'Ausi Process Owner', owner_user_id: OWN.id, due_date: firstNext });
+    await as(IAU, 'PUT', `/ia/engagements/${eg}`, { executive_summary: 'Controls over manual journals are generally adequate; timeliness of recurring journals needs improvement.', overall_rating: 'needs_improvement', conclusion: 'Needs improvement.' });
+    await as(IAU, 'POST', `/ia/engagements/${eg}/advance`); // → final (report issued)
+    await as(IAU, 'PUT', `/ia/engagements/${eg}/findings/${fid}`, { title: 'changed' }, true); // issued reports are frozen
+    assert.strictEqual((await as(IAU, 'GET', '/ia/universe')).find(u => u.id === gj.id).last_audited.slice(0, 10), today);
+    const myA = await as(OWN, 'GET', '/ia/actions'); assert.strictEqual(myA.length, 1);
+    await as(IAU, 'POST', `/ia/actions/${myA[0].id}/update`, { status: 'verified', verification_note: 'x' }, true); // not implemented yet
+    await as(OWN, 'POST', `/ia/actions/${myA[0].id}/update`, { status: 'implemented', progress_note: 'Checklist updated and signed for this month.' });
+    await as(IAU, 'POST', `/ia/actions/${myA[0].id}/update`, { status: 'verified' }, true); // evidence required
+    await as(IAU, 'POST', `/ia/actions/${myA[0].id}/update`, { status: 'verified', verification_note: 'Inspected the signed checklist and lock date.' });
+    await as(IAU, 'POST', `/ia/engagements/${eg}/advance`); // → closed
+    const rp = await as(IAU, 'GET', `/ia/engagements/${eg}/report`); assert.strictEqual(rp.summary.high, 1); assert.strictEqual(rp.engagement.findings[0].actions[0].status, 'verified');
+    const dsh = await as(IAU, 'GET', '/ia/dashboard'); assert.strictEqual(dsh.engagements.completed, 1); assert.strictEqual(dsh.actions.implementation_rate, 100);
+    ok('internal audit: risk-ranked universe, engagement from a standard work programme, data test as evidence, independent review, finding with management response and action plan, frozen issued report, owner reports, auditor verifies with evidence, dashboard and report');
+  }
+  { // ---------- governance: organogram → delegation of authority → who approves what in every module; policies; legal
+    const dbm = require('../db'), today = new Date().toISOString().slice(0, 10), later = d => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
+    const mk = async (name, username, role) => { await api('POST', '/users', { name, username, password: username + 'pw1', role, pin: String(5000 + Math.floor(Math.random() * 4000)) }); const l = await api('POST', '/login', { username, password: username + 'pw1' }); return { id: l.user.id, token: l.token }; };
+    const as = async (u, m, url, body, fail) => { const keep = token; token = u.token; try { return await api(m, url, body, fail); } finally { token = keep; } };
+    const CHAIR = await mk('Ntate Board Chair', 'gchair', 'manager'), CEO = await mk('Mme Chief Executive', 'gceo', 'manager'), CFO = await mk('Ntate Finance Head', 'gcfo', 'accountant'),
+      OM = await mk('Mme Operations Head', 'gom', 'manager'), SUP = await mk('Ntate Field Supervisor', 'gsup', 'staff'), HRM = await mk('Mme People Lead', 'ghrm', 'staff'), CLK = await mk('Ausi Store Clerk', 'gclk', 'accountant');
+    await api('PUT', '/approvals/settings', { po_limit: 0 }); await api('PUT', '/finance/settings', { manual_approval_limit: 0 });
+    await as(CLK, 'POST', '/gov/seed', {}, true); // only governance managers shape the organisation
+    const sd = await api('POST', '/gov/seed', { kind: 'standard' }); assert.strictEqual(sd.positions, 10); assert.strictEqual(sd.units, 8);
+    await api('POST', '/gov/seed', {}, true); // only once
+    const e1 = (await api('GET', '/hrm/employees')).find(e => e.first_name === 'Palesa');
+    let ps = await api('GET', '/gov/positions'); const Pn = t => ps.find(p => p.title === t).id;
+    for (const [t, u] of [['Board Chairperson', CHAIR], ['Chief Executive Officer', CEO], ['Finance Manager', CFO], ['Operations Manager', OM], ['Operations Supervisor', SUP], ['HR & Administration Manager', HRM]]) await api('PUT', `/gov/positions/${Pn(t)}`, { user_id: u.id });
+    await api('PUT', `/gov/positions/${Pn('Accountant')}`, { user_id: CEO.id }, true); // one substantive position per person
+    await api('PUT', `/gov/positions/${Pn('Chief Executive Officer')}`, { reports_to_id: Pn('Operations Supervisor') }, true); // no loops
+    const store = (await api('POST', '/gov/positions', { title: 'Storekeeper', unit_id: ps.find(p => p.title === 'Operations Supervisor').unit_id, reports_to_id: Pn('Operations Supervisor'), user_id: CLK.id, employee_id: e1.id })).id;
+    const chart = await api('GET', '/gov/chart'); assert.strictEqual(chart.positions, 11); assert.strictEqual(chart.tree[0].title, 'Board Chairperson'); assert(chart.vacant >= 4);
+    // the delegation of authority decides the approver: the first manager up the line with enough authority
+    const sim = async (doc, amount, u) => (await api('POST', '/gov/simulate', { doc_type: doc, amount, user_id: u.id })).steps.map(s => `${s.kind}:${s.approver.split(' (')[0]}`).join(' > ');
+    assert.strictEqual(await sim('purchase_order', 3000, CLK), 'approve:Operations Supervisor');
+    assert.strictEqual(await sim('purchase_order', 30000, CLK), 'approve:Operations Manager');
+    assert.strictEqual(await sim('purchase_order', 600000, CLK), 'approve:Chief Executive Officer');
+    assert.strictEqual(await sim('purchase_order', 2000000, CLK), 'approve:Board Chairperson');
+    assert.strictEqual(await sim('journal', 80000, CLK), 'concur:Finance Manager > approve:Chief Executive Officer');
+    assert.strictEqual(await sim('expense_claim', 400, OM), 'approve:Chief Executive Officer'); // never yourself – your manager
+    assert.strictEqual(await sim('budget', 0, CFO), 'concur:Chief Executive Officer > approve:Board Chairperson');
+    const mine = await as(OM, 'GET', '/gov/my-authority'); assert(mine.authority.find(a => a.doc_type === 'purchase_order').max_amount === 50000);
+    // purchase orders: the supervisor (a plain staff user, no purchasing rights) approves because the organogram says so
+    const mkPo = async (qty, cost) => (await as(CLK, 'POST', '/purchases', { supplier_id: supp.id, lines: [{ product_id: P('Coca-Cola').id, qty, unit_cost: cost, tax_rate: 15 }] })).id;
+    const po1 = await mkPo(24, 7.5); const cf = await as(CLK, 'POST', `/purchases/${po1}/confirm`); assert.strictEqual(cf.status, 'to_approve'); assert(/Operations Supervisor/.test(cf.message));
+    await as(CLK, 'POST', `/purchases/${po1}/approve`, {}, true); // not your own
+    await as(CFO, 'POST', `/purchases/${po1}/approve`, {}, true); // not in the line, not the approver – even with purchasing rights
+    const inS = await as(SUP, 'GET', '/gov/inbox'); assert(inS.some(x => x.doc_type === 'purchase_order' && x.doc_id === po1));
+    assert(!(await as(OM, 'GET', '/gov/inbox')).some(x => x.doc_id === po1 && x.doc_type === 'purchase_order')); // above: only once overdue
+    assert((await as(SUP, 'GET', '/approvals')).governed.length >= 1);
+    await as(SUP, 'POST', `/purchases/${po1}/approve`); assert.strictEqual((await api('GET', '/purchases/' + po1)).status, 'confirmed');
+    const po2 = await mkPo(1000, 30); await as(CLK, 'POST', `/purchases/${po2}/confirm`);
+    await as(SUP, 'POST', `/purchases/${po2}/approve`, {}, true); // M 34 500 is above the supervisor's M 5 000
+    await dbm.query(`UPDATE approval_requests SET created_at = DATE_SUB(NOW(), INTERVAL 6 DAY) WHERE doc_type = 'purchase_order' AND doc_id = ?`, [po2]);
+    const esc = (await as(CEO, 'GET', '/gov/inbox')).find(x => x.doc_id === po2 && x.doc_type === 'purchase_order'); assert(esc && esc.overdue && esc.via === 'higher'); // escalated
+    await as(OM, 'POST', `/purchases/${po2}/approve`); assert.strictEqual((await api('GET', '/purchases/' + po2)).status, 'confirmed');
+    const po3 = await mkPo(10, 10); await as(CLK, 'POST', `/purchases/${po3}/confirm`); await as(SUP, 'POST', `/purchases/${po3}/reject`, { reason: 'Use the framework supplier' });
+    assert.strictEqual((await api('GET', '/purchases/' + po3)).status, 'draft');
+    // expense claims, with an acting appointment while the supervisor is away
+    await api('PUT', `/gov/positions/${Pn('Operations Supervisor')}`, { acting_user_id: HRM.id, acting_until: later(10) });
+    const cl = await as(CLK, 'POST', '/expense-claims', { description: 'Taxi to the depot', account_code: '6000', amount: 400 }); assert(/Operations Supervisor/.test(cl.message));
+    await as(HRM, 'POST', `/expense-claims/${cl.id}/approve`); assert.strictEqual((await api('GET', '/expense-claims')).find(x => x.id === cl.id).status, 'approved');
+    assert.strictEqual((await api('GET', `/gov/status/expense_claim/${cl.id}`)).steps[0].via, 'acting');
+    await api('PUT', `/gov/positions/${Pn('Operations Supervisor')}`, { acting_user_id: null, acting_until: null });
+    // journals: Finance concurs first, then the CEO approves
+    const jn = (await as(CLK, 'POST', '/finance/journals', { memo: 'Provision for doubtful debts', lines: [{ code: '6000', debit: 80000 }, { code: '1050', credit: 80000 }] })).id;
+    const js = await as(CLK, 'POST', `/finance/journals/${jn}/submit`); assert.strictEqual(js.status, 'submitted'); assert(/Finance Manager/.test(js.message));
+    await as(CEO, 'POST', `/finance/journals/${jn}/approve`, {}, true); // Finance has not agreed yet
+    const j1 = await as(CFO, 'POST', `/finance/journals/${jn}/approve`); assert.strictEqual(j1.status, 'submitted'); assert(/Chief Executive/.test(j1.message));
+    assert.strictEqual((await as(CEO, 'POST', `/finance/journals/${jn}/approve`)).status, 'posted');
+    // leave in days: the employee's own position decides; the supervisor approves 3 days
+    const lt = await api('GET', '/hrm/leave-types');
+    const lv = await as(CLK, 'POST', '/hrm/leave', { employee_id: e1.id, leave_type_id: lt[0].id, start_date: '2027-03-01', end_date: '2027-03-03' }); assert(/Operations Supervisor/.test(lv.message));
+    await as(CLK, 'POST', `/hrm/leave/${lv.id}/approve`, {}, true); // the employee's user cannot approve their own leave
+    await as(SUP, 'POST', `/hrm/leave/${lv.id}/approve`); assert.strictEqual((await api('GET', '/hrm/leave')).find(x => x.id === lv.id).status, 'approved');
+    // budget: the CEO concurs, the Board approves
+    const yrs = (await api('GET', '/finance/years')).years; const cy = yrs.find(y => String(y.start_date).slice(0, 10) <= today && String(y.end_date).slice(0, 10) >= today);
+    const bg = (await as(CFO, 'POST', '/finance/budgets', { fin_year_id: cy.id, name: 'Budget v2 (board)' })).id;
+    assert(/Board/.test((await as(CEO, 'POST', `/finance/budgets/${bg}/approve`)).message));
+    assert.strictEqual((await as(CHAIR, 'POST', `/finance/budgets/${bg}/approve`)).status, 'approved');
+    // procurement: approval to procure follows the organogram too
+    const tn = (await as(CLK, 'POST', '/tenders', { title: 'Office chairs', category: 'goods', method: 'rfq', closing_at: new Date(Date.now() + 864e5).toISOString(), lines: [{ description: 'Chair', qty: 10, est_unit: 900 }], criteria: [], tech_weight: 0, price_weight: 80, pref_weight: 20 })).id;
+    assert(/Chief Executive/.test((await as(CLK, 'POST', `/tenders/${tn}/submit`)).message));
+    await as(SUP, 'POST', `/tenders/${tn}/approve`, {}, true);
+    await as(CEO, 'POST', `/tenders/${tn}/approve`); assert.strictEqual((await api('GET', '/tenders/' + tn)).status, 'approved');
+    // asset write-off waits for the approver and is booked on approval from the inbox
+    const cats = await api('GET', '/assets/categories');
+    const fa = (await api('POST', '/assets', { name: 'Desk printer', category_id: cats[0].id, cost: 3000, in_service_date: today, source: 'paid', method_id: M('Cash').id })).id;
+    const wo = await as(CLK, 'POST', `/assets/${fa}/dispose`, { kind: 'written_off', note: 'Stolen from the store (police case 123/26)' }); assert(wo.pending && /Chief Executive/.test(wo.message), wo.message); // first in the clerk's line with disposal authority
+    assert.strictEqual((await api('GET', '/assets/' + fa)).status, 'active');
+    await as(CLK, 'POST', `/gov/requests/${wo.request_id}/decide`, {}, true);
+    await as(CFO, 'POST', `/gov/requests/${wo.request_id}/decide`, {}, true); // not in the line
+    const dz = await as(CEO, 'POST', `/gov/requests/${wo.request_id}/decide`, { note: 'Police report seen' }); assert(dz.final);
+    assert.strictEqual((await api('GET', '/assets/' + fa)).status, 'written_off');
+    ok('organogram: ready-made structure, holders, no loops, one post per person; the delegation of authority routes purchase orders, expense claims, journals (with Finance concurrence), leave, budgets, procurement and asset write-offs to the right position – role permissions do not override it, nobody approves their own, acting appointments sign, overdue items escalate up the line');
+    // communication & decision rights
+    const cm = await as(SUP, 'GET', `/gov/comms/${Pn('Operations Supervisor')}`); assert.strictEqual(cm.reports_to.title, 'Operations Manager'); assert(cm.direct_reports.some(x => x.title === 'Storekeeper')); assert.strictEqual(cm.style, 'directive');
+    assert((await api('GET', '/gov/decisions')).length >= 10);
+    // policies: templates per department, DoA policy filled from the organogram, approval through the DoA, acknowledgements
+    const tpl = await api('GET', '/policies/templates'); assert(tpl.length >= 7 && tpl.find(d => d.key === 'hr').items.length >= 5);
+    const pol = await api('POST', '/policies', { template_key: 'governance.doa', owner_position_id: Pn('Chief Executive Officer') });
+    let pg = await api('GET', '/policies/' + pol.id); assert(/Operations Supervisor/.test(pg.draft) && /up to M 5,000.00/.test(pg.draft) && /Smoke Caf/.test(pg.draft));
+    await api('PUT', '/policies/' + pol.id, { content: pg.draft + '<script>alert(1)</script><p onclick="x()">Signed at Maseru</p>' });
+    pg = await api('GET', '/policies/' + pol.id); assert(!/script|onclick/.test(pg.draft) && /Signed at Maseru/.test(pg.draft));
+    assert(/Chief Executive/.test((await api('POST', `/policies/${pol.id}/submit`)).message));
+    await as(CLK, 'POST', `/policies/${pol.id}/approve`, {}, true);
+    await as(CEO, 'POST', `/policies/${pol.id}/approve`); pg = await api('GET', '/policies/' + pol.id); assert.strictEqual(pg.status, 'approved'); assert.strictEqual(pg.current_version, 1);
+    assert((await as(CLK, 'GET', '/policies/unread')).some(x => x.id === pol.id)); await as(CLK, 'POST', `/policies/${pol.id}/ack`); assert(!(await as(CLK, 'GET', '/policies/unread')).some(x => x.id === pol.id));
+    const lp = await api('POST', '/policies', { template_key: 'hr.leave' }); assert(/14 weeks/.test((await api('GET', '/policies/' + lp.id)).draft) && /<mark>\[leave annual days\]<\/mark>/.test((await api('GET', '/policies/' + lp.id)).draft));
+    ok('policies: editable templates per department (governance, finance, procurement, HR, IT, operations, customer), the Delegation of Authority policy filled from the live organogram, sanitised editing, versions approved through the DoA, read-and-acknowledge tracking');
+    // legal: documents drafted from templates and S-ERP data, approval by contract value, contract register, compliance register
+    const lt2 = await api('GET', '/legal/templates'); assert(lt2.length >= 15 && lt2.find(t => t.key === 'employment').source === 'employee');
+    const ec = (await api('POST', '/legal/documents', { template_key: 'employment', entity_id: e1.id, values: { 'probation.months': 3 } })).id;
+    const ed = await api('GET', '/legal/documents/' + ec); assert(/Palesa Mokoena/.test(ed.content) && /Labour Act, 2024/.test(ed.content) && /first 3 months/.test(ed.content) && /legal practitioner/.test(ed.content)); assert(/^LGL\//.test(ed.number));
+    const sc = (await api('POST', '/legal/documents', { template_key: 'supply', entity_id: supp.id, value: 2000000, start_date: today, end_date: later(20), renewal_notice_days: 30 })).id;
+    await as(SUP, 'POST', `/legal/documents/${sc}/submit`, {}, true); // drafting needs the legal right
+    assert(/Board Chairperson/.test((await api('POST', `/legal/documents/${sc}/submit`)).message)); // above the CEO's M 1m
+    await as(CEO, 'POST', `/legal/documents/${sc}/approve`, {}, true);
+    await as(CHAIR, 'POST', `/legal/documents/${sc}/approve`); await api('POST', `/legal/documents/${sc}/sign`, { date: today });
+    await api('PUT', `/legal/documents/${sc}`, { content: '<p>x</p>' }, true); // signed: frozen
+    const al = await api('GET', '/legal/alerts'); assert(al.contracts.some(d => d.id === sc));
+    const dm = (await api('POST', '/legal/documents', { template_key: 'demand', entity_id: supp.id })).id; assert(/LETTER OF DEMAND/.test((await api('GET', '/legal/documents/' + dm)).content));
+    assert((await api('POST', '/legal/obligations/seed')).created >= 11);
+    const ob = (await api('GET', '/legal/obligations')).find(o => /annual return/.test(o.title)); const nd = await api('POST', `/legal/obligations/${ob.id}/done`);
+    assert.strictEqual(nd.next_due.slice(0, 4), String(Number(String(ob.next_due).slice(0, 4)) + 1));
+    ok('legal: Lesotho templates (employment under the Labour Act 2024, supply, demand…) filled from employees, suppliers and tenders with a review notice, contract approval by value through the DoA, signing freezes the text, expiry alerts, compliance register with recurring due dates');
+    // switching the organogram off for a document type hands the decision back to the module's own permissions
+    await dbm.query('DELETE FROM authority_grants');
+    const cl2 = await as(CLK, 'POST', '/expense-claims', { description: 'Stationery', account_code: '6000', amount: 50 }); assert(!cl2.message);
+    await as(SUP, 'POST', `/expense-claims/${cl2.id}/approve`, {}, true); // staff without the right cannot approve any more
+    await as(CEO, 'POST', `/expense-claims/${cl2.id}/approve`);
+    ok('without authorities the modules fall back to their own approval rights');
   }
   const adminToken = token;
   const pin = await api('GET', '/pin-users'); const kat = pin.find(u => u.name === 'Cashier Kat');

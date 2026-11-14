@@ -11,7 +11,7 @@ const api = async (m, u, b) => { const r = await fetch(B + '/api' + u, { method:
   const shot = (n, o = {}) => p.screenshot({ path: `${SP}/shots/${n}.png`, ...o });
   try {
     await p.goto(B); await p.waitForSelector('.wz'); await shot('140-setup-welcome', { fullPage: true });
-    if ((await (await fetch(B + '/api/business-types')).json()).length !== 16) throw new Error('expected 16 business types');
+    if ((await (await fetch(B + '/api/business-types')).json()).length !== 17) throw new Error('expected 17 business types');
     token = (await api('POST', '/setup', { company: { name: 'Lesedi Wholesalers', address: 'Industrial Area, Maseru', phone: '+266 2231 0000' }, admin: { name: 'Lineo Mokhele', username: 'admin', password: 'admin123', pin: '1234' }, demo: true, business_types: ['wholesale'] })).token;
     await p.evaluate(t => localStorage.setItem('maluti_token', t), token); await p.goto(B + '/#/'); await p.reload(); await p.waitForSelector('.tiles'); await shot('141-home-wholesale');
     const tiles = await p.$$eval('.tile span', s => s.map(x => x.textContent));

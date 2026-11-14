@@ -137,24 +137,23 @@ function toCsv(d) {
 }
 
 /** Profit & loss and balance sheet from the journal */
-async function accountBalances(from, to, locationId) {
+async function accountBalances(from, to, locationId, skipClose = false) {
+  const nc = skipClose ? ` AND (e.source_type IS NULL OR e.source_type <> 'year_end')` : '';
   if (locationId) return db.query(
     `SELECT a.code, a.name, a.type, COALESCE(SUM(x.debit),0) debit, COALESCE(SUM(x.credit),0) credit
      FROM accounts a LEFT JOIN (SELECT l.account_id, l.debit, l.credit FROM journal_lines l JOIN journal_entries e ON e.id = l.entry_id
-       WHERE e.entry_date BETWEEN ? AND ? AND e.location_id = ?) x ON x.account_id = a.id
+       WHERE e.entry_date BETWEEN ? AND ? AND e.location_id = ?${nc}) x ON x.account_id = a.id
      GROUP BY a.id ORDER BY a.code`, [from, to, locationId]);
   return db.query(
     `SELECT a.code, a.name, a.type,
             COALESCE(SUM(l.debit),0) debit, COALESCE(SUM(l.credit),0) credit
      FROM accounts a
-     LEFT JOIN journal_lines l ON l.account_id = a.id
-     LEFT JOIN journal_entries e ON e.id = l.entry_id
-     WHERE (e.id IS NULL OR (e.entry_date BETWEEN ? AND ?))
+     LEFT JOIN (SELECT l.account_id, l.debit, l.credit FROM journal_lines l JOIN journal_entries e ON e.id = l.entry_id WHERE e.entry_date BETWEEN ? AND ?${nc}) l ON l.account_id = a.id
      GROUP BY a.id ORDER BY a.code`, [from, to]);
 }
 
 async function profitAndLoss(from, to, locationId) {
-  const rows = (await accountBalances(from, to, locationId)).filter(r => r.type === 'income' || r.type === 'expense');
+  const rows = (await accountBalances(from, to, locationId, true)).filter(r => r.type === 'income' || r.type === 'expense');
   const income = rows.filter(r => r.type === 'income').map(r => ({ ...r, amount: round2(r.credit - r.debit) }));
   const expense = rows.filter(r => r.type === 'expense').map(r => ({ ...r, amount: round2(r.debit - r.credit) }));
   const ti = round2(income.reduce((s, r) => s + r.amount, 0));

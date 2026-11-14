@@ -1,7 +1,7 @@
 // Payment reminders: who owes, send by SMS / email / WhatsApp, log, and the SMS provider & automatic settings
 import { state, GET, POST, PUT, esc, $, $$, toast, err, can, money, modal, formHtml, readForm, tableHtml, badge, page, d, dt, query } from './core.js';
 
-const SRC = [['all', 'Everyone'], ['rent', 'Rent (tenants)'], ['school', 'School fees (parents)'], ['contracts', 'Contracts'], ['hire', 'Hire'], ['invoices', 'Other invoices']];
+const SRC = [['all', 'Everyone'], ['rent', 'Rent (tenants)'], ['school', 'School fees (parents)'], ['contracts', 'Contracts'], ['hire', 'Hire'], ['water', 'Water bills'], ['invoices', 'Other invoices']];
 const waLink = (phone, text) => { let p = String(phone || '').replace(/\D/g, ''); if (p.length === 8) p = '266' + p; return `https://wa.me/${p}?text=${encodeURIComponent(text)}`; };
 
 export async function reminders(view) {

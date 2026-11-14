@@ -150,7 +150,7 @@ async function whtTab(b, reload) {
 
 async function settingsTab(b, reload) {
   const st = await GET('/tax/settings'); const s = st.settings;
-  const f = [{ key: 'tin', label: L('Your TIN (RSL taxpayer number)', 'TIN ea hau'), required: true }, { key: 'entity', label: L('Business type', 'Mofuta oa khoebo'), type: 'select', options: [{ value: 'company', label: L('Company (company income tax)', 'Khamphani') }, { value: 'individual', label: L('Sole trader (personal income tax)', 'Motho ka mong') }] },
+  const f = [{ key: 'tin', label: L('Your TIN (RSL taxpayer number)', 'TIN ea hau'), required: true }, { key: 'entity', label: L('Business type', 'Mofuta oa khoebo'), type: 'select', options: [{ value: 'company', label: L('Company (company income tax)', 'Khamphani') }, { value: 'individual', label: L('Sole trader / partnership (personal income tax)', 'Motho ka mong') }, { value: 'exempt', label: L('Not liable to income tax (government, exempt NGO)', 'Ha e lefe lekhetho la chelete e kenang') }] },
     { key: 'vat_registered', label: L('Registered for VAT', 'E ngolisitsoe bakeng sa VAT'), type: 'checkbox' }, { key: 'vat_rate', label: L('Standard VAT rate %', 'Sekhahla sa VAT %'), type: 'number' }, { key: 'vat_due_day', label: L('VAT due day of the next month', 'Letsatsi la VAT'), type: 'number' },
     { key: 'paye_due_day', label: L('PAYE due day', 'Letsatsi la PAYE'), type: 'number' }, { key: 'wht_due_day', label: L('Withholding tax due day', 'Letsatsi la WHT'), type: 'number' },
     { key: 'cit_rate', label: L('Income tax rate %', 'Sekhahla sa lekhetho la lekeno %'), type: 'number' }, { key: 'year_end_month', label: L('Financial year ends in month (3 = March)', 'Selemo se fela khoeling'), type: 'number' },

@@ -115,6 +115,7 @@ async function createRun(user, { period, pay_date, notes }) {
 async function recalc(id) { await db.tx(c => compute(c, id)); }
 
 async function approve(user, id) {
+  let pendingMsg = null;
   await db.tx(async c => {
     const run = await c.one('SELECT * FROM payroll_runs WHERE id = ? FOR UPDATE', [id]);
     if (!run) throw notFound('Payroll run');
@@ -122,6 +123,9 @@ async function approve(user, id) {
     await compute(c, id);
     const r = await c.one('SELECT * FROM payroll_runs WHERE id = ?', [id]);
     if (!r.employees) throw bad('There are no payslips in this run');
+    // the organogram decides who approves payroll (and who must agree first)
+    const g = await require('./governance').authorize(c, user, { doc_type: 'payroll', doc_id: id, amount: Number(r.gross_total), requester_id: run.created_by, summary: `Payroll ${r.period} – ${r.employees} employees, gross M ${Number(r.gross_total).toFixed(2)}`, link: '#/payrun/' + id });
+    if (!g.final) { pendingMsg = g.message; return; }
     const entry = await accounting.post(c, {
       date: r.pay_date, reference: `PAYROLL ${r.period}`, memo: `Payroll ${r.period} (${r.employees} employees)`, source_type: 'payroll', source_id: r.id, user_id: user.id,
       lines: [
@@ -132,6 +136,7 @@ async function approve(user, id) {
       ] });
     await c.query(`UPDATE payroll_runs SET status = 'approved', approved_by = ?, approved_at = NOW(), journal_entry_id = ? WHERE id = ?`, [user.id, entry, id]);
   });
+  return pendingMsg;
 }
 
 const PAY_ACCOUNT = { bank: '1050', cash: '1000', mobile_money: '1020' };

@@ -1,5 +1,6 @@
 // Finance screens: bank / M-Pesa reconciliation, expense claims, approvals inbox
 import { state, GET, POST, PUT, DEL, esc, $, $$, toast, err, can, money, qty, modal, confirmBox, promptBox, formHtml, readForm, tableHtml, badge, page, d, dt, today, query, round2, imageFileToDataUrl } from './core.js';
+import { inboxHtml, wireInbox } from './govapprove.js';
 
 const ACCOUNTS = [['1050', 'Bank account'], ['1020', 'Mobile money wallet (M-Pesa / EcoCash)'], ['1010', 'Card clearing'], ['1000', 'Cash on hand']];
 const COUNTER = [['6400', 'Bank / M-Pesa charges'], ['4300', 'Interest received'], ['1000', 'Cash deposited from the till (or cash withdrawn)'], ['1010', 'Card settlement from the bank'],
@@ -154,7 +155,7 @@ export async function claims(view) {
     if (c.status === 'submitted' && mine) acts.push({ label: 'Withdraw', cls: 'btn-danger', onClick: async x => { await DEL('/expense-claims/' + c.id); x(); claims(view); } });
     if (c.status === 'submitted' && can('expenses.approve') && (!mine || state.user.role === 'admin')) {
       acts.push({ label: 'Reject', cls: 'btn-danger', onClick: async x => { const why = await promptBox('Why is it rejected?'); if (!why) return; await POST(`/expense-claims/${c.id}/reject`, { reason: why }); x(); claims(view); } });
-      acts.push({ label: 'Approve', cls: 'btn-ok', onClick: async x => { await POST(`/expense-claims/${c.id}/approve`); x(); toast('Approved and booked'); claims(view); } });
+      acts.push({ label: 'Approve', cls: 'btn-ok', onClick: async x => { const s = await POST(`/expense-claims/${c.id}/approve`); x(); toast(s.message || 'Approved and booked'); claims(view); } });
     }
     if (c.status === 'approved' && can('expenses.approve')) acts.push({ label: 'Pay back…', cls: 'btn-primary', onClick: async x => {
       const ms = methods.filter(m => m.kind !== 'account' && m.active);
@@ -181,7 +182,7 @@ function newClaim(accounts, methods, done) {
   modal({ title: 'New expense claim', wide: true, body: formHtml(f, { paid_by: 'own', account_code: '6000' }, { ctx: 'claim' }) + `<div class="field" style="margin-top:12px"><span>Photo of the slip</span>
     <input type="file" id="rcpt" accept="image/*,application/pdf" capture="environment"><img id="rprev" style="max-height:160px;display:none;margin-top:6px;border-radius:6px">
     <small class="help-note">Take a clear photo of the till slip or invoice. Claims without a slip may be rejected; VAT can only be claimed back with a valid tax invoice.</small></div>`,
-    actions: [{ label: 'Cancel' }, { label: 'Submit claim', cls: 'btn-primary', onClick: async (c, r) => { await POST('/expense-claims', { ...readForm(r, f), receipt }); c(); toast('Claim submitted for approval'); done(); } }],
+    actions: [{ label: 'Cancel' }, { label: 'Submit claim', cls: 'btn-primary', onClick: async (c, r) => { const s = await POST('/expense-claims', { ...readForm(r, f), receipt }); c(); toast(s.message || 'Claim submitted for approval'); done(); } }],
     onOpen: r => {
       const pb = r.querySelector('[name=paid_by]'), cm = r.querySelector('[name=company_method_id]').closest('.field');
       const vis = () => { cm.style.display = pb.value === 'company' ? '' : 'none'; }; pb.onchange = vis; vis();
@@ -203,6 +204,7 @@ export async function approvals(view) {
       <a class="kpi" href="#/claims?tab=approve" style="text-decoration:none;color:inherit"><div class="label">Expense claims</div><div class="value">${a.expense_claims.length}</div><div class="hint">waiting for approval</div></a>
       <div class="kpi"><div class="label">Purchase orders</div><div class="value">${a.purchase_orders.length}</div><div class="hint">above the ${Number(s.po_limit) ? money(s.po_limit) : '—'} limit</div></div>
       <a class="kpi" href="#/recon" style="text-decoration:none;color:inherit"><div class="label">Sales recons</div><div class="value">${a.recon}</div><div class="hint">waiting for sign-off</div></a></div>
+    ${a.governed && a.governed.length ? `<div class="card" style="margin-bottom:14px"><h3>Waiting for your approval</h3><p class="muted" style="margin-top:-4px">Routed to you by the organogram and delegation of authority.</p>${inboxHtml(a.governed)}</div>` : ''}
     ${a.purchase_orders.length ? `<div class="card" style="margin-bottom:14px"><h3>Purchase orders to approve</h3>${tableHtml([{ key: 'number', label: 'PO' }, { key: 'supplier_name', label: 'Supplier' }, { key: 'order_date', label: 'Date', fmt: d }, { key: 'user_name', label: 'Raised by' },
       { key: 'total', label: 'Total', right: 1, fmt: money }, { key: 'id', label: '', html: 1, fmt: v => `<a class="btn btn-sm" href="#/purchase/${v}">Open</a> <button class="btn btn-sm btn-ok" data-pa="${v}">Approve</button> <button class="btn btn-sm" data-pr="${v}">Send back</button>` }], a.purchase_orders)}</div>` : ''}
     ${a.expense_claims.length ? `<div class="card" style="margin-bottom:14px"><h3>Expense claims to approve</h3>${tableHtml([{ key: 'number', label: 'Claim' }, { key: 'user_name', label: 'By' }, { key: 'description', label: 'For' }, { key: 'amount', label: 'Amount', right: 1, fmt: money },
@@ -211,7 +213,8 @@ export async function approvals(view) {
     ${!a.count && !a.to_reimburse.length ? '<div class="empty">Nothing waiting for you 👍</div>' : ''}
     ${can('settings') ? `<div class="card" style="max-width:640px"><h3>Approval rules</h3>${formHtml([{ key: 'po_limit', label: 'Purchase orders above this amount need a manager (0 = no limit)', type: 'number', step: '0.01' }], s, { ctx: 'approvals' })}
       <button class="btn btn-primary" id="aps" style="margin-top:10px">Save</button></div>` : ''}`);
-  $$('[data-pa]').forEach(b => b.onclick = async () => { try { await POST(`/purchases/${b.dataset.pa}/approve`); toast('Purchase order approved'); approvals(view); } catch (e) { err(e); } });
+  if (a.governed && a.governed.length) wireInbox(view, a.governed, () => approvals(view));
+  $$('[data-pa]').forEach(b => b.onclick = async () => { try { const s = await POST(`/purchases/${b.dataset.pa}/approve`); toast(s.message || 'Purchase order approved'); approvals(view); } catch (e) { err(e); } });
   $$('[data-pr]').forEach(b => b.onclick = async () => { const why = await promptBox('Why is it sent back?'); if (why === null) return; try { await POST(`/purchases/${b.dataset.pr}/reject`, { reason: why }); approvals(view); } catch (e) { err(e); } });
   const sv = $('#aps'); if (sv) sv.onclick = async () => { try { await PUT('/approvals/settings', readForm(view, [{ key: 'po_limit', type: 'number' }])); toast('Saved'); } catch (e) { err(e); } };
 }

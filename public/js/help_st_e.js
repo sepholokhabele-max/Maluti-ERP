@@ -1,5 +1,59 @@
 // Sesotho help notes – Smartel connection, payment services at the till, settlements (1.18.0)
 export const E = {
+  water_account: {
+    sewer_type: 'Waterborne: e hokahantsoe le likhoerekhoere. Non-waterborne: tanka / VIP.',
+    billing: 'Postpaid: metara e baloa khoeli le khoeli ’me moreki o fumana sekoloto. Prepaid: moreki o reka metsi pele ’me o fumana token eo a e kenyang metareng.',
+    tariff_id: 'Lenane la litheko bakeng sa mofuta ona oa moreki – malapa, khoebo, pompo ea sechaba…',
+    zone_id: 'Sebaka seo khokahano ena e leng ho sona. Sebaka se seng le se seng ke tsela e le ’ngoe ea ho bala limetara.',
+    route_seq: 'Boemo tseleng ea mobali (1, 2, 3…).',
+    debt_recovery_pct: 'Ha moreki oa prepaid a ntse a kolota, karolo ena ea theko e ’ngoe le e ’ngoe e lefa sekoloto pele.',
+    account_no: 'Feela ha u tlisa moreki ho tsoa tsamaisong ea khale – boloka nomoro ea hae ea khale.',
+    meter_serial: 'Haeba metara e se e kentsoe, ngola nomoro ea eona mona.',
+    initial_reading: 'Nomoro e metareng kajeno. Sekoloto sa pele se bala ho tloha mona.',
+    gps: 'Latitude,longitude – e thusa lipolamo le babali ho fumana metara.'
+  },
+  water_tariff: {
+    service_charge: 'Chelete e tsitsitseng khoeli le khoeli, leha ho sa sebelisoa metsi.',
+    service_free_upto: 'WASCO malapa: ha ho tefo e tsitsitseng ha tšebeliso e ntse e le sehlopheng A (5 m³).',
+    sewer_rate: 'WASCO: M9.85 ka kilolitara, holim’a karolo ea metsi a sebelisitsoeng.',
+    sewer_wb_pct: 'Ba hokahantsoeng le likhoerekhoere (waterborne) ba lefa holim’a % ena (WASCO: 85%).',
+    sewer_nwb_pct: 'Ba nang le tanka / VIP (non-waterborne) ba lefa holim’a % ena (WASCO: 65%).',
+    effective_from: 'Letsatsi leo litheko tsena li qalang ka lona.',
+    sewer_pct: 'Tefo ea likhoerekhoere joalo ka % ea tefo ea metsi.',
+    min_m3: 'Postpaid feela: lefisa bonyane m³ tsena khoeli le khoeli.',
+    tax_rate: 'VAT holim’a metsi. Botsa RSL.',
+    category: 'E sebelisoa litlalehong.'
+  },
+  water_settings: {
+    due_days: 'Matsatsi ka mor’a letsatsi la sekoloto pele se lieha.',
+    estimate_months: 'Ha metara e sa baloa, sekoloto ke karolelano ea likhoeli tsena.',
+    high_use_factor: 'Palo e tšoauoa "e phahame haholo" ha e feta tšebeliso e tloaelehileng ka makhetlo ana.',
+    token_provider: 'Sandbox e hatisa li-token tsa TEST bakeng sa thupelo.',
+    debt_recovery_pct: 'Karolo ea theko e ’ngoe le e ’ngoe ea prepaid e lefang likoloto tsa khale.',
+    min_vend: 'Chelete e nyane ka ho fetisisa eo moreki a ka rekang ka eona.',
+    max_vend: 'Theko e kholo ka ho fetisisa.',
+    connection_fee: 'E lefisoa ha mosebetsi oa "Khokahano e ncha" o buloa.',
+    reconnection_fee: 'E lefisoa ha mosebetsi oa "Ho hokahanya hape" o buloa.',
+    deposit_postpaid: 'Depositi e tšoaroang; e lefa sekoloto sa ho qetela ha ak’haonte e koaloa.',
+    disconnect_after_days: 'Moreki o hlaha lenaneng la ho khaoloa ha sekoloto se lieha matsatsi ana…',
+    disconnect_min_amount: '…’me a kolota bonyane chelete ena.',
+    account_prefix: 'Linomoro tsa ak’haonte li shebahala joalo ka W00001.'
+  },
+  water_job: {
+    kind: 'Khokahano e ncha, ho kenya / ho fetola metara, ho khaola, ho hokahanya hape, ho dutla, phaephe e phatlohileng, tletlebo.',
+    fee: 'Ha u sa ngole letho, ho lefisoa tefo e tloaelehileng.',
+    meter_serial: 'Nomoro ea metara e kentsoeng.',
+    reading: 'Nomoro e metareng e ncha ha e kenngoa.',
+    old_reading: 'Nomoro ea ho qetela metareng ea khale.'
+  },
+  water_reading: {
+    reading: 'Linomoro tsohle tse ntšo metareng (m³). Tse khubelu ke lilitara – u se ke ua li ngola.',
+    rollover: 'Feela ha metara e fetile nomoro ea eona e phahameng ’me e qala hape ho 0.'
+  },
+  water_zone: {
+    bulk_meter_no: 'Metara eo metsi a kenang sebakeng sena ka eona.',
+    reader_id: 'Motho enoa o bona sebaka sena pele.'
+  },
   portal: {
     enabled: 'Bareki ba ka bula link ea bona ea lekunutu (se setseng, li-invoice, statement). Tima ho koala li-link tsohle hang.',
     allow_proof: 'Bareki ba lefileng bankeng ba ka kenya slip. E kena ho contact ea bona e le faele, ’me ofisi e fumana mosebetsi oa ho e hlahloba.',

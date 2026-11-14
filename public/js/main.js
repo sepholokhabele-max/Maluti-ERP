@@ -26,6 +26,17 @@ import * as roomsui from './roomsui.js';
 import * as fleetui from './fleetui.js';
 import * as hireui from './hireui.js';
 import * as clinicui from './clinicui.js';
+import * as waterui from './waterui.js';
+import * as ppui from './paypartnersui.js';
+import * as procui from './procurementui.js';
+import * as assetui from './assetsui.js';
+import * as fleetplus from './fleetplusui.js';
+import * as finui from './financeui.js';
+import * as audui from './auditui.js';
+import * as iaui from './iaui.js';
+import * as govui from './governanceui.js';
+import * as polui from './policiesui.js';
+import * as legalui from './legalui.js';
 import * as importer from './importer.js';
 import * as farmui from './farmui.js';
 import * as campaignui from './campaignui.js';
@@ -61,7 +72,7 @@ const APPS = [
   { href: '#/promotions', label: 'Promotions', ico: '🏷️', color: '#d97706', perm: 'catalog', mod: 'promotions' },
   { href: '#/bank', label: 'Bank & M-Pesa recon', ico: '🏦', color: '#0e7490', perm: 'accounting', mod: 'bank' },
   { href: '#/claims', label: 'Expense claims', ico: '🧾', color: '#be123c', perm: 'dashboard', mod: 'expenses' },
-  { href: '#/approvals', label: 'Approvals', ico: '✅', color: '#15803d', perm: 'dashboard', mod: ['purchasing', 'expenses'] },
+  { href: '#/approvals', label: () => state.myGov ? `Approvals (${state.myGov})` : 'Approvals', ico: '✅', color: '#15803d', perm: 'dashboard', mod: ['purchasing', 'expenses'], orGov: 1 },
   { href: '#/attendance', label: 'Attendance', ico: '🕐', color: '#7c3aed', perm: 'attendance', mod: 'attendance' },
   { href: '#/mrp', label: 'Manufacturing', ico: '🏭', color: '#b45309', perm: 'inventory', mod: 'manufacturing' },
   { href: '#/maintenance', label: 'Maintenance', ico: '⚙️', color: '#57534e', mod: 'maintenance' },
@@ -71,6 +82,23 @@ const APPS = [
   { href: '#/rooms', label: 'Rooms & bookings', ico: '🛏️', color: '#9d174d', perm: 'rooms', mod: 'rooms' },
   { href: '#/farm', label: 'Farm', ico: '🌾', color: '#4d7c0f', perm: 'farm', mod: 'farm' },
   { href: '#/clinic', label: 'Patients & dispensing', ico: '🩺', color: '#0e7490', perm: 'patients', mod: 'patients' },
+  { href: '#/water', label: 'Water utility', ico: '💧', color: '#0369a1', perm: 'water', mod: 'water' },
+  { href: '#/water', label: 'Meter reading', ico: '📋', color: '#0369a1', perm: 'water.read', noperm: 'water', mod: 'water' },
+  { href: '#/finance', label: 'Finance centre', ico: '📒', color: '#1d4ed8', perm: 'accounting' },
+  { href: '#/finance', label: 'Books (read-only)', ico: '📒', color: '#1d4ed8', perm: 'accounting.view', noperm: 'accounting' },
+  { href: '#/audit', label: 'Audit', ico: '🔍', color: '#7f1d1d', perm: 'audit' },
+  { href: '#/internalaudit', label: 'Internal audit', ico: '🛡️', color: '#334155', perm: 'internal_audit' },
+  { href: '#/myqueries', label: 'Audit queries for me', ico: '❓', color: '#7f1d1d', queries: 1 },
+  { href: '#/myactions', label: 'My audit actions', ico: '✅', color: '#334155', actions: 1 },
+  { href: '#/governance', label: 'Organisation', ico: '🏛️', color: '#0f172a', perm: 'governance' },
+  { href: '#/myrole', label: 'My role', ico: '🧭', color: '#0f172a', mypos: 1 },
+  { href: '#/policies', label: () => state.unreadPol ? `Policies (${state.unreadPol} to read)` : 'Policies', ico: '📜', color: '#57534e' },
+  { href: '#/legal', label: 'Legal', ico: '⚖️', color: '#44403c', perm: 'legal' },
+  { href: '#/assets', label: 'Asset register', ico: '🏷️', color: '#b45309', perm: 'assets', mod: 'assets' },
+  { href: '#/vehiclerequests', label: 'Ask for a vehicle', ico: '🚗', color: '#0f766e', mod: 'fleet', noperm: 'fleet' },
+  { href: '#/procurement', label: 'e-Procurement', ico: '📑', color: '#6d28d9', perm: 'procurement', mod: 'procurement' },
+  { href: '#/procurement?tab=my', label: 'My tender evaluations', ico: '📑', color: '#6d28d9', evals: 1 },
+  { href: '#/paypartners', label: 'Payment partners', ico: '🤝', color: '#15803d', perm: 'paypartners', mod: 'paypartners' },
   { href: '#/hire', label: 'Equipment & party hire', ico: '⛺', color: '#a16207', perm: 'hire', mod: 'hire' },
   { href: '#/fleet', label: 'Fleet & trips', ico: '🚚', color: '#365314', perm: 'fleet', mod: 'fleet' },
   { href: '#/campaigns', label: 'SMS & email campaigns', ico: '📣', color: '#c026d3', perm: 'campaigns', mod: 'campaigns' },
@@ -95,9 +123,9 @@ const APPS = [
 
 const NAV = [
   ['#/dashboard', 'Dashboard', 'dashboard'], ['#/pos', 'POS', 'pos', 'pos'], ['#/products', 'Products', 'catalog'], ['#/inventory', 'Inventory', 'inventory', 'inventory'],
-  ['#/locations', 'Branches', 'inventory', 'locations'], ['#/mrp', 'Manufacturing', 'inventory', 'manufacturing'], ['#/property', 'Property', 'property', 'property'], ['#/school', 'School', 'school', 'school'], ['#/sites', 'Sites', 'sites', 'sites'], ['#/rooms', 'Rooms', 'rooms', 'rooms'], ['#/fleet', 'Fleet', 'fleet', 'fleet'], ['#/hire', 'Hire', 'hire', 'hire'], ['#/clinic', 'Patients', 'patients', 'patients'], ['#/farm', 'Farm', 'farm', 'farm'], ['#/projects', 'Projects', 'projects', 'projects'], ['#/helpdesk', 'Helpdesk', 'helpdesk', 'helpdesk'], ['#/maintenance', 'Maintenance', 'maintenance', 'maintenance'],
+  ['#/locations', 'Branches', 'inventory', 'locations'], ['#/mrp', 'Manufacturing', 'inventory', 'manufacturing'], ['#/property', 'Property', 'property', 'property'], ['#/school', 'School', 'school', 'school'], ['#/sites', 'Sites', 'sites', 'sites'], ['#/rooms', 'Rooms', 'rooms', 'rooms'], ['#/fleet', 'Fleet', 'fleet', 'fleet'], ['#/hire', 'Hire', 'hire', 'hire'], ['#/water', 'Water', 'water', 'water'], ['#/paypartners', 'Pay partners', 'paypartners', 'paypartners'], ['#/procurement', 'Procurement', 'procurement', 'procurement'], ['#/assets', 'Assets', 'assets', 'assets'], ['#/finance', 'Finance', 'accounting'], ['#/audit', 'Audit', 'audit'], ['#/internalaudit', 'Internal audit', 'internal_audit'], ['#/clinic', 'Patients', 'patients', 'patients'], ['#/farm', 'Farm', 'farm', 'farm'], ['#/projects', 'Projects', 'projects', 'projects'], ['#/helpdesk', 'Helpdesk', 'helpdesk', 'helpdesk'], ['#/maintenance', 'Maintenance', 'maintenance', 'maintenance'],
   ['#/crm', 'CRM', 'crm', 'crm'], ['#/partners?type=customer', 'Contacts', 'partners'], ['#/purchases', 'Purchasing', 'purchasing', 'purchasing'], ['#/quotes', 'Sales', 'sales', 'sales'], ['#/invoices?kind=customer_invoice', 'Invoicing', 'invoicing'],
-  ['#/accounting', 'Accounting', 'accounting'], ['#/recon', 'Recon', 'recon', 'pos'], ['#/hrm', 'HR', 'hrm', 'hrm'], ['#/butchery', 'Butchery', 'inventory', 'butchery'], ['#/bar', 'Bar', 'inventory', 'bar'], ['#/reports', 'Reports', 'reports'], ['#/settings', 'Settings', 'settings']
+  ['#/governance', 'Organisation', 'governance'], ['#/legal', 'Legal', 'legal'], ['#/accounting', 'Accounting', 'accounting'], ['#/recon', 'Recon', 'recon', 'pos'], ['#/hrm', 'HR', 'hrm', 'hrm'], ['#/butchery', 'Butchery', 'inventory', 'butchery'], ['#/bar', 'Bar', 'inventory', 'bar'], ['#/reports', 'Reports', 'reports'], ['#/settings', 'Settings', 'settings']
 ];
 
 function shell(html) {
@@ -123,11 +151,11 @@ async function logout() {
 }
 
 function home(view) {
-  const apps = APPS.filter(a => (!a.perm || can(a.perm)) && (!a.mod || hasMod(a.mod)) && (!a.hrm || (state.hrm && state.hrm.enabled) || can('settings')) && (!a.butchery || (state.butchery && state.butchery.enabled) || can('settings')));
+  const apps = APPS.filter(a => (a.orGov && state.myGov) || (!a.mypos || state.myPos) && (!a.queries || state.myQueries) && (!a.actions || state.myActions) && (!a.evals || state.myEvals) && (!a.perm || can(a.perm)) && (!a.noperm || !can(a.noperm)) && (!a.mod || hasMod(a.mod)) && (!a.hrm || (state.hrm && state.hrm.enabled) || can('settings')) && (!a.butchery || (state.butchery && state.butchery.enabled) || can('settings')));
   view.innerHTML = `<div class="home"><h1>Welcome, ${esc(state.user.name.split(' ')[0])}</h1>
     <div class="sub">${esc(state.company.name || '')} · ${new Date().toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div>
     <div id="guideBanner"></div>
-    <div class="tiles">${apps.map(a => `<a class="tile" href="${a.href}"><div class="ico" style="background:${a.color}">${a.ico}</div><span>${a.label}</span></a>`).join('')}</div></div>`;
+    <div class="tiles">${apps.map(a => `<a class="tile" href="${a.href}"><div class="ico" style="background:${a.color}">${a.ico}</div><span>${esc(typeof a.label === 'function' ? a.label() : a.label)}</span></a>`).join('')}</div></div>`;
   if (can('settings')) GET('/setup-guide').then(g => {
     const el = $('#guideBanner'); if (!el || g.dismissed || g.complete) return;
     const next = g.steps.find(x => !x.done && !x.optional);
@@ -246,6 +274,25 @@ const ROUTES = {
   '#/fleet': fleetui.fleet,
   '#/vehicle': fleetui.vehicle,
   '#/hire': hireui.hire,
+  '#/water': waterui.water,
+  '#/paypartners': ppui.paypartners,
+  '#/procurement': procui.procurement,
+  '#/assets': assetui.assets,
+  '#/finance': finui.finance,
+  '#/audit': audui.audit,
+  '#/myqueries': audui.myQueries,
+  '#/internalaudit': iaui.internalAudit,
+  '#/iaeng': iaui.iaEngagement,
+  '#/myactions': iaui.myActions,
+  '#/governance': govui.governance,
+  '#/myrole': govui.myRole,
+  '#/policies': polui.policies,
+  '#/legal': legalui.legal,
+  '#/asset': assetui.asset,
+  '#/assetcount': assetui.assetCount,
+  '#/vehiclerequests': fleetplus.myVehicleRequests,
+  '#/tender': procui.tender,
+  '#/wateraccount': waterui.waterAccount,
   '#/import': importer.importer,
   '#/activation': actui.activationPage,
   '#/smartel': smui.smartelPage,
@@ -291,6 +338,13 @@ export async function route() {
   state.hrm = can('hrm') ? await GET('/hrm/status').catch(() => null) : null;
   state.butchery = await GET('/butchery/status').catch(() => null);
   state.biz = await GET('/business').catch(() => null);
+  // staff on a tender evaluation committee get a tile to their evaluations
+  // open audit queries and internal-audit actions assigned to this person get a tile on the home screen
+  [state.myQueries, state.myActions] = await Promise.all([GET('/audit/queries?status=open').then(r => r.filter(q => q.assigned_to === state.user.id).length).catch(() => 0),
+    GET('/ia/actions?mine=1').then(r => r.filter(a => !['verified', 'not_implemented'].includes(a.status) && a.owner_user_id === state.user.id).length).catch(() => 0)]);
+  if (!window.__legalBtn) { window.__legalBtn = 1; document.addEventListener('click', e => { const b = e.target.closest('[data-legal]'); if (!b) return; const [template_key, entity_id] = b.dataset.legal.split('|'); legalui.newDocument({ template_key, entity_id: Number(entity_id) }, id => { location.hash = '#/legal/' + id; }); }); }
+  [state.myGov, state.unreadPol, state.myPos] = await Promise.all([GET('/gov/inbox').then(r => r.length).catch(() => 0), GET('/policies/unread').then(r => r.length).catch(() => 0), GET('/gov/me').then(r => r.positions.length).catch(() => 0)]);
+  state.myEvals = !can('procurement') && (state.biz && (state.biz.modules || []).includes('procurement')) ? (await GET('/procurement/my').catch(() => [])).length : 0;
   state.locations = null;
   state.activation = await GET('/activation').catch(() => null);
   if (seq !== routeSeq) return; // a newer navigation started while we were loading

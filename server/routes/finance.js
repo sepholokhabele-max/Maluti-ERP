@@ -3,6 +3,7 @@ const express = require('express');
 const db = require('../db');
 const accounting = require('../services/accounting');
 const { requirePerm, can } = require('../auth');
+const gov = require('../services/governance');
 const { ah, bad, notFound, today, pad, round2, lineAmounts } = require('../util');
 
 const r = express.Router();
@@ -187,8 +188,11 @@ r.post('/expense-claims', ah(async (req, res) => {
   const ins = await db.query(`INSERT INTO expense_claims (user_id, claim_date, description, account_code, amount, tax_rate, paid_by, company_method_id, supplier, receipt, project_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [req.user.id, b.claim_date || today(), String(b.description).slice(0, 255), acc.code, amount, Number(b.tax_rate || 0), b.paid_by === 'company' ? 'company' : 'own',
       b.paid_by === 'company' ? b.company_method_id : null, b.supplier || null, b.receipt || null, Number(b.project_id) || null]);
-  await db.query('UPDATE expense_claims SET number = ? WHERE id = ?', [`EXP/${String(b.claim_date || today()).slice(0, 4)}/${pad(ins.insertId, 5)}`, ins.insertId]);
-  res.json(await db.one(`${claimSql} WHERE x.id = ?`, [ins.insertId]));
+  const number = `EXP/${String(b.claim_date || today()).slice(0, 4)}/${pad(ins.insertId, 5)}`;
+  await db.query('UPDATE expense_claims SET number = ? WHERE id = ?', [number, ins.insertId]);
+  // the organogram routes the claim to the right manager
+  const g = await db.tx(c => gov.request(c, { doc_type: 'expense_claim', doc_id: ins.insertId, amount, requester_id: req.user.id, summary: `${number} – ${String(b.description).slice(0, 80)} – M ${amount.toFixed(2)}`, link: '#/claims' }));
+  res.json({ ...(await db.one(`${claimSql} WHERE x.id = ?`, [ins.insertId])), ...(g.governed ? { message: `Sent to ${g.next} for approval` } : {}) });
 }));
 r.delete('/expense-claims/:id', ah(async (req, res) => {
   const x = await db.one('SELECT * FROM expense_claims WHERE id = ?', [req.params.id]);
@@ -197,26 +201,30 @@ r.delete('/expense-claims/:id', ah(async (req, res) => {
   await db.query('DELETE FROM expense_claims WHERE id = ?', [x.id]);
   res.json({ ok: true });
 }));
-r.post('/expense-claims/:id/approve', requirePerm('expenses.approve'), ah(async (req, res) => {
-  await db.tx(async c => {
+r.post('/expense-claims/:id/approve', gov.gate('expense_claim', 'expenses.approve'), ah(async (req, res) => {
+  const pend = await db.tx(async c => {
     const x = await c.one('SELECT * FROM expense_claims WHERE id = ? FOR UPDATE', [req.params.id]);
     if (!x) throw notFound();
     if (x.status !== 'submitted') throw bad('Already decided');
     if (x.user_id === req.user.id && req.user.role !== 'admin') throw bad('Someone else must approve your own claim');
+    const g = await gov.authorize(c, req.user, { doc_type: 'expense_claim', doc_id: x.id, amount: Number(x.amount), requester_id: x.user_id, summary: `${x.number} – ${x.description}`, link: '#/claims', note: req.body && req.body.note });
+    if (!g.final) return g.message;
     const a = lineAmounts({ qty: 1, unit_price: x.amount, tax_rate: x.tax_rate, price_includes_tax: 1 });
     let credit = '2250';
     if (x.paid_by === 'company') { const m = await c.one('SELECT account_code FROM payment_methods WHERE id = ?', [x.company_method_id]); credit = m ? m.account_code : '1000'; }
     await accounting.post(c, { date: String(x.claim_date instanceof Date ? today() : x.claim_date).slice(0, 10), reference: x.number, memo: `Expense claim: ${x.description}`, source_type: 'expense_claim', source_id: x.id, user_id: req.user.id,
       lines: [{ code: x.account_code, debit: a.net }, { code: '1400', debit: a.tax }, { code: credit, credit: a.total }] });
     await c.query(`UPDATE expense_claims SET status = ?, approver_id = ?, decided_at = NOW() WHERE id = ?`, [x.paid_by === 'company' ? 'reimbursed' : 'approved', req.user.id, x.id]);
+    return null;
   });
-  res.json(await db.one(`${claimSql} WHERE x.id = ?`, [req.params.id]));
+  res.json({ ...(await db.one(`${claimSql} WHERE x.id = ?`, [req.params.id])), ...(pend ? { message: pend } : {}) });
 }));
-r.post('/expense-claims/:id/reject', requirePerm('expenses.approve'), ah(async (req, res) => {
+r.post('/expense-claims/:id/reject', gov.gate('expense_claim', 'expenses.approve'), ah(async (req, res) => {
   const x = await db.one('SELECT * FROM expense_claims WHERE id = ?', [req.params.id]);
   if (!x) throw notFound();
   if (x.status !== 'submitted') throw bad('Already decided');
   if (!req.body.reason) throw bad('Say why the claim is rejected');
+  await db.tx(c => gov.reject(c, req.user, { doc_type: 'expense_claim', doc_id: x.id, note: req.body.reason }));
   await db.query(`UPDATE expense_claims SET status = 'rejected', approver_id = ?, decided_at = NOW(), reject_reason = ? WHERE id = ?`, [req.user.id, String(req.body.reason).slice(0, 255), x.id]);
   res.json(await db.one(`${claimSql} WHERE x.id = ?`, [x.id]));
 }));
@@ -243,11 +251,13 @@ r.put('/approvals/settings', requirePerm('settings'), ah(async (req, res) => {
 }));
 r.get('/approvals', ah(async (req, res) => {
   const out = { expense_claims: [], purchase_orders: [], recon: 0 };
-  if (can(req.user, 'expenses.approve')) out.expense_claims = await db.query(`${claimSql} WHERE x.status = 'submitted' AND (x.user_id <> ? OR ? = 'admin') ORDER BY x.id`, [req.user.id, req.user.role]);
-  if (can(req.user, 'purchase.approve')) out.purchase_orders = await db.query(`SELECT po.*, p.name supplier_name, u.name user_name FROM purchase_orders po JOIN partners p ON p.id = po.supplier_id LEFT JOIN users u ON u.id = po.user_id WHERE po.status = 'to_approve' ORDER BY po.id`);
+  const govEx = await gov.isGoverned('expense_claim'), govPo = await gov.isGoverned('purchase_order');
+  if (can(req.user, 'expenses.approve') && !govEx) out.expense_claims = await db.query(`${claimSql} WHERE x.status = 'submitted' AND (x.user_id <> ? OR ? = 'admin') ORDER BY x.id`, [req.user.id, req.user.role]);
+  if (can(req.user, 'purchase.approve') && !govPo) out.purchase_orders = await db.query(`SELECT po.*, p.name supplier_name, u.name user_name FROM purchase_orders po JOIN partners p ON p.id = po.supplier_id LEFT JOIN users u ON u.id = po.user_id WHERE po.status = 'to_approve' ORDER BY po.id`);
   if (can(req.user, 'recon.approve')) out.recon = Number((await db.one(`SELECT COUNT(*) n FROM sales_recons WHERE status = 'submitted'`).catch(() => ({ n: 0 }))).n);
   out.to_reimburse = can(req.user, 'expenses.approve') ? await db.query(`${claimSql} WHERE x.status = 'approved' ORDER BY x.id`) : [];
-  out.count = out.expense_claims.length + out.purchase_orders.length + out.recon;
+  out.governed = await gov.inbox(req.user); // everything the organogram routes to this person (any module)
+  out.count = out.expense_claims.length + out.purchase_orders.length + out.recon + out.governed.length;
   res.json(out);
 }));
 

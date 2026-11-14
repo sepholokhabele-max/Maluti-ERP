@@ -33,10 +33,22 @@ async function start({ port = 8069, host = '0.0.0.0', dbConfig, configStore, emb
   app.use('/api', require('./routes/i18n').pub);
   app.use('/api', require('./routes/attendance').pub);
   // list of business types for the first-run setup screen (no login yet)
+  app.get('/api/entity-types', (req, res) => res.json(require('./services/entity').ENTITY_TYPES));
   app.get('/api/business-types', (req, res) => { const M = require('./services/modules'); const names = Object.fromEntries(M.MODULES.map(m => [m.key, m.name]));
     res.json(M.TYPES.map(({ key, name, icon, desc, modules }) => ({ key, name, icon, desc, apps: (modules || []).map(k => names[k]).filter(Boolean) }))); });
+  app.use('/api/collect/v1', require('./routes/paypartners').pub); // payment partners' collections API: own API-key auth, before login
   app.use('/api', (req, res, next) => db.isConnected() ? next() : next(new HttpError(503, 'Database not configured')));
   app.use('/api', auth.requireAuth);
+  // activity log: every change made through the API (who, what, when, from where, result) – passwords never stored
+  app.use('/api', (req, res, next) => {
+    if (!['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) return next();
+    res.on('finish', () => {
+      const body = req.body && typeof req.body === 'object' ? Object.fromEntries(Object.entries(req.body).filter(([k]) => !/pass|pin|token|secret|key|data_url|otp/i.test(k)).map(([k, v]) => [k, typeof v === 'string' ? v.slice(0, 120) : (Array.isArray(v) ? `[${v.length} items]` : v)])) : null;
+      db.query(`INSERT INTO audit_log (user_id, action, entity, details, ip) VALUES (?, ?, ?, ?, ?)`, [req.user ? req.user.id : null, `api.${req.method.toLowerCase()}`, req.path.split('/')[1] || null,
+        JSON.stringify({ path: req.path.slice(0, 160), status: res.statusCode, body: body && JSON.stringify(body).length < 2000 ? body : '(large)' }), String(req.ip || '').slice(0, 64)]).catch(() => {});
+    });
+    next();
+  });
   app.use('/api', admin.priv);
   // POS: kitchen staff only reach the kitchen display endpoints
   app.use('/api/pos', (req, res, next) => {
@@ -72,6 +84,13 @@ async function start({ port = 8069, host = '0.0.0.0', dbConfig, configStore, emb
   app.use('/api', require('./routes/activation'));
   app.use('/api', require('./routes/smartel'));
   app.use('/api', require('./routes/tax'));
+  app.use('/api', require('./routes/water'));
+  app.use('/api', require('./routes/paypartners').router);
+  app.use('/api', require('./routes/procurement').router);
+  app.use('/api', require('./routes/assets'));
+  app.use('/api', require('./routes/fleetplus'));
+  app.use('/api', require('./routes/financeplus'));
+  app.use('/api', require('./routes/governance'));
   app.use('/api', require('./routes/portal').router);
   app.use('/api', require('./routes/i18n').router);
   app.use('/api', require('./routes/importer'));
@@ -81,6 +100,7 @@ async function start({ port = 8069, host = '0.0.0.0', dbConfig, configStore, emb
   app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
   app.use(require('./routes/public-receipt'));
   app.use(require('./routes/portal').pub);
+  app.use(require('./routes/procurement').pub); // supplier bid portal /s/<token> and public tender notices /tenders
   // service worker carries the app version so an update replaces the cached screens
   app.get('/sw.js', (req, res) => {
     const f = require('fs').readFileSync(path.join(publicDir || path.join(__dirname, '..', 'public'), 'sw.js'), 'utf8');
@@ -100,6 +120,8 @@ async function start({ port = 8069, host = '0.0.0.0', dbConfig, configStore, emb
   });
 
   plugins.loadAll(pluginDirs);
+  // seal new journal entries into the audit hash chain every two minutes (tamper evidence)
+  setInterval(() => { if (db.isConnected()) require('./services/audit').seal().catch(e => console.error('[audit] seal:', e.message)); }, 120000).unref();
 
   if (dbConfig && dbConfig.host) {
     try {

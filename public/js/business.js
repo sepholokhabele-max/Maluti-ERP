@@ -84,7 +84,7 @@ export async function purchaseForm(view, [id]) {
   const on = (sel, fn) => { const el = $(sel); if (el) el.onclick = async () => { el.disabled = true; try { await fn(); } catch (e) { err(e); } el.disabled = false; }; };
   on('#save', async () => { const r = isNew ? await POST('/purchases', body()) : await PUT('/purchases/' + id, body()); toast('Saved'); location.hash = '#/purchase/' + r.id; if (!isNew) purchaseForm(view, [id]); });
   on('#confirm', async () => { await PUT('/purchases/' + id, body()); const x = await POST(`/purchases/${id}/confirm`); toast(x.message || 'Order confirmed', x.status === 'to_approve' ? 'err' : 'ok', 6000); purchaseForm(view, [id]); });
-  on('#approve', async () => { await POST(`/purchases/${id}/approve`); toast('Approved – the order can now be received'); purchaseForm(view, [id]); });
+  on('#approve', async () => { const s = await POST(`/purchases/${id}/approve`); toast(s.message || 'Approved – the order can now be received'); purchaseForm(view, [id]); });
   on('#sendback', async () => { const why = await promptBox('Why is it sent back?'); if (why === null) return; await POST(`/purchases/${id}/reject`, { reason: why }); purchaseForm(view, [id]); });
   on('#cancel', async () => { if (await confirmBox('Cancel this order?', { danger: true })) { await POST(`/purchases/${id}/cancel`); purchaseForm(view, [id]); } });
   on('#bill', async () => { const r = await POST(`/purchases/${id}/bill`); toast('Draft bill created'); location.hash = '#/invoice/' + r.id; });

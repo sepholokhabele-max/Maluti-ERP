@@ -17,7 +17,9 @@ export async function settings(view) {
   const s = await GET('/settings');
 
   if (tab === 'company') {
+    const ENTITIES = await GET('/entity-types');
     const f = [{ key: 'name', label: 'Business name', required: true }, { key: 'phone', label: 'Phone' }, { key: 'address', label: 'Address', span: 2 }, { key: 'email', label: 'Email' },
+      { key: 'entity_type', label: 'Kind of organisation', type: 'select', options: [{ value: '', label: '– choose –' }, ...ENTITIES.map(e => ({ value: e.key, label: e.name }))] }, { key: 'reg_no', label: 'Registration number' },
       { key: 'tax_number', label: 'VAT / TIN number' }, { key: 'currency_code', label: 'Currency code' }, { key: 'currency_symbol', label: 'Currency symbol' },
       { key: 'default_vat', label: 'Default VAT % (new lines)', type: 'number' }, { key: 'receipt_footer', label: 'Receipt footer', span: 2 },
       { key: 'show_logo_receipt', label: 'Print logo on receipts & Z-reports', type: 'checkbox', default: 1 },
@@ -116,7 +118,7 @@ export async function settings(view) {
       fields: [{ key: 'name', label: 'Table name', required: true }, { key: 'floor_id', label: 'Floor', type: 'select', numeric: true, options: floors.map(f => ({ value: f.id, label: f.name })) }, { key: 'seats', label: 'Seats', type: 'number', default: 4 }] });
   }
   if (tab === 'users') {
-    const roles = ['admin', 'manager', 'accountant', 'cashier', 'waiter', 'bartender', 'kitchen', 'technician', 'staff', 'supervisor', 'receptionist', 'clinician', 'farmworker'];
+    const roles = ['admin', 'manager', 'accountant', 'cashier', 'waiter', 'bartender', 'kitchen', 'technician', 'staff', 'supervisor', 'receptionist', 'clinician', 'farmworker', 'meterreader', 'auditor', 'internal_auditor'];
     const lo = hasMod('locations') ? await locationOptions('Default location') : null;
     const load = async () => {
       const users = await GET('/users');

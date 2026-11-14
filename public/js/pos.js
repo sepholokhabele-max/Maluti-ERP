@@ -4,7 +4,8 @@ import { parseScaleBarcode } from './barcode.js';
 import { best as bestRule } from './pricing.js';
 import { readWeight, scaleSupported, chooseScalePort } from './scale.js';
 import { agentDialog, requestPayment, isSmartelMethod, servicesHtml } from './smartelui.js';
-import { state, GET, POST, PUT, esc, $, $$, toast, err, can, money, qty as fq, round2, modal, confirmBox, promptBox, printHtml, dt, timeAgo, badge, setToken, debounce, today } from './core.js';
+import { waterTillDialog } from './waterui.js';
+import { state, GET, POST, PUT, esc, $, $$, toast, err, can, money, qty as fq, round2, modal, confirmBox, promptBox, printHtml, dt, timeAgo, badge, setToken, debounce, today, hasMod } from './core.js';
 
 let S = null;
 
@@ -73,6 +74,7 @@ function render() {
       <span class="title">${esc(t.name)}</span>${modeBtns.join('')}
       ${S.catalog.vas.length && can('vas') ? '<button class="btn" id="vasBtn">⚡ Airtime / Power</button>' : ''}
       ${smartelOn() && can('vas') ? '<button class="btn" id="agentBtn">💸 Agent services</button>' : ''}
+      ${hasMod('water') && (can('water.vend') || can('water')) ? '<button class="btn" id="waterBtn">💧 Water</button>' : ''}
       ${S.catalog.smartel && S.catalog.smartel.quarantined ? '<span class="badge badge-overdue" title="Smartel is holding this till – call Smartel support">Till held by Smartel</span>' : ''}
       <span class="spacer"></span>
       <span class="info">${sess ? `Session #${sess.id} · ${esc(state.user.name)}` : 'No session'}</span>
@@ -95,6 +97,7 @@ function render() {
   if ($('#openBtn')) $('#openBtn').onclick = openSessionDialog;
   if ($('#vasBtn')) $('#vasBtn').onclick = vasDialog;
   if ($('#agentBtn')) $('#agentBtn').onclick = () => agentDialog(S, () => { if ($('#lines')) renderLines(); });
+  if ($('#waterBtn')) $('#waterBtn').onclick = () => { if (!S.session) return openSessionDialog(); waterTillDialog(S.session.id); };
   if (S.view === 'floor') renderFloor();
   else if (S.view === 'tabs') renderTabs();
   else renderOrder();

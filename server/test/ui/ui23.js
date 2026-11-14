@@ -12,7 +12,7 @@ const api = async (m, u, b) => { const r = await fetch(B + '/api' + u, { method:
     await p.goto(B); await p.waitForSelector('[data-lang]'); await shot('320-wizard-welcome');
     await p.click('[data-lang="both"]'); await p.waitForTimeout(200); await p.click('#nx');
     await p.waitForSelector('#nm'); await p.click('#nx'); await p.waitForSelector('#wzErr:not(:empty)'); await shot('321-wizard-missing-name');
-    await p.fill('#nm', 'Lesedi General Dealer'); await p.fill('#ph', '58'); await p.click('#nx'); await p.waitForFunction(() => /8/.test(document.querySelector('#wzErr').textContent));
+    await p.fill('#nm', 'Lesedi General Dealer'); await p.selectOption('#et', 'sole_trader'); await p.waitForSelector('#rg'); await p.fill('#rg', 'TL-2026-0042'); await p.fill('#ph', '58'); await p.click('#nx'); await p.waitForFunction(() => /8/.test(document.querySelector('#wzErr').textContent));
     await p.fill('#ph', '+266 5800 1122'); await p.fill('#ad', 'Main Rd, Mafeteng'); await p.click('[data-vat="no"]'); await p.waitForTimeout(150); await shot('322-wizard-business', { fullPage: true });
     await p.click('#nx'); await p.waitForSelector('[data-t]'); await p.click('[data-t="restaurant"]'); await p.waitForTimeout(150); await shot('323-wizard-types', { fullPage: true });
     await p.click('#nx'); await p.waitForSelector('#on'); await p.fill('#on', 'Lineo Mokhele'); await p.fill('#p1', 'abc'); await p.click('#nx'); await p.waitForFunction(() => /6/.test(document.querySelector('#wzErr').textContent));

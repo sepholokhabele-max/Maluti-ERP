@@ -1,3 +1,12 @@
+## S-ERP 1.29.1
+
+**Fix: the built-in database now works on new computers.**
+
+- On a new installation, *Use the built-in database* failed with "Host '127.0.0.1' is not allowed to connect to this MySQL server", and daily backups came out empty.
+- S-ERP now sets up the database's administrator account so that it can log in, the first time and every time after that.
+- Installations that already hit this error repair themselves after updating: open S-ERP and choose *Use the built-in database* again.
+- Closing S-ERP now stops the built-in database cleanly instead of forcing it to stop.
+
 ## S-ERP 1.29.0
 
 **My Wallet payments at the till (My Wallet API v4).**

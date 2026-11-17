@@ -89,6 +89,22 @@ class EmbeddedMySQL {
     throw new Error('No free port for the built-in MySQL (3307–3329 are all in use)');
   }
 
+  /**
+   * SQL the server runs at startup so root can log in over TCP from 127.0.0.1.
+   * --initialize-insecure only creates 'root'@'localhost', and with skip-name-resolve a TCP
+   * connection from 127.0.0.1 never matches 'localhost' (MySQL error 1130 "Host '127.0.0.1'
+   * is not allowed to connect"). Only used until secure() has run, while root has no password.
+   */
+  writeRootInit() {
+    const f = path.join(path.dirname(this.dataDir), 'mysql-init.sql');
+    fs.writeFileSync(f, [
+      "CREATE USER IF NOT EXISTS 'root'@'127.0.0.1' IDENTIFIED BY '';",
+      "GRANT ALL PRIVILEGES ON *.* TO 'root'@'127.0.0.1' WITH GRANT OPTION;",
+      ''
+    ].join('\n'));
+    return f;
+  }
+
   /** Initialise (first time) and start the server. Returns a dbConfig for the app. */
   async start() {
     if (!this.available()) throw new Error('The built-in MySQL is not included in this copy of S-ERP');
@@ -103,8 +119,14 @@ class EmbeddedMySQL {
       await this.run(this.initArgs || [`--defaults-file=${this.iniFile}`, '--initialize-insecure', '--console']);
       fresh = true;
     }
+    // Not secured yet (new install, or one that hit error 1130 in 1.22–1.29): make sure
+    // 'root'@'127.0.0.1' exists so secure() can connect. This also repairs broken installs.
+    const needsSecure = fresh || !this.settings().password;
+    const initFile = needsSecure ? this.writeRootInit() : null;
+    const args = this.initArgs ? ['--defaults-file=' + this.iniFile] : [`--defaults-file=${this.iniFile}`, '--console'];
+    if (initFile) args.push(`--init-file=${fwd(initFile)}`);
     this.log('[mysql] starting on port', port);
-    const r = this.run(this.initArgs ? ['--defaults-file=' + this.iniFile] : [`--defaults-file=${this.iniFile}`, '--console'], { wait: false });
+    const r = this.run(args, { wait: false });
     this.proc = r.proc; this.exited = null;
     this.proc.on('exit', code => { this.exited = code; this.log('[mysql] server stopped', code); });
     const t0 = Date.now();
@@ -114,7 +136,8 @@ class EmbeddedMySQL {
       await sleep(300);
     }
     this.saveSettings({ port });
-    if (fresh || !this.settings().password) await this.secure(port);
+    if (needsSecure) await this.secure(port);
+    if (initFile) fs.rmSync(initFile, { force: true });
     return this.dbConfig();
   }
 
@@ -131,7 +154,12 @@ class EmbeddedMySQL {
     let c;
     try { c = await this.rootConn(port, ''); } catch (_) { c = await this.rootConn(port, s.root_password); }
     try {
+      // Same password for both root accounts: the app, backups (mysqldump -h127.0.0.1) and
+      // stop() all log in over TCP as 'root'@'127.0.0.1'.
       await c.query(`ALTER USER 'root'@'localhost' IDENTIFIED BY ${c.escape(rootPw)}`);
+      await c.query(`CREATE USER IF NOT EXISTS 'root'@'127.0.0.1' IDENTIFIED BY ${c.escape(rootPw)}`);
+      await c.query(`ALTER USER 'root'@'127.0.0.1' IDENTIFIED BY ${c.escape(rootPw)}`);
+      await c.query(`GRANT ALL PRIVILEGES ON *.* TO 'root'@'127.0.0.1' WITH GRANT OPTION`);
       await c.query('CREATE DATABASE IF NOT EXISTS maluti_erp CHARACTER SET utf8mb4');
       await c.query(`CREATE USER IF NOT EXISTS 'maluti'@'127.0.0.1' IDENTIFIED BY ${c.escape(appPw)}`);
       await c.query(`CREATE USER IF NOT EXISTS 'maluti'@'localhost' IDENTIFIED BY ${c.escape(appPw)}`);

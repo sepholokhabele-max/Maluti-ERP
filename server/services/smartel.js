@@ -1,7 +1,7 @@
 // Smartel POS backend adapter.
 //
 // S-ERP never talks to the MyWallet core / core-banking API. Every money service, digital tender, register check and
-// sync goes through the Smartel POS backend adapters:
+// sync goes through the Smartel POS backend adapters (since 1.29 also the My Wallet public POS API v4 – see mywallet.js):
 //   pos-api  /v1/sessions, /v1/agent/ops, /v1/payments/intents, /v1/register/scope, /v1/portal/bulk-batches
 //   syncd    /v1/sync/batches, /v1/sync/changes, /v1/sync/cursor
 // Tills authenticate with their own client certificate (mTLS at the gateway). The owner portal (bulk wages) uses the

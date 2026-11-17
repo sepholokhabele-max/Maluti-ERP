@@ -1,4 +1,5 @@
 import { filesCard } from './core.js';
+import { fiscalA4Html, fiscalLabel } from './fiscal.js';
 // Purchasing, invoicing, accounting and reports
 import { attachScale } from './scale.js';
 import { multiLocation, locationOptions } from './core.js';
@@ -197,7 +198,8 @@ export async function invoiceForm(view, [idq]) {
   on('#cancel', async () => { if (await confirmBox('Cancel this document? Posted entries will be reversed.', { danger: true })) { await POST(`/invoices/${id}/cancel`); invoiceForm(view, [id]); } });
   on('#print', async () => {
     const qrs = cust ? await GET(`/invoices/${id}/pay-qr`).catch(() => []) : [];
-    let html = docHtml(cust ? 'TAX INVOICE' : 'SUPPLIER BILL', inv.number, { name: inv.partner_name, address: inv.partner_address, email: inv.partner_email, phone: inv.partner_phone, tax: inv.partner_tax }, inv.invoice_date, inv.lines, inv);
+    let html = docHtml(cust ? (inv.fiscal ? fiscalLabel(inv.fiscal) : 'TAX INVOICE') : 'SUPPLIER BILL', inv.number, { name: inv.partner_name, address: inv.partner_address, email: inv.partner_email, phone: inv.partner_phone, tax: inv.partner_tax }, inv.invoice_date, inv.lines, inv);
+    if (cust && (inv.fiscal || inv.fiscal_credit)) html = html.replace('</body>', `${fiscalA4Html(inv.fiscal)}${fiscalA4Html(inv.fiscal_credit)}</body>`);
     if (qrs.length) html = html.replace('</body>', `<div style="margin-top:24px;border-top:1px solid #ddd;padding-top:12px"><b>Pay from your phone</b> – reference ${esc(inv.number)}<div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:8px">${qrs.map(q => `<div style="text-align:center;width:130px"><div style="width:120px;margin:auto">${q.svg}</div><div style="font-size:12px">${esc(q.label)}</div></div>`).join('')}</div></div></body>`);
     printHtml(html);
   });

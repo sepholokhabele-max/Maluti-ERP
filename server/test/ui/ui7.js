@@ -5,7 +5,7 @@ const api = async (m, u, b) => { const r = await fetch(B + '/api' + u, { method:
 (async () => {
   const bc = await import(require('path').join(__dirname, '../../../public/js/barcode.js'));
   await api('POST', '/db-config', { host: 'localhost', user: 'erp', password: 'erp123', database: 'maluti_ui' });
-  token = (await api('POST', '/setup', { company: { name: 'Ha Thetsane Butchery', vat_rate: 15, address: 'Main North 1, Maseru' }, admin: { name: 'Lineo Mokhele', username: 'admin', password: 'admin123' }, demo: false })).token;
+  token = (await api('POST', '/setup', { company: { name: 'Ha Thetsane Butchery', vat_rate: 15, address: 'Main North 1, Maseru' }, admin: { name: 'Lineo Mokhele', username: 'admin', password: 'admin123' }, demo: false, mywallet: { agent_no: 'AG300100', password: 'MyWallet#1' } })).token;
   await api('PUT', '/butchery/settings', { enabled: true });
   const vat = (await api('GET', '/taxes'))[0].id;
   const cat = await api('POST', '/categories', { name: 'Beef', color: '#b91c1c' });

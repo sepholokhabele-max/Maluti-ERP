@@ -107,6 +107,12 @@ Section "Install"
   CreateShortCut "$SMPROGRAMS\${DISPLAYNAME}\${DISPLAYNAME}.lnk" "$INSTDIR\${EXENAME}" "" "$INSTDIR\${EXENAME}" 0
   CreateShortCut "$SMPROGRAMS\${DISPLAYNAME}\Uninstall ${DISPLAYNAME}.lnk" "$INSTDIR\Uninstall ${APPNAME}.exe"
   CreateShortCut "$DESKTOP\${DISPLAYNAME}.lnk" "$INSTDIR\${EXENAME}" "" "$INSTDIR\${EXENAME}" 0
+  ; server edition (optional): run S-ERP as a background server for the whole organisation
+  CreateDirectory "$SMPROGRAMS\${DISPLAYNAME}\Server edition"
+  CreateShortCut "$SMPROGRAMS\${DISPLAYNAME}\Server edition\Install S-ERP Server (run as administrator).lnk" "$INSTDIR\resources\server-tools\install-server.cmd"
+  CreateShortCut "$SMPROGRAMS\${DISPLAYNAME}\Server edition\Restart S-ERP Server.lnk" "$INSTDIR\resources\server-tools\restart-server.cmd"
+  CreateShortCut "$SMPROGRAMS\${DISPLAYNAME}\Server edition\Remove S-ERP Server.lnk" "$INSTDIR\resources\server-tools\uninstall-server.cmd"
+  CreateShortCut "$SMPROGRAMS\${DISPLAYNAME}\Server edition\S-ERP Server - read me.lnk" "$INSTDIR\resources\server-tools\README-server.txt"
 
   WriteRegStr HKCU "Software\MalutiERP" "InstallDir" "$INSTDIR"
   WriteRegStr HKCU "${UNINSTKEY}" "DisplayName" "${DISPLAYNAME}"

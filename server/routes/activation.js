@@ -10,7 +10,7 @@ const S = requirePerm('settings');
 r.get('/activation', ah(async (req, res) => {
   const s = await A.status();
   // staff see only what the banner needs
-  if (!req.user.permissions.includes('*') && !req.user.permissions.includes('settings')) return res.json({ activated: s.activated, locked: s.locked, days_left: s.days_left, trial_ends: s.trial_ends });
+  if (!req.user.permissions.includes('*') && !req.user.permissions.includes('settings')) return res.json({ activated: s.activated, locked: s.locked, demo: s.demo });
   res.json(s);
 }));
 r.put('/activation/kyc', S, ah(async (req, res) => {
@@ -70,6 +70,7 @@ r.get('/activation/pack', S, ah(async (req, res) => {
   res.setHeader('Content-Disposition', `attachment; filename="KYC ${String(c.name || 'business').replace(/[^\w .-]+/g, '')} ${s.install_id}.zip"`);
   res.send(require('../services/zipstore').zip(files));
 }));
-r.post('/activation/code', S, ah(async (req, res) => { try { res.json(await A.activate(req.body.code)); } catch (e) { throw bad(e.message); } }));
+// activate (or change the agent) with the My Wallet agent number and password – the owner / an administrator
+r.post('/activation/agent', S, ah(async (req, res) => res.json(await A.activateAgent(req.user, req.body || {}))));
 
 module.exports = r;

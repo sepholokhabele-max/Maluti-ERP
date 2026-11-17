@@ -5,8 +5,6 @@ const assert = require('assert');
 const { start } = require('../app');
 
 const DB = { host: process.env.DB_HOST || 'localhost', port: 3306, user: process.env.DB_USER || 'erp', password: process.env.DB_PASSWORD || 'erp123', database: process.env.DB_NAME || 'maluti_smoke' };
-// the test passes the DB in through /db-config itself; don't let the server think it's admin-managed
-delete process.env.DB_HOST; delete process.env.DB_USER; delete process.env.DB_PASSWORD; delete process.env.DB_NAME;
 let base, token;
 
 async function api(method, url, body, expectFail) {
@@ -1266,37 +1264,41 @@ const ok = (m) => console.log('  ✓', m);
     ok('recruitment: cashier job, 2 applicants (duplicate phone refused), interview SMS, hired into HR at M 4 000 and job filled, regret SMS; appraisal weighted 3.57 and 5% increase to M 4 200');
   }
   {
-    // ---- activation & KYC ----
-    const crypto = require('crypto'); const A = require('../services/activation'); const dbm = require('../db');
-    const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
-    process.env.MALUTI_ACTIVATION_PUBKEYS = publicKey.export({ type: 'spki', format: 'pem' });
-    let st = await api('GET', '/activation'); assert(!st.activated && !st.locked && st.days_left > 20 && /^[0-9A-F]{4}-/.test(st.install_id));
-    // trial over: selling stops, everything else keeps working
-    await dbm.setSetting('activation', { ...(await A.get()), trial_start: '2020-01-01' });
-    st = await api('GET', '/activation'); assert(st.locked);
+    // ---- activation with a My Wallet agent number and password (no trial, no codes, no expiry) ----
+    const A = require('../services/activation'); const dbm = require('../db');
+    let st = await api('GET', '/activation'); assert(!st.activated && st.demo && !st.locked && /^[0-9A-F]{4}-/.test(st.install_id)); // set up with demo data: demo mode
+    // a real business that has not activated yet: selling stops, everything else keeps working
+    const saved = await A.get();
+    await dbm.setSetting('activation', { ...saved, v2: true, demo: false, trial_start: undefined });
+    st = await api('GET', '/activation'); assert(st.locked && !st.activated);
     const cust = (await api('GET', '/partners?is_customer=1'))[0];
     const inv = await api('POST', '/invoices', { kind: 'customer_invoice', partner_id: cust.id, lines: [{ description: 'Test', qty: 1, unit_price: 100, tax_rate: 0 }] });
-    const lockedMsg = await api('POST', `/invoices/${inv.id}/post`, {}, true); assert(/trial has ended/.test(JSON.stringify(lockedMsg)));
-    // new business: documents needed before the request goes out
+    const lockedMsg = await api('POST', `/invoices/${inv.id}/post`, {}, true); assert(/not activated/.test(JSON.stringify(lockedMsg)));
+    // not yet a My Wallet agent: the application with KYC documents still goes to My Wallet
     await api('PUT', '/activation/kyc', { path: 'documents' });
-    await api('POST', '/activation/submit', {}, true);
     const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
     for (const doc of ['owner_id', 'registration', 'address']) st = await api('POST', '/activation/documents', { doc, filename: doc + '.png', data_url: png });
-    assert.strictEqual(st.kyc.ready, true);
-    // existing My Wallet merchant: no documents needed
-    await api('PUT', '/activation/kyc', { path: 'merchant', merchant_no: 'x' }, true);
-    st = await api('PUT', '/activation/kyc', { path: 'merchant', merchant_no: 'MW-104455', merchant_phone: '58001234' }); assert(st.kyc.ready && !st.kyc.missing.length);
-    const sub = await api('POST', '/activation/submit', {}); assert(sub.request_text.includes('MW-104455') && sub.request_text.includes(st.install_id));
-    assert.strictEqual(sub.kyc_email, 'kyc@smartelmoney.com');
-    if (smtpPort) { await new Promise(r => setTimeout(r, 300)); if (!sub.emailed) console.log('KYC email:', sub.email_error, mails.length); assert(sub.emailed && mails.some(m => /kyc@smartelmoney\.com/.test(m) && /ACTIVATION REQUEST/.test(m)), 'KYC request emailed to the Smartel KYC desk'); }
+    const sub = await api('POST', '/activation/submit', {}); assert(sub.request_text.includes(st.install_id)); assert.strictEqual(sub.kyc_email, 'kyc@smartelmoney.com');
+    if (smtpPort) { await new Promise(r => setTimeout(r, 300)); assert(sub.emailed && mails.some(m => /kyc@smartelmoney\.com/.test(m) && /ACTIVATION REQUEST/.test(m)), 'KYC request email'); }
     const zr = await fetch(base + '/api/activation/pack', { headers: { Authorization: 'Bearer ' + token } }); assert(zr.ok && (zr.headers.get('content-type') || '').includes('zip'));
-    // codes: another install's code, a forged one and the right one
-    await api('POST', '/activation/code', { code: A.makeCode(privateKey, { install_id: 'AAAA-BBBB-CCCC-DDDD', business: 'x' }) }, true);
-    const forged = A.makeCode(crypto.generateKeyPairSync('ed25519').privateKey, { install_id: st.install_id }); await api('POST', '/activation/code', { code: forged }, true);
-    st = await api('POST', '/activation/code', { code: A.makeCode(privateKey, { install_id: st.install_id, business: 'Smoke test', days: 365 }) });
-    assert(st.activated && !st.locked && st.licence.expires);
+    // activation: the owner enters the agent number and password once
+    await api('POST', '/activation/agent', { agent_no: 'x', password: 'secret1' }, true);
+    await api('POST', '/activation/agent', { agent_no: 'AG-204451', password: '1' }, true);
+    await api('POST', '/users', { name: 'Ntate Shop Manager', username: 'shopmgr', password: 'manager1', role: 'manager' });
+    const mgrTok = (await api('POST', '/login', { username: 'shopmgr', password: 'manager1' })).token;
+    { const keep = token; token = mgrTok; await api('POST', '/activation/agent', { agent_no: 'AG-204451', password: 'MyWallet#1' }, true); token = keep; } // only the owner / an administrator
+    st = await api('POST', '/activation/agent', { agent_no: 'ag 204451', password: 'MyWallet#1' });
+    assert(st.activated && !st.locked && st.mode === 'agent' && st.agent.number.endsWith('4451') && !JSON.stringify(st).includes('MyWallet#1') && !('expires' in st) && st.agent.check === 'local');
+    assert(!JSON.stringify(await dbm.getSetting('activation')).includes('MyWallet#1')); // only a one-way hash is kept
     await api('POST', `/invoices/${inv.id}/post`, {});
-    ok('activation: 30-day trial, selling stops after it (rest works), KYC documents or existing My Wallet merchant number, request & KYC pack, only a My Wallet-signed code for this install activates');
+    // the owner signs in with the agent number and password (spaces / dashes / case do not matter); a wrong password does not
+    const ag = await api('POST', '/login', { username: 'AG-204451', password: 'MyWallet#1' }); assert(ag.token && ag.user.role === 'admin');
+    await api('POST', '/login', { username: 'AG204451', password: 'wrong-one' }, true);
+    // an install activated with an old activation code stays activated – its end date no longer applies
+    await dbm.setSetting('activation', { install_id: saved.install_id, v2: true, licence: { v: 1, i: saved.install_id, b: 'Old', d: '2024-01-01', e: '2025-01-01' } });
+    assert((await api('GET', '/activation')).activated);
+    st = await api('POST', '/activation/agent', { agent_no: 'AG204451', password: 'MyWallet#1' }); assert(st.activated);
+    ok('activation: demo mode for practice installs, not activated → selling paused; My Wallet application with KYC documents; owner activates once with agent number + password (no trial, no codes, no expiry), owner can sign in with them, only a hash is kept; old code activations stay valid');
   }
   {
     // ---- Smartel POS backend adapter (mock pos-api + syncd): services, digital tenders, sealed envelopes, recalls, Thoki, bulk wages ----
@@ -2088,6 +2090,208 @@ const ok = (m) => console.log('  ✓', m);
     await as(SUP, 'POST', `/expense-claims/${cl2.id}/approve`, {}, true); // staff without the right cannot approve any more
     await as(CEO, 'POST', `/expense-claims/${cl2.id}/approve`);
     ok('without authorities the modules fall back to their own approval rights');
+  }
+  { // ---------- working from anywhere: office vs outside, two-step sign-in, lock-out, sessions, idle sign-out, set-up guard, HTTPS
+    const SEC = require('../services/security'), dbm = require('../db');
+    const out = async (method, url, body, tk, fail) => { const r = await fetch(base + '/api' + url, { method, headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': '41.203.64.20', ...(tk ? { Authorization: 'Bearer ' + tk } : {}) }, body: body ? JSON.stringify(body) : undefined });
+      const j = await r.json().catch(() => ({})); if (fail) { assert(!r.ok, `${method} ${url} should fail from outside`); return { status: r.status, ...j }; } if (!r.ok) throw new Error(`${method} ${url} -> ${r.status} ${JSON.stringify(j)}`); return j; };
+    assert.strictEqual((await api('GET', '/where')).office, true); assert.strictEqual((await out('GET', '/where')).office, false);
+    assert((await api('GET', '/pin-users')).length > 0); assert.deepStrictEqual(await fetch(base + '/api/pin-users', { headers: { 'X-Forwarded-For': '41.203.64.20' } }).then(r => r.json()), []);
+    const kat = (await api('GET', '/pin-users')).find(u => u.name === 'Cashier Kat');
+    assert.strictEqual((await out('POST', '/pin-login', { user_id: kat.id, pin: '4321' }, null, true)).status, 403);
+    await out('POST', '/setup', { company: { name: 'x' }, admin: { username: 'x', password: 'xxxxxx' } }, null, true); // no set-up from outside
+    // a manager from outside must set up two-step sign-in, then sign in with the code
+    await api('POST', '/users', { name: 'Mme Remote Manager', username: 'remmgr', password: 'remote123', role: 'manager' });
+    const e1 = await out('POST', '/login', { username: 'remmgr', password: 'remote123' }); assert.strictEqual(e1.two_factor, 'enrol'); assert(!e1.token && e1.secret && /otpauth:\/\/totp\//.test(e1.otpauth) && /<svg/.test(e1.qr_svg));
+    await out('POST', '/login/code', { ticket: e1.ticket, code: '000000' }, null, true);
+    const s1 = await out('POST', '/login/code', { ticket: e1.ticket, code: SEC.totp(e1.secret) }); assert(s1.token && s1.remote === true && s1.user.two_factor === true);
+    await out('POST', '/login/code', { ticket: e1.ticket, code: SEC.totp(e1.secret) }, null, true); // tickets are single use
+    const e2 = await out('POST', '/login', { username: 'remmgr', password: 'remote123' }); assert.strictEqual(e2.two_factor, 'code');
+    await out('POST', '/login/code', { ticket: e2.ticket, code: SEC.totp(e1.secret) }, null, true); // the same code cannot be used twice
+    const s2 = await out('POST', '/login/code', { ticket: e2.ticket, code: SEC.totp(e1.secret, Date.now() + 30000) });
+    const ms = await out('GET', '/me/security', null, s2.token); assert(ms.two_factor && ms.required && !ms.in_office && ms.sessions.length === 2 && ms.sessions.every(x => x.remote));
+    await out('POST', '/me/2fa/disable', { password: 'remote123' }, s2.token, true); // required for managers
+    // a cashier from outside: no code needed by default, but office-only when the rules say so
+    await api('POST', '/users', { name: 'Ausi Remote Clerk', username: 'remclk', password: 'remote123', role: 'cashier' });
+    assert((await out('POST', '/login', { username: 'remclk', password: 'remote123' })).token);
+    await api('PUT', '/security', { remote_access: 'roles', remote_roles: ['manager'] });
+    assert.strictEqual((await out('POST', '/login', { username: 'remclk', password: 'remote123' }, null, true)).status, 403);
+    assert((await api('POST', '/login', { username: 'remclk', password: 'remote123' })).token); // in the office it still works
+    await api('PUT', '/security', { remote_access: 'everyone' });
+    await api('PUT', '/security', { trusted_networks: 'not-a-network' }, true);
+    // wrong passwords lock the account for a while (also with the right password afterwards)
+    for (let i = 0; i < 5; i++) await out('POST', '/login', { username: 'remclk', password: 'wrong' }, null, true);
+    assert.strictEqual((await out('POST', '/login', { username: 'remclk', password: 'remote123' }, null, true)).status, 429);
+    SEC.clearFails('remclk');
+    // sessions: the administrator sees and ends them; idle remote sessions end on their own
+    const ss = await api('GET', '/security/sessions'); const theirs = ss.find(x => x.username === 'remmgr' && x.remote); assert(theirs && theirs.ip === '41.203.64.20');
+    await api('POST', `/security/sessions/${theirs.id}/end`);
+    const still = (await api('GET', '/security/sessions')).filter(x => x.username === 'remmgr');
+    assert.strictEqual(still.length, 1);
+    const live = [s1.token, s2.token]; let ok1 = 0; for (const t of live) { const r = await fetch(base + '/api/me', { headers: { Authorization: 'Bearer ' + t } }); if (r.ok) ok1++; } assert.strictEqual(ok1, 1);
+    const alive = (await Promise.all(live.map(async t => (await fetch(base + '/api/me', { headers: { Authorization: 'Bearer ' + t } })).ok ? t : null))).find(Boolean);
+    await dbm.query('UPDATE auth_tokens SET last_seen = DATE_SUB(NOW(), INTERVAL 2 HOUR), created_at = DATE_SUB(NOW(), INTERVAL 2 HOUR) WHERE token = ?', [alive]);
+    const idle = await fetch(base + '/api/me', { headers: { Authorization: 'Bearer ' + alive } }); assert.strictEqual(idle.status, 401); assert(/without activity/.test((await idle.json()).error));
+    const sec = await api('GET', '/security'); assert(sec.checks.length >= 6 && sec.status.you_are_in_office && sec.status.managers_without_2fa >= 1);
+    // an administrator resets a lost phone
+    const rm = (await api('GET', '/users')).find(u => u.username === 'remmgr'); await api('POST', `/security/users/${rm.id}/reset-2fa`);
+    assert.strictEqual((await out('POST', '/login', { username: 'remmgr', password: 'remote123' })).two_factor, 'enrol');
+    // built-in HTTPS (server edition with a certificate)
+    const { execFileSync } = require('child_process'), os = require('os'), fs = require('fs'), pth = require('path');
+    let tlsOk = false;
+    try {
+      const dir = fs.mkdtempSync(pth.join(os.tmpdir(), 'tls-'));
+      execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '2', '-subj', '/CN=localhost', '-keyout', pth.join(dir, 'k.pem'), '-out', pth.join(dir, 'c.pem')], { stdio: 'ignore' });
+      const t = await start({ port: 0, host: '127.0.0.1', tls: { cert: fs.readFileSync(pth.join(dir, 'c.pem')), key: fs.readFileSync(pth.join(dir, 'k.pem')) }, mode: 'server' });
+      const body = await new Promise((res, rej) => require('https').get({ host: '127.0.0.1', port: t.port, path: '/api/status', rejectUnauthorized: false }, r => { let d = ''; r.on('data', x => d += x); r.on('end', () => res({ d, h: r.headers })); }).on('error', rej));
+      assert(JSON.parse(body.d).version && body.h['strict-transport-security'] && body.h['x-content-type-options'] === 'nosniff'); t.server.close(); tlsOk = true;
+    } catch (e) { if (!/ENOENT/.test(e.message)) throw e; }
+    ok(`working from anywhere: office network recognised, PIN and set-up only in the office, two-step sign-in set up and required for managers away from the office (single-use tickets, no code replay), office-only roles, lock-out after wrong passwords, sessions listed and ended, idle sign-out, lost-phone reset${tlsOk ? ', built-in HTTPS with security headers' : ''}`);
+  }
+  { // ---------- RSL Lekuka e-invoicing: signatures, demo registration, every sale reported in order, credit notes, offline, fiscal days, then the RSL protocol over mutual TLS
+    const S = require('../services/lekuka/sign'), sim = require('../services/lekuka/simulator'), LK = require('../services/lekuka'), dbm = require('../db');
+    const prev = 'hNVJXP/ACOiE8McD3pKsDlqBXpuaUqQOfPnMyfZWI9k=';
+    assert.strictEqual(S.sha256b64(S.receiptString(322, { receiptType: 'FiscalInvoice', receiptCurrency: 'LSL', receiptGlobalNo: 85, receiptDate: '2024-02-19T09:23:07', receiptTotal: 50.35, receiptTaxes: [{ taxID: 1, taxAmount: 0, salesAmountWithTax: 7 }, { taxID: 2, taxRate: 0, taxAmount: 0, salesAmountWithTax: 10 }, { taxID: 3, taxRate: 14.5, taxAmount: 0.05, salesAmountWithTax: 0.35 }, { taxID: 4, taxRate: 10, taxAmount: 10, salesAmountWithTax: 10 }] }, prev)), '1ExxQU5/mXJiM40sWAwxdBNkSqIj2qCjAWJXt0+V4g4=');
+    assert.strictEqual(S.sha256b64(S.receiptString(322, { receiptType: 'CreditNote', receiptCurrency: 'LSL', receiptGlobalNo: 85, receiptDate: '2024-02-19T09:23:07', receiptTotal: -40.35, receiptTaxes: [{ taxID: 1, taxAmount: 0, salesAmountWithTax: -7 }, { taxID: 2, taxRate: 0, taxAmount: 0, salesAmountWithTax: -10 }, { taxID: 3, taxRate: 14.5, taxAmount: -3, salesAmountWithTax: -23 }] }, prev)), 'N4dMwVTbSXCr7qYPGj3sgLNkBKQDt1YlPnoz8xz8fYI=');
+    const qu = S.qrUrl('https://invoice.rsl.org.ls/', 321, '2023-04-03T10:00:00', 1112223331, Buffer.from('x').toString('base64')); assert(/^https:\/\/invoice\.rsl\.org\.ls\/0000000321030420231112223331[0-9A-F]{16}$/.test(qu), qu);
+    // registration in demo mode (a VAT-registered business)
+    { const co = (await api('GET', '/settings')).company; await api('PUT', '/settings/company', { ...co, tax_number: '100200300' }); }
+    let ls = await api('GET', '/lekuka/status'); assert(!ls.settings.enabled && /^SERP[0-9A-F]{16}$/.test(ls.serial_no));
+    await api('POST', '/lekuka/verify', { mode: 'demo', device_id: 321, activation_key: 'short' }, true);
+    const tp = await api('POST', '/lekuka/verify', { mode: 'demo', device_id: 321, activation_key: 'AbCd1234' }); assert(tp.taxPayerName && tp.taxPayerTIN);
+    ls = await api('POST', '/lekuka/register', { mode: 'demo', device_id: 321, activation_key: 'AbCd1234' });
+    assert(ls.settings.enabled && ls.settings.has_key && !ls.settings.private_key && ls.taxes.length >= 5 && ls.settings.cert_valid_till > new Date().toISOString().slice(0, 10));
+    const tt = (await api('GET', '/pos/terminals')).find(t => t.id === retail.id); const sid = tt.open_session_id || (await api('POST', '/pos/sessions/open', { terminal_id: retail.id, opening_cash: 0 })).id;
+    const sell = (lines, pays) => api('POST', '/pos/checkout', { session_id: sid, lines, payments: pays });
+    const settle = async () => { for (let i = 0; i < 20; i++) { await api('POST', '/lekuka/send'); if (!(await api('GET', '/lekuka/status')).queued) return; await new Promise(r => setTimeout(r, 100)); } };
+    // a till sale: numbered, signed, QR code and verification code on the receipt, then accepted by Lekuka
+    const s1 = await sell([{ product_id: P('White Bread').id, qty: 2 }, { product_id: P('Maize Meal').id, qty: 1 }], [{ method_id: M('Cash').id, amount: 200 }]);
+    assert(s1.fiscal && s1.fiscal.global_no === 1 && s1.fiscal.receipt_counter === 1 && s1.fiscal.day_no === 1 && s1.fiscal.receipt_type === 'Receipt' && /^[0-9A-F]{4}(-[0-9A-F]{4}){3}$/.test(s1.fiscal.verification_code));
+    assert(s1.fiscal.qr_url.startsWith('https://invoice.rsl.org.ls/0000000321') && /<svg/.test(s1.fiscal.qr_svg) && s1.order.fiscal.global_no === 1);
+    await settle();
+    let docs = await api('GET', '/lekuka/receipts'); assert.strictEqual(docs[0].status, 'sent'); assert.strictEqual(docs[0].color, 'Valid');
+    // invoices: a business customer (TIN) gets a fiscal invoice with buyer data; a customer without TIN a receipt
+    const bizCust = await api('POST', '/partners', { name: 'Maseru Hardware (Pty) Ltd', is_customer: 1, tax_number: '200123456' });
+    const inv = await api('POST', '/invoices', { kind: 'customer_invoice', partner_id: bizCust.id, lines: [{ description: 'Shelving', qty: 2, unit_price: 500, tax_rate: 15 }, { description: 'Delivery (zero-rated)', qty: 1, unit_price: 100, tax_rate: 0 }] });
+    const pi = await api('POST', `/invoices/${inv.id}/post`); assert(pi.fiscal.receipt_type === 'FiscalInvoice' && pi.fiscal.global_no === 2);
+    const rcv = (await dbm.one('SELECT receipt FROM lekuka_receipts WHERE doc_kind = ? AND doc_id = ?', ['invoice', inv.id])).receipt; const rj = typeof rcv === 'string' ? JSON.parse(rcv) : rcv;
+    assert(rj.buyerData.buyerTIN === '200123456' && rj.receiptTaxes.length === 2 && rj.receiptTaxes.find(t => t.taxRate === 15).taxAmount === round(1150 / 115 * 15) && rj.receiptPayments[0].moneyTypeCode === 'Credit');
+    // a refund at the till becomes a credit note pointing at the original sale
+    const rf = await api('POST', `/pos/orders/${s1.order_id}/refund`, { lines: [{ line_id: s1.order.lines[0].id, qty: 1 }], method_id: M('Cash').id, reason: 'Stale loaf returned' });
+    assert(rf.fiscal.receipt_type === 'CreditNote' && rf.fiscal.global_no === 3);
+    await settle();
+    docs = await api('GET', '/lekuka/receipts'); assert(docs.every(d => d.status === 'sent' && d.color === 'Valid'), JSON.stringify(docs.map(d => [d.global_no, d.color, d.validation_errors])));
+    const cn = (await dbm.one(`SELECT receipt FROM lekuka_receipts WHERE doc_kind = 'pos_refund'`)).receipt; const cj = typeof cn === 'string' ? JSON.parse(cn) : cn;
+    assert(cj.creditDebitNote.receiptID && cj.receiptTotal < 0 && cj.receiptNotes === 'Stale loaf returned');
+    // a VAT rate RSL does not have stops the sale with a clear message (fix the item first)
+    const odd = await api('POST', '/taxes', { name: 'VAT 12% (wrong)', rate: 12, price_includes_tax: 1 });
+    const oddP = await api('POST', '/products', { name: 'Odd-rated item', type: 'service', uom: 'Unit', price: 50, tax_id: odd.id });
+    const bad = await api('POST', '/pos/checkout', { session_id: sid, lines: [{ product_id: oddP.id, qty: 1 }], payments: [{ method_id: M('Cash').id, amount: 50 }] }, true); assert(/no Lekuka tax/.test(JSON.stringify(bad)));
+    // no internet: selling goes on, documents keep their numbers and go later, strictly in order
+    await api('PUT', '/lekuka/options', { simulate_offline: true });
+    const s2 = await sell([{ product_id: P('White Bread').id, qty: 1 }], [{ method_id: M('Cash').id, amount: 50 }]);
+    const s3 = await sell([{ product_id: P('Maize Meal').id, qty: 1 }], [{ method_id: M('Card').id, amount: P('Maize Meal').price }]);
+    assert(s2.fiscal.global_no === 4 && s3.fiscal.global_no === 5);
+    await api('POST', '/lekuka/send'); ls = await api('GET', '/lekuka/status'); assert(ls.queued === 2 && /practice: offline/.test(ls.settings.last_error));
+    await api('PUT', '/lekuka/options', { simulate_offline: false }); await settle();
+    ls = await api('GET', '/lekuka/status'); assert(!ls.queued && !ls.settings.last_error && ls.sent === 5);
+    // end of the day: the Z report (counters, signed) closes the fiscal day; the next sale opens day 2
+    const cd = await api('POST', '/lekuka/close-day'); assert.strictEqual(cd.status, 'closed');
+    const dd = await dbm.one('SELECT * FROM lekuka_days WHERE day_no = 1'); assert(dd.server_signature && dd.reconciliation === 'Auto');
+    const s4 = await sell([{ product_id: P('White Bread').id, qty: 1 }], [{ method_id: M('Cash').id, amount: 50 }]); assert(s4.fiscal.day_no === 2 && s4.fiscal.receipt_counter === 1 && s4.fiscal.global_no === 6);
+    await settle();
+    const tin = await api('POST', '/lekuka/verify-tin', { tin: '200123456' }); assert(/200123456/.test(tin.taxPayerName));
+    const fl = await fetch(base + `/api/lekuka/days/${dd.id}/file`, { headers: { Authorization: 'Bearer ' + token } }); const fj = await fl.json(); assert(fj.header.fiscalDayNo === 1 && fj.content.receipts.length === 5 && fj.footer.fiscalDayDeviceSignature.hash);
+    // a document changed after it was signed is caught by Lekuka (signature) and the day cannot close
+    await api('PUT', '/lekuka/options', { simulate_offline: true });
+    const s5 = await sell([{ product_id: P('White Bread').id, qty: 1 }], [{ method_id: M('Cash').id, amount: 50 }]);
+    await dbm.query(`UPDATE lekuka_receipts SET receipt = JSON_SET(receipt, '$.receiptTotal', 1.00) WHERE doc_id = ? AND doc_kind = 'pos_order'`, [s5.order_id]);
+    await api('PUT', '/lekuka/options', { simulate_offline: false }); await settle();
+    const red = (await api('GET', '/lekuka/receipts?problems=1')).find(d => d.doc_id === s5.order_id); assert(red.color === 'Red' && JSON.stringify(red.validation_errors).includes('RCPT020'));
+    const cd2 = await api('POST', '/lekuka/close-day'); assert.strictEqual(cd2.status, 'close_failed');
+    // the RSL protocol over HTTPS with the device certificate (mutual TLS) – against a stand-in for RSL's test server
+    const crypto = require('crypto'), PK = require('../services/lekuka/pki'), fs = require('fs'), os = require('os'), pth = require('path');
+    await sim.reset(); await dbm.query('DELETE FROM lekuka_receipts'); await dbm.query('DELETE FROM lekuka_days'); await dbm.query('UPDATE lekuka_state SET global_no = 0, last_day_no = 0, last_receipt_date = NULL'); await dbm.setSetting('lekuka', {}); LK._reset();
+    const ca = await sim.caCert(); const caKey = (await dbm.getSetting('lekuka_sim')).ca.key;
+    const srvKey = PK.newKey(); const srvCert = PK.certificate({ subject: { CN: 'localhost' }, issuer: { CN: 'Lekuka DEMO CA', O: 'Revenue Services Lesotho (DEMO)', C: 'LS' }, spkiDer: crypto.createPublicKey(srvKey).export({ type: 'spki', format: 'der' }), issuerKey: caKey, server: true, dns: ['localhost', '127.0.0.1'] });
+    const mock = await require('../services/lekuka/mock').start({ key: srvKey, cert: srvCert, ca });
+    const caFile = pth.join(fs.mkdtempSync(pth.join(os.tmpdir(), 'lk-')), 'ca.pem'); fs.writeFileSync(caFile, ca);
+    process.env.MALUTI_LEKUKA_URL = `https://127.0.0.1:${mock.address().port}`; process.env.MALUTI_LEKUKA_CA = caFile;
+    await api('POST', '/lekuka/register', { mode: 'live', device_id: 555, activation_key: 'LIVE0001' }, true); // live only once S-ERP is accredited by RSL
+    ls = await api('POST', '/lekuka/register', { mode: 'test', device_id: 555, activation_key: 'TEST0001' }); assert(ls.settings.mode === 'test' && ls.settings.config.deviceOperatingMode === 'Online');
+    const t1 = await sell([{ product_id: P('White Bread').id, qty: 3 }], [{ method_id: M('Cash').id, amount: 100 }]); assert(t1.fiscal.global_no === 1 && t1.fiscal.mode === 'test');
+    await settle(); docs = await api('GET', '/lekuka/receipts'); assert(docs[0].status === 'sent' && docs[0].color === 'Valid' && docs[0].receipt_id);
+    assert.strictEqual((await api('POST', '/lekuka/close-day')).status, 'closed');
+    const renewed = await api('POST', '/lekuka/renew'); assert(renewed.valid_till);
+    const t2 = await sell([{ product_id: P('White Bread').id, qty: 1 }], [{ method_id: M('Cash').id, amount: 50 }]); await settle(); assert((await api('GET', '/lekuka/receipts'))[0].color === 'Valid'); // signed with the renewed certificate
+    await api('POST', '/lekuka/close-day');
+    mock.close(); delete process.env.MALUTI_LEKUKA_URL; delete process.env.MALUTI_LEKUKA_CA;
+    await api('PUT', '/lekuka/options', { enabled: false }); void t2;
+    ok('Lekuka e-invoicing: hashes match RSL\'s published examples; device registered (own key, certificate request, certificate); till sales, fiscal invoices with buyer TIN and credit notes for refunds are numbered, signed, QR-coded and accepted in order; unknown VAT rates stop the sale; offline selling queues and catches up in order; Z report closes the day and the next opens; changed documents are rejected; the same over mutual-TLS HTTPS; live refused until accredited; certificate renewal');
+  }
+  { // ---------- My Wallet payments at the till (My Wallet API v4): demo simulator, then live against a mock that checks signatures like the v4 server
+    const tt = (await api('GET', '/pos/terminals')).find(t => t.id === retail.id); const sid = tt.open_session_id || (await api('POST', '/pos/sessions/open', { terminal_id: retail.id, opening_cash: 0 })).id;
+    const sell = (lines, pays, fail) => api('POST', '/pos/checkout', { session_id: sid, lines, payments: pays }, fail);
+    const bread = P('White Bread'); const two = [{ product_id: bread.id, qty: 2 }];
+    assert(!(await api('GET', '/mywallet/status')).settings.enabled);
+    assert(!(await api('GET', '/pos/catalog')).methods.some(m => /^mywallet:/.test(m.plugin_id || '')));
+    await api('PUT', '/mywallet/settings', { enabled: true, mode: 'demo' });
+    const cat2 = await api('GET', '/pos/catalog'); const MWm = cat2.methods.find(m => m.plugin_id === 'mywallet:wallet'), SWm = cat2.methods.find(m => m.plugin_id === 'mywallet:switch');
+    assert(MWm && SWm && cat2.mywallet.enabled && cat2.mywallet.members.some(x => x.name === 'M-Pesa') && !cat2.mywallet.members.some(x => x.code === '2010002'));
+    await sell(two, [{ method_id: MWm.id, amount: 36 }], true);                                  // no request at all
+    let pr = await api('POST', '/mywallet/payments', { method_id: MWm.id, amount: 36, payer_cell: '+266 5800 1122', session_id: sid });
+    assert(pr.status === 'PENDING' && pr.qr_text === 'MWPAY:' + pr.code && pr.qr_svg && pr.payer_cell === '58001122' && pr.mode === 'demo');
+    await sell(two, [{ method_id: MWm.id, amount: 36, mywallet_payment_id: pr.id }], true);    // not approved yet
+    pr = await api('POST', `/mywallet/payments/${pr.id}/simulate`, { outcome: 'approve' }); assert(pr.paid && pr.mw_reference);
+    await sell(two, [{ method_id: MWm.id, amount: 35, mywallet_payment_id: pr.id }, { method_id: M('Cash').id, amount: 1 }], true);   // amount differs from what was approved
+    await sell(two, [{ method_id: SWm.id, amount: 36, mywallet_payment_id: pr.id }], true);    // approved for the other method
+    const s1 = await sell(two, [{ method_id: MWm.id, amount: 36, mywallet_payment_id: pr.id }]);
+    const o1 = await api('GET', '/pos/orders/' + s1.order_id);
+    assert(o1.payments.some(x => x.reference === 'MW ' + pr.code && x.phone === '58001122'));
+    await sell(two, [{ method_id: MWm.id, amount: 36, mywallet_payment_id: pr.id }], true);    // the same approval cannot pay a second sale
+    // part My Wallet, part cash with change
+    let p2 = await api('POST', '/mywallet/payments', { method_id: MWm.id, amount: 20 }); p2 = await api('POST', `/mywallet/payments/${p2.id}/simulate`, {});
+    const s2 = await sell(two, [{ method_id: MWm.id, amount: 20, mywallet_payment_id: p2.id }, { method_id: M('Cash').id, amount: 20 }]); assert.strictEqual(s2.change, 4);
+    // declined, cancelled, other wallets through the switch
+    let p3 = await api('POST', '/mywallet/payments', { method_id: MWm.id, amount: 10 }); p3 = await api('POST', `/mywallet/payments/${p3.id}/simulate`, { outcome: 'decline' }); assert(p3.status === 'DECLINED' && p3.final);
+    let p4 = await api('POST', '/mywallet/payments', { method_id: MWm.id, amount: 10 }); p4 = await api('POST', `/mywallet/payments/${p4.id}/cancel`); assert.strictEqual(p4.status, 'CANCELLED');
+    await api('POST', '/mywallet/payments', { method_id: SWm.id, amount: 10 }, true);           // which wallet?
+    await api('POST', '/mywallet/payments', { method_id: MWm.id, amount: 10, payer_cell: '12345' }, true);
+    const p5 = await api('POST', '/mywallet/payments', { method_id: SWm.id, amount: 10, payer_member: '2010001', payer_cell: '57001234' }); assert(p5.channel === 'switch' && /M-Pesa/.test(p5.instructions) && !p5.qr_text && p5.member_name === 'M-Pesa');
+    // refunds go back to My Wallet; a cash sale cannot be refunded to My Wallet
+    const rf = await api('POST', `/pos/orders/${s1.order_id}/refund`, { method_id: MWm.id, session_id: sid });
+    assert(rf.mywallet && rf.mywallet[0].status === 'DONE' && rf.mywallet[0].amount === 36);
+    assert.strictEqual((await api('GET', `/mywallet/payments/${pr.id}`)).status, 'REFUNDED');
+    const cashSale = await sell(two, [{ method_id: M('Cash').id, amount: 36 }]);
+    await api('POST', `/pos/orders/${cashSale.order_id}/refund`, { method_id: MWm.id, session_id: sid }, true);
+    let mst = await api('GET', '/mywallet/status'); assert(mst.today.count >= 2 && mst.digital_due >= 20 && mst.recent.length >= 5);
+    ok('My Wallet payments (demo): request with QR code, sale only after approval, exact amount and method, one approval per sale, split with cash, declined / cancelled / other wallets via the switch, refund back to the wallet');
+
+    // live: link with the agent number and password (activation), then sign every call
+    const mock = await require('./mock-mywallet').start({ agent: '100045', password: '9911' });
+    await api('POST', '/mywallet/link', { api_url: mock.url, agent_no: '100045', password: '0000' }, true);
+    const act = await api('POST', '/activation/agent', { agent_no: '100045', password: '9911' });
+    assert(act.activated && act.agent.check === 'mywallet' && act.agent.till_number === '100045');
+    mst = await api('GET', '/mywallet/status'); const secret = Object.values(mock.keys)[0].secret;
+    assert(mst.settings.enabled && mst.settings.mode === 'live' && mst.settings.key_id && mst.settings.secret === '********' && !JSON.stringify(mst).includes(secret));
+    assert.strictEqual((await api('POST', '/mywallet/test')).till_number, '100045');
+    let lp = await api('POST', '/mywallet/payments', { method_id: MWm.id, amount: 36, payer_cell: '58001122' });
+    const create = mock.calls.find(c => c.url === '/api/v4/pos/payments'); assert(/^serp-pay-/.test(create.headers['idempotency-key']) && JSON.parse(create.body).merchant_reference.startsWith('SERP-'));
+    assert(lp.mode === 'live' && lp.status === 'PENDING' && lp.code);
+    assert.strictEqual((await api('GET', '/mywallet/payments/' + lp.id)).status, 'PENDING');
+    mock.pay(lp.code);
+    lp = await api('GET', '/mywallet/payments/' + lp.id); assert(lp.paid && /^MW4P\./.test(lp.mw_reference));
+    const s3 = await sell(two, [{ method_id: MWm.id, amount: 36, mywallet_payment_id: lp.id }]);
+    const rf2 = await api('POST', `/pos/orders/${s3.order_id}/refund`, { method_id: MWm.id, session_id: sid, lines: [{ line_id: (await api('GET', '/pos/orders/' + s3.order_id)).lines[0].id, qty: 1 }] });
+    const rcall = mock.calls.filter(c => /\/refund$/.test(c.url)).pop(); assert(JSON.parse(rcall.body).amount === 18 && /^serp-refund-/.test(rcall.headers['idempotency-key']));
+    assert(rf2.mywallet[0].status === 'DONE' && (await api('GET', '/mywallet/payments/' + lp.id)).status === 'PARTIALLY_REFUNDED');
+    let lc = await api('POST', '/mywallet/payments', { method_id: MWm.id, amount: 5 }); lc = await api('POST', `/mywallet/payments/${lc.id}/cancel`); assert.strictEqual(lc.status, 'CANCELLED');
+    // a wrong key is refused by My Wallet
+    await api('PUT', '/mywallet/settings', { secret: 'sk_wrong' });
+    const bad = await api('POST', '/mywallet/test', {}, true); assert(/signature/i.test(bad.error || JSON.stringify(bad)));
+    await api('PUT', '/mywallet/settings', { enabled: false }); mock.close();
+    assert(!(await api('GET', '/pos/catalog')).methods.some(m => /^mywallet:/.test(m.plugin_id || '')));
+    ok('My Wallet payments (live): activation by agent number + password at My Wallet returns the shop key (kept secret), every call signed and idempotent, sale after the customer pays, partial refund, cancel, wrong key refused');
   }
   const adminToken = token;
   const pin = await api('GET', '/pin-users'); const kat = pin.find(u => u.name === 'Cashier Kat');

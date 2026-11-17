@@ -20,7 +20,7 @@ const api = async (m, u, b) => { const r = await fetch(B + '/api' + u, { method:
       await p.click('#bu'); await p.waitForSelector('.modal [name=name]'); await p.fill('.modal [name=name]', n); await p.selectOption('.modal [name=kind]', k); await p.fill('.modal [name=market_rent]', String(r)); await ok(); await p.waitForSelector(`td:has-text("${n}")`);
     }
     await shot('202-building');
-    await p.click('a:has-text("Let") >> nth=0'); await p.waitForSelector('[name=tenant_name]');
+    await p.click('.page a:has-text("Let") >> nth=0'); await p.waitForSelector('[name=tenant_name]');
     await p.fill('[name=tenant_name]', 'Palesa Ramoholi'); await p.fill('[name=tenant_phone]', '5900 1234'); await p.fill('[name=escalation_pct]', '8');
     const n0 = new Date(); const st = new Date(n0.getFullYear(), n0.getMonth() - 1, 15); await p.fill('[name=start_date]', `${st.getFullYear()}-${String(st.getMonth() + 1).padStart(2, '0')}-15`);
     await shot('203-lease-new', { fullPage: true }); await p.click('#ls'); await p.waitForSelector('#la'); await p.click('#la'); await p.waitForSelector('#lr');

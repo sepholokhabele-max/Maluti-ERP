@@ -1,5 +1,5 @@
 // Electron shell: starts the embedded server and opens the app window.
-const { app, BrowserWindow, Menu, shell, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, Menu, Tray, nativeImage, shell, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -67,7 +67,7 @@ async function startServer() {
   const opts = { dbConfig, configStore: store, embeddedDb, pluginDirs: [bundledPlugins, userPlugins], publicDir: path.join(__dirname, '..', 'public') };
   let result;
   try {
-    result = await start({ ...opts, port: Number(cfg.port || 8069), host: cfg.lan_access === false ? '127.0.0.1' : '0.0.0.0' });
+    result = await start({ ...opts, port: Number(cfg.port || 8069), host: cfg.lan_access === false && !cfg.office_server ? '127.0.0.1' : '0.0.0.0', mode: cfg.office_server ? 'office' : 'desktop', backups: !!(cfg.db && cfg.db.embedded) });
   } catch (e) {
     if (e.code !== 'EADDRINUSE') throw e;
     result = await start({ ...opts, port: 0, host: '127.0.0.1' });
@@ -90,6 +90,27 @@ function setupSerial(ses) {
   });
 }
 
+/* ---------- office server: this PC serves S-ERP to the office; it starts with Windows and stays in the tray ---------- */
+let tray = null, quitting = false;
+const officeServer = () => !!store.load().office_server && !store.load().remote_url;
+function lanUrls() { const os = require('os'), port = Number((baseUrl || '').split(':').pop()) || 8069, out = []; for (const l of Object.values(os.networkInterfaces())) for (const n of l || []) if (n.family === 'IPv4' && !n.internal) out.push(`http://${n.address}:${port}`); return out; }
+function applyOfficeServer() {
+  const on = officeServer();
+  try { app.setLoginItemSettings({ openAtLogin: on, args: on ? ['--hidden'] : [] }); } catch (_) {}
+  if (on && !tray) {
+    tray = new Tray(nativeImage.createFromPath(path.join(__dirname, '..', 'build', 'icon.png')).resize({ width: 16, height: 16 }));
+    tray.setToolTip('S-ERP – serving the office');
+    const menu = () => Menu.buildFromTemplate([
+      { label: 'Open S-ERP', click: showWindow },
+      { label: 'Open in web browser', click: () => shell.openExternal(baseUrl) },
+      { label: 'Addresses for other computers', enabled: false }, ...lanUrls().map(u => ({ label: '   ' + u, click: () => require('electron').clipboard.writeText(u) })),
+      { type: 'separator' }, { label: 'Stop S-ERP (other computers lose access)', click: () => { quitting = true; app.quit(); } }]);
+    tray.setContextMenu(menu()); tray.on('click', showWindow);
+  }
+  if (!on && tray) { tray.destroy(); tray = null; }
+}
+function showWindow() { if (!win || win.isDestroyed()) createWindow(); win.show(); win.focus(); }
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1366, height: 860, minWidth: 1024, minHeight: 680, title: 'S-ERP',
@@ -98,6 +119,8 @@ function createWindow() {
   });
   setupSerial(win.webContents.session);
   win.loadURL(baseUrl);
+  // as the office server, closing the window keeps S-ERP running in the tray
+  win.on('close', e => { if (officeServer() && !quitting) { e.preventDefault(); win.hide(); if (tray && !store.load().tray_hint_shown) { store.save({ tray_hint_shown: true }); try { tray.displayBalloon({ title: 'S-ERP is still running', content: 'Other computers can keep working. Right-click the S-ERP icon here to open or stop it.' }); } catch (_) {} } } });
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith(baseUrl) || url.startsWith('blob:')) return { action: 'allow' }; // attachments open in a window
     shell.openExternal(url); return { action: 'deny' };
@@ -134,7 +157,11 @@ ipcMain.handle('maluti:update-apply', async () => {
   try { return await updater.apply(p => { if (win) win.webContents.send('maluti:update-progress', p); }, () => { app.quit(); setTimeout(() => app.exit(0), 4000); }); }
   catch (err) { return { error: err.message }; }
 });
-ipcMain.handle('maluti:info', () => ({ desktop: true, version: app.getVersion(), arch: process.arch, baseUrl, remote: !!store.load().remote_url, embedded_db: !!(store.load().db || {}).embedded }));
+ipcMain.handle('maluti:office-server', (e, on) => {
+  if (on !== undefined && on !== null) { store.save({ office_server: !!on, lan_access: on ? true : store.load().lan_access }); applyOfficeServer(); }
+  return { on: officeServer(), lan: lanUrls(), start_with_windows: officeServer() };
+});
+ipcMain.handle('maluti:info', () => ({ desktop: true, office_server: officeServer(), version: app.getVersion(), arch: process.arch, baseUrl, remote: !!store.load().remote_url, embedded_db: !!(store.load().db || {}).embedded }));
 ipcMain.handle('maluti:set-remote', (e, url) => {
   store.save({ remote_url: url || undefined });
   app.relaunch(); app.exit(0);
@@ -154,12 +181,15 @@ else {
     try { await startServer(); }
     catch (e) { dialog.showErrorBox('S-ERP failed to start', e.stack || String(e)); app.quit(); return; }
     buildMenu();
+    applyOfficeServer();
     createWindow();
+    if (officeServer() && process.argv.includes('--hidden')) win.hide();
     // quiet update check shortly after start
     const us = updater.settings();
     if (us.repo && us.auto_check) setTimeout(() => updater.check().then(st => { if (st.status === 'available' && win) win.webContents.send('maluti:update-available', st); }).catch(e => console.log('[update]', e.message)), 15000);
   });
-  app.on('window-all-closed', () => app.quit());
+  app.on('window-all-closed', () => { if (!officeServer() || quitting) app.quit(); });
+  app.on('before-quit', () => { quitting = true; });
   // stop the built-in MySQL cleanly before quitting
   let stopping = false;
   app.on('before-quit', e => {

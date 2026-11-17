@@ -9,6 +9,13 @@ const { ah, bad, today, pick } = require('../util');
 
 // ---------- public (no login) ----------
 const pub = express.Router();
+const SEC = require('../services/security');
+const ctxOf = req => ({ ip: req.ip, ua: req.get('user-agent') });
+/** first-run set-up and database settings: from the office network, or with the set-up key */
+async function setupGuard(req) {
+  if (process.env.MALUTI_SETUP_KEY) return; // the key is checked where it is needed
+  if (!(await SEC.isTrusted(req.ip))) throw Object.assign(new Error('Set S-ERP up from a computer on the office network (or on the server itself). Setting up from outside is switched off for safety.'), { status: 403 });
+}
 
 pub.get('/status', ah(async (req, res) => {
   const connected = db.isConnected();
@@ -19,6 +26,7 @@ pub.get('/status', ah(async (req, res) => {
 
 // First run: use the MySQL server that ships with the desktop app
 pub.post('/db-embedded', ah(async (req, res) => {
+  await setupGuard(req);
   const store = req.app.locals.configStore, emb = req.app.locals.embeddedDb;
   if (!store || !emb) throw bad('The built-in database is not available in this copy of S-ERP');
   if (db.isConnected() && await setup.isInitialised().catch(() => false)) throw bad('Already set up.');
@@ -31,6 +39,7 @@ pub.post('/db-embedded', ah(async (req, res) => {
 
 // Save DB connection (first run). Only allowed when not yet initialised.
 pub.post('/db-config', ah(async (req, res) => {
+  await setupGuard(req);
   const store = req.app.locals.configStore;
   if (!store || process.env.DB_HOST) throw bad('Database is configured by the server administrator');
   if (db.isConnected() && await setup.isInitialised().catch(() => false)) throw bad('Already set up. Change the database from Settings as an admin.');
@@ -44,6 +53,7 @@ pub.post('/db-config', ah(async (req, res) => {
 
 pub.post('/setup', ah(async (req, res) => {
   const { company, admin, demo } = req.body;
+  await setupGuard(req);
   // hosted (web) version: only the person who has the set-up key from the server administrator can create the business
   if (process.env.MALUTI_SETUP_KEY && String(req.body.setup_key || '') !== process.env.MALUTI_SETUP_KEY) throw Object.assign(new Error('The set-up key is wrong. Ask whoever installed the server for it.'), { status: 403 });
   if (!admin || !admin.username || !admin.password || admin.password.length < 6) throw bad('Admin username and a password of at least 6 characters are required');
@@ -55,6 +65,9 @@ pub.post('/setup', ah(async (req, res) => {
   if (types.length) { const M = require('../services/modules'); await M.save({ types, modules: [...new Set([...M.defaultsFor(types), ...((ent && ent.suggest) || [])])] }); }
   if (ent) { const T = require('../services/tax'); await T.saveSettings({ ...(await T.settings()), entity: ent.tax }).catch(() => {}); }
   const A = require('../services/activation'); await A.get();
+  // activation with the My Wallet agent number and password (the wizard asks for them; demo installs may skip)
+  const adminRow = await db.one('SELECT id, role FROM users WHERE username = ?', [admin.username]);
+  await A.initialise({ id: adminRow.id, role: 'admin', permissions: ['*'] }, { demo: !!demo, mywallet: req.body.mywallet });
   const k = req.body.kyc || {};
   if (k.path === 'merchant' && k.merchant_no) await A.save({ kyc: { path: 'merchant', merchant_no: String(k.merchant_no).slice(0, 40), merchant_phone: String(k.merchant_phone || '').slice(0, 40) } });
   else if (k.path === 'documents') await A.save({ kyc: { path: 'documents' } });
@@ -65,19 +78,33 @@ pub.post('/setup', ah(async (req, res) => {
 pub.post('/login', ah(async (req, res) => {
   // every login, good or bad, goes into the audit trail with the IP address
   try {
-    const out = await auth.login(req.body.username, req.body.password);
-    db.query(`INSERT INTO audit_log (user_id, action, entity, details, ip) VALUES (?, 'login', 'users', ?, ?)`, [out.user.id, JSON.stringify({ username: out.user.username }), String(req.ip || '').slice(0, 64)]).catch(() => {});
+    const out = await auth.login(req.body.username, req.body.password, ctxOf(req));
+    if (out.token) db.query(`INSERT INTO audit_log (user_id, action, entity, details, ip) VALUES (?, 'login', 'users', ?, ?)`, [out.user.id, JSON.stringify({ username: out.user.username, remote: out.remote }), String(req.ip || '').slice(0, 64)]).catch(() => {});
     res.json(out);
   } catch (e) {
     if (e.status === 401) db.query(`INSERT INTO audit_log (action, entity, details, ip) VALUES ('login_failed', 'users', ?, ?)`, [JSON.stringify({ username: String(req.body.username || '').slice(0, 60) }), String(req.ip || '').slice(0, 64)]).catch(() => {});
     throw e;
   }
 }));
-pub.post('/pin-login', ah(async (req, res) => res.json(await auth.pinLogin(req.body.user_id, req.body.pin))));
-// staff list for the PIN lock screen (names only)
+// the second step: the code from the authenticator app
+pub.post('/login/code', ah(async (req, res) => {
+  try {
+    const out = await auth.loginCode(req.body.ticket, req.body.code, ctxOf(req));
+    db.query(`INSERT INTO audit_log (user_id, action, entity, details, ip) VALUES (?, 'login', 'users', ?, ?)`, [out.user.id, JSON.stringify({ username: out.user.username, remote: out.remote, two_factor: true }), String(req.ip || '').slice(0, 64)]).catch(() => {});
+    res.json(out);
+  } catch (e) {
+    if (e.status === 401) db.query(`INSERT INTO audit_log (action, entity, details, ip) VALUES ('login_failed', 'users', ?, ?)`, [JSON.stringify({ step: 'code' }), String(req.ip || '').slice(0, 64)]).catch(() => {});
+    throw e;
+  }
+}));
+pub.post('/pin-login', ah(async (req, res) => res.json(await auth.pinLogin(req.body.user_id, req.body.pin, ctxOf(req)))));
+// staff list for the PIN lock screen (names only) – only shown on the office network
 pub.get('/pin-users', ah(async (req, res) => {
+  if (db.isConnected() && !(await SEC.isTrusted(req.ip)) && !(await SEC.settings()).pin_remote) return res.json([]);
   res.json(await db.query('SELECT id, name, role FROM users WHERE active = 1 AND pin_hash IS NOT NULL ORDER BY name'));
 }));
+// where am I signing in from? (the sign-in screen explains the rules away from the office)
+pub.get('/where', ah(async (req, res) => res.json({ office: await SEC.isTrusted(req.ip) })));
 pub.get('/company', ah(async (req, res) => res.json(await logo.companyWithLogo())));
 // company logo as an image (used on login screen, receipts, invoices)
 pub.get('/company/logo', ah(async (req, res) => {

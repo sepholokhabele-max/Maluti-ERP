@@ -219,6 +219,7 @@ r.get('/invoices/:id', requirePerm('invoicing'), ah(async (req, res) => {
   if (!i) throw notFound('Invoice');
   i.lines = await db.query('SELECT * FROM invoice_lines WHERE invoice_id = ?', [i.id]);
   i.payments = await db.query(`SELECT p.*, m.name method_name FROM payments p JOIN payment_methods m ON m.id = p.method_id WHERE invoice_id = ? ORDER BY p.id`, [i.id]);
+  if (i.kind === 'customer_invoice') { const L = require('../services/lekuka'); i.fiscal = await L.fiscalFor('invoice', i.id).catch(() => null); i.fiscal_credit = i.status === 'cancelled' ? await L.fiscalFor('invoice_cancel', i.id).catch(() => null) : null; }
   res.json(i);
 }));
 r.get('/invoices/:id/pay-qr', requirePerm('invoicing'), ah(async (req, res) => {
@@ -284,7 +285,8 @@ async function postInvoice(c, invoiceId, user) {
   await accounting.post(c, { date: i.invoice_date, reference: number, memo: `${i.kind === 'customer_invoice' ? 'Invoice' : 'Bill'} ${number}`,
     source_type: 'invoice', source_id: i.id, user_id: user.id, location_id: i.location_id, lines: jl });
   await c.query(`UPDATE invoices SET status = 'posted', number = ? WHERE id = ?`, [number, i.id]);
-  return { number };
+  const fiscal = i.kind === 'customer_invoice' ? await require('../services/lekuka').issue(c, 'invoice', i.id) : null;
+  return { number, fiscal };
 }
 r.post('/invoices/:id/post', requirePerm('invoicing'), ah(async (req, res) => {
   const out = await db.tx(c => postInvoice(c, req.params.id, req.user));
@@ -305,6 +307,8 @@ r.post('/invoices/:id/cancel', requirePerm('invoicing'), ah(async (req, res) => 
     }
     if (i.po_id) await c.query('UPDATE purchase_orders SET billed = 0 WHERE id = ?', [i.po_id]);
     await c.query(`UPDATE invoices SET status = 'cancelled' WHERE id = ?`, [i.id]);
+    // a cancelled invoice that went to Lekuka is reversed there with a credit note (reason required by RSL)
+    if (i.status === 'posted' && i.kind === 'customer_invoice') await require('../services/lekuka').issue(c, 'invoice_cancel', i.id);
   });
   res.json({ ok: true });
 }));

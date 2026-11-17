@@ -1,3 +1,88 @@
+## S-ERP 1.29.0
+
+**My Wallet payments at the till (My Wallet API v4).**
+
+- **Two new ways to pay:** *My Wallet* and *Other wallet (M-Pesa, EcoCash…)*.
+  - The cashier presses *Ask customer to pay* and can type the customer's number, so the request also appears on their phone.
+  - The till shows a QR code and a short code. The customer approves in the My Wallet app with their PIN.
+  - Customers of other wallets send the money through the national payment switch with the code as the reference.
+  - The till sees the payment arrive and only then can the sale be finished.
+- **Checked again on the server:** a sale only accepts a My Wallet payment that was approved, for exactly that amount and method, and only once.
+- **Split payments:** My Wallet can be combined with cash, with change.
+- **Refunds** chosen as *My Wallet* go back the way the money came: to the customer's wallet, or through the switch.
+  - The refund is sent as the last step, so if My Wallet refuses, nothing is refunded in S-ERP either.
+  - The refund screen picks My Wallet by default when the sale was paid that way.
+- **Linking the shop:** activation with the My Wallet agent number and password is now checked by My Wallet itself when a My Wallet address is set (*Settings → My Wallet payments*, or `MALUTI_MYWALLET_API_URL`).
+  - My Wallet returns this installation's own payment key. Nobody copies keys by hand.
+  - Without an address the check stays local, as in 1.28.
+- **Security:** every call to My Wallet is signed (HMAC-SHA256 with a timestamp and a single-use nonce) and carries an idempotency key, so a retry never charges or refunds twice.
+  - The key secret stays on the S-ERP server; tills and browsers never see it.
+  - Only My Wallet's public v4 POS endpoints are used, never core banking.
+- **Demo mode:** a built-in simulator where the cashier can play the customer (approve or decline). Nothing leaves the computer.
+- ***My Wallet payments* screen:**
+  - status, linking, options;
+  - takings today and the amount due from My Wallet (account 1150);
+  - approved payments that never became a sale;
+  - recent requests with their sale.
+- **Background check:** pending requests are refreshed every minute.
+- **Tested:**
+  - smoke tests for demo and live (against a stand-in that checks signatures the way My Wallet does);
+  - browser test ui36;
+  - a cross-check against the real My Wallet v4 server: link, customer approves in the app, sale, refund back to the wallet, cancel.
+
+## S-ERP 1.28.0
+
+**RSL Lekuka e-invoicing (VAT E-Invoicing Regulations, 2026).**
+
+- **Register:** register S-ERP as a Lekuka device with the Device ID and activation key from RSL.
+  - S-ERP checks the taxpayer, makes its own ECC key, sends a certificate request and keeps the certificate.
+  - It then loads the taxes and settings from RSL.
+- **Every document is reported:** till sales, customer invoices (including water bills, rooms, hire, clinic, school and contracts), till refunds and cancelled invoices.
+  - They are numbered (receipt counter per fiscal day and global number) and signed in a chain, in the same transaction as the sale, so there are never gaps.
+  - Receipts and A4 invoices print the Lekuka block: TIN and VAT No, invoice No, fiscal period, device serial and ID, QR code and verification code.
+  - Refunds and cancellations become credit notes referring to the original.
+  - Customers with a TIN get fiscal invoices with buyer data. Each customer's TIN can be checked with RSL.
+- **Sent strictly in order:** open day, receipts, close day with the signed Z report (counters).
+  - Without internet, selling goes on and documents catch up when the connection returns.
+  - The fiscal day closes on request, at a set time, and always before RSL's maximum length.
+  - Offline-mode devices send each day as a file, which can also be downloaded for the self-service portal.
+  - Pings and certificate renewal are automatic.
+- **Three modes:**
+  - **Demo:** a practice Lekuka inside S-ERP that validates like RSL. Nothing is sent.
+  - **RSL test environment:** mutual TLS.
+  - **Live:** only once S-ERP's accreditation is confirmed (Regulations 7, 8 and 13(8)).
+- **Lekuka screen:** status, documents and RSL's remarks (green / yellow / red), fiscal days, options and taxes. There is also a link from the Tax centre.
+- **Checked against RSL's examples:** signatures match RSL's published hash examples; see `docs/LEKUKA.md` for the points to confirm in UAT.
+
+**Activation with a My Wallet agent number and password.**
+
+- The set-up wizard asks for the business's My Wallet agent number and password. S-ERP is then activated for good: no 30-day trial, no activation codes, no expiry dates.
+- The owner can sign in with the agent number and password.
+- "Just try it first" starts in demo mode with practice data, with no time limit.
+- For now the agent number and password are checked by S-ERP itself and kept only as a one-way hash. The live check with My Wallet will come through the Smartel adapter.
+- Installations activated with a code stay activated, and their end dates no longer apply.
+- Businesses that are not yet My Wallet agents can still send their application with KYC documents to My Wallet.
+
+## S-ERP 1.27.0
+
+**Two ways to run S-ERP, and signing in from anywhere.**
+
+- **Option 1 – Office server (desktop app):** tick *This computer is the office server* in *Settings → Access & security*. S-ERP then starts with Windows, keeps running in the tray when the window is closed, and shows the addresses other computers use. Built-in database with daily backups.
+- **Option 2 – Server edition:**
+  - On Windows Server: Start menu → *S-ERP → Server edition → Install S-ERP Server*. It runs as a background task that starts with Windows, needs no one signed in, restarts itself, opens the firewall and keeps its data and log in `%ProgramData%\Maluti ERP`.
+  - Built-in HTTPS with your certificate (.pfx or .pem), with plain http redirected to https.
+  - Uses the built-in database (30 days of backups) or your own MySQL. On Linux or the cloud it runs with Docker and Caddy.
+- **Working from anywhere:**
+  - S-ERP recognises the office network. Anyone coming through a VPN, a secure tunnel, a proxy or the internet counts as "away from the office".
+  - **Two-step sign-in** with an authenticator app: set up by scanning a QR code at the first sign-in. Required by default for managers, accountants and auditors away from the office; can be required for everyone, or always.
+  - Choose who may sign in from outside: everyone, chosen roles, or nobody.
+  - Away from the office there is no PIN sign-in and no staff list, sessions are shorter, and idle sessions are signed out.
+  - Accounts are locked for a while after repeated wrong passwords.
+  - **My account:** change password, switch two-step sign-in on or off, see where you are signed in and sign other devices out.
+  - **Administrators:** a checklist of what to finish before staff work from outside, every active session (who, where, device, how) with sign-out, and reset two-step sign-in for a lost phone.
+  - First-run set-up only runs from the office network or with the set-up key. Security headers are added to every page.
+- **Guide:** `docs/DEPLOYMENT.md` explains which option suits which kind of organisation and how to open S-ERP to staff outside the office safely.
+
 ## S-ERP 1.26.0
 
 **Organisation & governance – the organogram decides who approves what.**

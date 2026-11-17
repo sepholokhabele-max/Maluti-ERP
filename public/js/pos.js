@@ -1,9 +1,11 @@
 // Point of Sale: retail (barcode), restaurant (floor plan, kitchen tickets) and bar (tabs).
 import { receiptLogoHtml, ensureLogo } from './core.js';
+import { fiscalReceiptHtml } from './fiscal.js';
 import { parseScaleBarcode } from './barcode.js';
 import { best as bestRule } from './pricing.js';
 import { readWeight, scaleSupported, chooseScalePort } from './scale.js';
 import { agentDialog, requestPayment, isSmartelMethod, servicesHtml } from './smartelui.js';
+import { askMyWallet, isMyWalletMethod } from './mywalletui.js';
 import { waterTillDialog } from './waterui.js';
 import { state, GET, POST, PUT, esc, $, $$, toast, err, can, money, qty as fq, round2, modal, confirmBox, promptBox, printHtml, dt, timeAgo, badge, setToken, debounce, today, hasMod } from './core.js';
 
@@ -422,7 +424,7 @@ function customerDialog() {
 // ---------------------------------------------------------------- payment
 function methodsAllowed() {
   // on a Smartel till goods are paid by Cash, Card, MyWallet or Switch only (BR-05)
-  if (smartelOn()) return S.catalog.methods.filter(m => m.kind === 'cash' || isSmartelMethod(m));
+  if (smartelOn()) return S.catalog.methods.filter(m => m.kind === 'cash' || isSmartelMethod(m) || isMyWalletMethod(m));
   return S.catalog.methods.filter(m => m.kind !== 'account' || S.order.partner_id);
 }
 
@@ -446,7 +448,8 @@ async function payDialog() {
       const draw = () => {
         r.querySelector('#pl').innerHTML = pays.map((p, i) => `<div class="pl ${i === active ? 'active' : ''}" data-pi="${i}">
           <b>${esc(p.m.name)}</b><input data-amt="${i}" type="number" step="0.01" value="${p.amount}"><button class="icon-btn" data-rm="${i}">✕</button>
-          ${isSmartelMethod(p.m) ? `<div class="extra">${p.approved ? `<span class="badge badge-paid">✓ approved ${esc(p.reference || '')}</span>` : `<button class="btn btn-sm btn-primary" data-ask="${i}">📲 Ask customer to pay</button><small class="muted">Must cover the whole bill on its own</small>`}</div>`
+          ${isMyWalletMethod(p.m) ? `<div class="extra">${p.approved ? `<span class="badge badge-paid">✓ paid ${esc(p.reference || '')}</span>` : `<button class="btn btn-sm btn-primary" data-mw="${i}">📲 Ask customer to pay</button>`}</div>`
+          : isSmartelMethod(p.m) ? `<div class="extra">${p.approved ? `<span class="badge badge-paid">✓ approved ${esc(p.reference || '')}</span>` : `<button class="btn btn-sm btn-primary" data-ask="${i}">📲 Ask customer to pay</button><small class="muted">Must cover the whole bill on its own</small>`}</div>`
           : p.m.kind === 'mobile_money' || p.m.requires_reference || p.m.kind === 'card' ? `<div class="extra">
             ${p.m.kind === 'mobile_money' ? `<input data-ph="${i}" placeholder="Customer phone" value="${esc(p.phone || '')}">` : ''}
             <input data-ref="${i}" placeholder="${p.m.requires_reference ? 'Transaction reference *' : 'Reference / approval code'}" value="${esc(p.reference || '')}">
@@ -460,12 +463,13 @@ async function payDialog() {
         r.querySelector('#quick').innerHTML = ap && ap.m.kind === 'cash' ? [Math.max(rem, 0) + Number(ap.amount), 20, 50, 100, 200, 500].filter((v, i, a) => v > 0 && a.indexOf(v) === i)
           .map((v, i) => `<button class="btn" data-q="${v}">${i === 0 ? 'Exact ' : ''}${money(v)}</button>`).join('') : '';
         $$('[data-pi]', r).forEach(el => el.onclick = e => { if (e.target.closest('input,button')) return; active = Number(el.dataset.pi); fresh = true; draw(); });
-        $$('[data-amt]', r).forEach(el => { el.oninput = () => { const p = pays[Number(el.dataset.amt)]; p.amount = Number(el.value); if (p.approved) { p.approved = false; p.intent_id = null; p.reference = ''; } updateOnly(); }; el.onfocus = () => { active = Number(el.dataset.amt); }; });
+        $$('[data-amt]', r).forEach(el => { el.oninput = () => { const p = pays[Number(el.dataset.amt)]; p.amount = Number(el.value); p.auto = false; if (p.approved) { p.approved = false; p.intent_id = null; p.mywallet_payment_id = null; p.reference = ''; draw(); return; } updateOnly(); }; el.onfocus = () => { active = Number(el.dataset.amt); }; });
         $$('[data-ref]', r).forEach(el => el.oninput = () => { pays[Number(el.dataset.ref)].reference = el.value; });
         $$('[data-ph]', r).forEach(el => el.oninput = () => { pays[Number(el.dataset.ph)].phone = el.value; });
         $$('[data-rm]', r).forEach(el => el.onclick = () => { pays.splice(Number(el.dataset.rm), 1); active = pays.length - 1; draw(); });
         $$('[data-q]', r).forEach(el => el.onclick = () => { pays[active].amount = Number(el.dataset.q); fresh = true; draw(); });
         $$('[data-push]', r).forEach(el => el.onclick = () => pushPayment(pays[Number(el.dataset.push)], el, draw));
+        $$('[data-mw]', r).forEach(el => el.onclick = () => { const p = pays[Number(el.dataset.mw)]; if (!(Number(p.amount) > 0)) return toast('Enter the amount first', 'err'); askMyWallet(S, p, el, draw); });
         $$('[data-ask]', r).forEach(el => el.onclick = () => { const p = pays[Number(el.dataset.ask)]; if (!(Number(p.amount) > 0)) return toast('Enter the amount first', 'err'); requestPayment(S, p, el, draw); });
       };
       const updateOnly = () => {
@@ -478,6 +482,8 @@ async function payDialog() {
         const m = S.catalog.methods.find(x => x.id === Number(b.dataset.mm));
         // card / MyWallet / Switch on a Smartel till must cover the whole bill alone
         if (isSmartelMethod(m) || pays.some(x => isSmartelMethod(x.m))) pays.length = 0;
+        // My Wallet: the untouched cash line that was put there by default makes room for it
+        if (isMyWalletMethod(m)) for (let i = pays.length - 1; i >= 0; i--) if (pays[i].auto) pays.splice(i, 1);
         const rem = Math.max(round2(total - paid()), 0);
         pays.push({ m, method_id: m.id, amount: rem, reference: '', phone: '' }); active = pays.length - 1; fresh = true; draw();
       });
@@ -487,21 +493,22 @@ async function payDialog() {
         if (k === '⌫') s = String(p.amount).slice(0, -1); else if (k === 'C') s = '';
         else if (k.startsWith('+')) s = String(round2(Number(p.amount || 0) + Number(k.slice(1))));
         else s += k;
-        fresh = false; p.amount = s === '' || s === '.' ? 0 : Number(s);
+        fresh = false; p.amount = s === '' || s === '.' ? 0 : Number(s); p.auto = false;
+        if (p.approved) { p.approved = false; p.intent_id = null; p.mywallet_payment_id = null; p.reference = ''; }
         draw();
         const inp = r.querySelector(`[data-amt="${active}"]`); if (inp && s.endsWith('.')) inp.value = s;
       });
       // default: cash for exact amount
       const cash = methodsAllowed().find(m => m.kind === 'cash');
-      if (cash) { pays.push({ m: cash, method_id: cash.id, amount: total }); active = 0; }
+      if (cash) { pays.push({ m: cash, method_id: cash.id, amount: total, auto: true }); active = 0; }
       draw();
       r.querySelector('#done').onclick = async () => {
         const btn = r.querySelector('#done');
         if (paid() + 0.001 < total) return toast('Payment is short', 'err');
-        if (pays.some(p => isSmartelMethod(p.m) && !p.approved)) return toast('Ask the customer to pay first and wait until it shows approved', 'err');
+        if (pays.some(p => (isSmartelMethod(p.m) || isMyWalletMethod(p.m)) && Number(p.amount) > 0 && !p.approved)) return toast('Ask the customer to pay first and wait until it shows approved', 'err');
         btn.disabled = true; btn.textContent = 'Processing…';
         try {
-          const payments = pays.map(p => ({ method_id: p.method_id, amount: p.amount, reference: p.reference, phone: p.phone, intent_id: p.intent_id || undefined }));
+          const payments = pays.map(p => ({ method_id: p.method_id, amount: p.amount, reference: p.reference, phone: p.phone, intent_id: p.intent_id || undefined, mywallet_payment_id: p.mywallet_payment_id || undefined }));
           const smartel_session = S.smartel && S.smartel.session_uuid || undefined;
           let res;
           if (S.order.id || S.order.table_id || S.order.tab_name) {
@@ -564,6 +571,7 @@ export function receiptHtml(o, company = state.company) {
   <table>${(o.payments || []).map(p => `<tr><td>${esc(p.method_name)}${p.reference ? ' ' + esc(p.reference) : ''}</td><td class="r">${m(p.direction === 'out' ? -p.amount : p.amount)}</td></tr>`).join('')}
   ${Number(o.change_given) ? `<tr class="b"><td>Change</td><td class="r">${m(o.change_given)}</td></tr>` : ''}</table>
   ${vasTokens}${vasOther}${servicesHtml(o)}
+  ${fiscalReceiptHtml(o.fiscal)}
   ${o.receipt_qr_svg ? `<hr><div class="c"><div style="width:30mm;margin:0 auto">${o.receipt_qr_svg}</div><div style="font-size:10.5px">${esc(o.receipt_qr_text || 'Scan for your digital receipt')}</div></div>` : ''}
   <hr><div class="c">${esc(company.receipt_footer || 'Thank you!')}</div><div class="c" style="font-size:10px;margin-top:6px">Powered by S-ERP</div>
   </body></html>`;
@@ -678,15 +686,17 @@ async function orderDetail(id, closeParent) {
 
 function refundDialog(o) {
   const lines = o.lines.filter(l => !l.vas_transaction_id);
+  // paid with My Wallet? then the refund goes back there by default
+  const mwPaid = (o.payments || []).map(p => ({ ...p, m: S.catalog.methods.find(m => m.id === Number(p.method_id)) })).find(p => isMyWalletMethod(p.m));
   modal({ title: `Refund ${o.number}`, size: 'lg', body: `<p class="muted">Enter quantities to return. Stock goes back on the shelf.</p>
     <table class="grid">${lines.map(l => { const avail = Number(l.qty) - Number(l.refunded_qty || 0); return `<tr><td>${esc(l.name)}</td><td class="r">${fq(l.qty)} sold${l.refunded_qty ? ` · ${fq(l.refunded_qty)} already refunded` : ''}</td><td style="width:110px"><input type="number" min="0" max="${avail}" step="any" data-l="${l.id}" value="0" ${avail <= 0 ? 'disabled' : ''}></td></tr>`; }).join('')}</table>
-    <div class="form-grid" style="margin-top:12px"><label class="field"><span>Refund via</span><select id="rm">${S.catalog.methods.filter(m => m.kind !== 'account' || o.partner_id).map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}</select></label>
+    <div class="form-grid" style="margin-top:12px"><label class="field"><span>Refund via</span><select id="rm">${S.catalog.methods.filter(m => m.kind !== 'account' || o.partner_id).map(m => `<option value="${m.id}" ${mwPaid && mwPaid.method_id === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></label>
     <label class="field"><span>Reason</span><input id="rr"></label></div>`,
     actions: [{ label: 'Cancel' }, { label: 'Refund all', onClick: (c, r) => { $$('[data-l]', r).forEach(i => i.value = i.max); } },
       { label: 'Process refund', cls: 'btn-danger', onClick: async (c, r) => {
         const ls = $$('[data-l]', r).map(i => ({ line_id: Number(i.dataset.l), qty: Number(i.value) })).filter(l => l.qty > 0);
         const res = await POST(`/pos/orders/${o.id}/refund`, { lines: ls, method_id: Number(r.querySelector('#rm').value), reason: r.querySelector('#rr').value, session_id: S.session && S.session.id });
-        c(); toast(`Refunded ${money(res.amount)}`);
+        c(); toast(`Refunded ${money(res.amount)}${res.mywallet ? ' – sent back to the customer’s wallet' + (res.mywallet.some(x => x.status !== 'DONE') ? ' (being confirmed by the switch)' : '') : ''}`);
         const ro = await GET('/pos/orders/' + res.refund_id); printHtml(receiptHtml(ro));
       } }] });
 }

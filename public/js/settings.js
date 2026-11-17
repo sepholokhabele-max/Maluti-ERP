@@ -8,11 +8,12 @@ import { hasMod, locationOptions } from './core.js';
 export async function settings(view) {
   const tab = query().tab || 'company';
   const tabs = [['company', 'Company'], ['business', 'Business & modules'], ['pos', 'POS'], ['payments', 'Payment methods'], ['taxes', 'Taxes'], ['terminals', 'Tills'], ['restaurant', 'Restaurant floors'],
-    ['users', 'Users'], ['email', 'Email & EOD reports'], ['plugins', 'Plugins (VAS / payments)'], ['portal', 'Customer portal'], ['hrm', 'HR & Payroll'], ['updates', 'Updates & backup'], ['logs', 'Logs']];
+    ['users', 'Users'], ['email', 'Email & EOD reports'], ['plugins', 'Plugins (VAS / payments)'], ['portal', 'Customer portal'], ['hrm', 'HR & Payroll'], ['updates', 'Updates & backup'], ['access', 'Access & security'], ['logs', 'Logs']];
   view.innerHTML = page('Settings', '', `<div class="tabs">${tabs.map(([k, l]) => `<a href="#/settings?tab=${k}" class="${k === tab ? 'active' : ''}">${l}</a>`).join('')}</div><div id="sb"></div>`);
   const sb = $('#sb');
   if (tab === 'hrm') { location.hash = '#/hrm?tab=settings'; return; }
   if (tab === 'business') return businessTab(sb);
+  if (tab === 'access') return (await import('./accountui.js')).accessTab(sb);
   if (tab === 'portal') return (await import('./portalui.js')).portalSettingsTab(sb);
   const s = await GET('/settings');
 
@@ -131,6 +132,8 @@ export async function settings(view) {
           { key: 'pin', label: u ? 'New POS PIN (4–6 digits, blank = keep)' : 'POS PIN (4–6 digits)', type: 'password' },
           ...(lo ? [{ key: 'location_id', label: 'Home branch', type: 'select', numeric: true, options: lo }] : []), ...(u ? [{ key: 'active', label: 'Active', type: 'checkbox' }] : [])];
         modal({ title: u ? u.name : 'New user', size: 'lg', body: formHtml(f, u ? { ...u, password: '' } : { role: 'cashier' }, { ctx: 'user' }), actions: [{ label: 'Cancel' },
+          ...(u ? [{ label: 'Sign out everywhere', onClick: async c => { await POST(`/security/users/${u.id}/end-sessions`); c(); toast(`${u.name} is signed out on every device`); } },
+            { label: 'Reset two-step sign-in', onClick: async c => { if (!(await confirmBox(`Reset two-step sign-in for ${u.name}? Use this when they lost their phone; they set it up again at their next sign-in.`))) return; await POST(`/security/users/${u.id}/reset-2fa`); c(); toast('Reset'); } }] : []),
           { label: 'Save', cls: 'btn-primary', onClick: async (c, r) => { const v = readForm(r, f); if (!v.password) delete v.password; if (!v.pin) delete v.pin; if (u) await PUT('/users/' + u.id, v); else await POST('/users', v); c(); toast('Saved'); load(); } }] });
       };
       $('#nu').onclick = () => edit(null);

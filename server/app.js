@@ -12,12 +12,28 @@ const mailer = require('./services/mailer');
 const admin = require('./routes/admin');
 const { HttpError } = require('./util');
 
-async function start({ port = 8069, host = '0.0.0.0', dbConfig, configStore, embeddedDb = null, pluginDirs = [], publicDir } = {}) {
+/**
+ * mode: 'desktop' (the app on one PC), 'office' (the desktop app serving the office), 'server' (server edition), 'docker'
+ * tls: { cert, key } or { pfx, passphrase } (file contents) – serve HTTPS directly; httpRedirectPort: also answer on http and send people to https
+ */
+async function start({ port = 8069, host = '0.0.0.0', dbConfig, configStore, embeddedDb = null, pluginDirs = [], publicDir, mode = null, tls = null, httpRedirectPort = null, backups = false } = {}) {
   const app = express();
   app.locals.configStore = configStore || null;
   app.locals.embeddedDb = embeddedDb;
   // hosted behind a reverse proxy (nginx / Caddy / a cloud load balancer): real client IPs and https links
-  if (process.env.TRUST_PROXY) app.set('trust proxy', /^\d+$/.test(process.env.TRUST_PROXY) ? Number(process.env.TRUST_PROXY) : process.env.TRUST_PROXY);
+  // By default only a proxy or secure tunnel on this same machine (Caddy, IIS, cloudflared) is believed about the visitor's address,
+  // so people coming in through it are treated as "away from the office".
+  app.set('trust proxy', process.env.TRUST_PROXY ? (/^\d+$/.test(process.env.TRUST_PROXY) ? Number(process.env.TRUST_PROXY) : process.env.TRUST_PROXY) : 'loopback');
+  app.locals.mode = mode || process.env.MALUTI_MODE || 'server'; app.locals.https = !!tls; app.locals.backups = !!(backups || embeddedDb);
+  app.disable('x-powered-by');
+  // browser security headers (safe for the desktop window too)
+  app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'same-origin');
+    if (!req.path.startsWith('/api/collect')) res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    if (req.secure) res.setHeader('Strict-Transport-Security', 'max-age=15552000');
+    next();
+  });
   app.use(express.json({ limit: '12mb' }));
 
   // Allow other tills/tablets on the LAN to use the browser UI against this server
@@ -50,6 +66,9 @@ async function start({ port = 8069, host = '0.0.0.0', dbConfig, configStore, emb
     next();
   });
   app.use('/api', admin.priv);
+  app.use('/api', require('./routes/security'));
+  app.use('/api', require('./routes/lekuka'));
+  app.use('/api', require('./routes/mywallet'));
   // POS: kitchen staff only reach the kitchen display endpoints
   app.use('/api/pos', (req, res, next) => {
     if (req.path.startsWith('/kitchen')) return next();
@@ -120,6 +139,9 @@ async function start({ port = 8069, host = '0.0.0.0', dbConfig, configStore, emb
   });
 
   plugins.loadAll(pluginDirs);
+  // RSL Lekuka e-invoicing: send waiting documents, ping, close fiscal days, renew the certificate (every minute)
+  require('./services/lekuka').startScheduler();
+  require('./services/mywallet').startScheduler();
   // seal new journal entries into the audit hash chain every two minutes (tamper evidence)
   setInterval(() => { if (db.isConnected()) require('./services/audit').seal().catch(e => console.error('[audit] seal:', e.message)); }, 120000).unref();
 
@@ -144,9 +166,15 @@ async function start({ port = 8069, host = '0.0.0.0', dbConfig, configStore, emb
   }
 
   const server = await new Promise((resolve, reject) => {
-    const s = app.listen(port, host, () => { app.locals.port = s.address().port; resolve(s); });
+    const s = tls ? require('https').createServer(tls, app) : require('http').createServer(app);
+    s.listen(port, host, () => { app.locals.port = s.address().port; resolve(s); });
     s.on('error', reject);
   });
+  // with HTTPS, plain http on another port only sends people to the secure address
+  if (tls && httpRedirectPort) {
+    require('http').createServer((req, res) => { const h = String(req.headers.host || 'localhost').replace(/:\d+$/, ''); res.writeHead(301, { Location: `https://${h}${port === 443 ? '' : ':' + server.address().port}${req.url}` }); res.end(); })
+      .listen(httpRedirectPort, host).on('error', e => console.error('[http→https]', e.message));
+  }
   require('./services/qr').setPort(server.address().port);
   return { app, server, port: server.address().port };
 }

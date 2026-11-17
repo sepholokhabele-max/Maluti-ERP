@@ -40,7 +40,7 @@ r.get('/catalog', ah(async (req, res) => {
     ops: Object.entries(smartel.OPS).map(([code, o]) => ({ code, name: o.name, name_st: o.st, fields: o.fields, need: o.need, otp: !!o.otp, pin: !!o.pin, cash: o.cash })), billers: smartel.BILLERS } : { enabled: false };
   // the old direct My Wallet VAS plugin is replaced by the Smartel adapter (never call MyWallet directly)
   const vasOut = sm.enabled ? vas.filter(v => !/my ?wallet/i.test(`${v.plugin_id} ${v.plugin_name}`)) : vas;
-  res.json({ categories, products, methods: methods.filter(m => !String(m.plugin_id || '').startsWith('smartel:') || smTerm), company, vas: vasOut, pos: posSettings, butchery: butchery.enabled ? butchery : { enabled: false }, price_rules, smartel: smartelInfo });
+  res.json({ categories, products, methods: methods.filter(m => !String(m.plugin_id || '').startsWith('smartel:') || smTerm), company, vas: vasOut, pos: posSettings, butchery: butchery.enabled ? butchery : { enabled: false }, price_rules, smartel: smartelInfo, mywallet: await require('../services/mywallet').catalogInfo() });
 }));
 
 // ---- sessions ----

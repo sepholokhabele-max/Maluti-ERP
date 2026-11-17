@@ -118,6 +118,7 @@ async function getOrder(conn, id) {
     l.refunded_qty = r ? Number(r.qty) : 0;
   }
   await require('./qr').decorateOrder(conn, o);
+  o.fiscal = await require('./lekuka').fiscalFor(o.refund_of ? 'pos_refund' : 'pos_order', o.id, conn).catch(() => null);
   return o;
 }
 
@@ -224,6 +225,8 @@ async function payOrder(conn, user, orderId, { payments, partner_id }) {
   const tendered = round2(cash + nonCash);
   if (tendered + 0.001 < total) throw bad(`Payment short by ${round2(total - tendered)}`);
   const change = round2(tendered - total);
+  // My Wallet tenders: each must be a request the customer approved, for exactly this amount, used only once
+  await require('./mywallet').claimForOrder(conn, orderId, pays);
 
   // Record payments (cash net of change)
   let changeLeft = change;
@@ -276,7 +279,9 @@ async function payOrder(conn, user, orderId, { payments, partner_id }) {
   if (cogs) { jl.push({ code: '5000', debit: cogs }); jl.push({ code: '1200', credit: cogs }); }
   await accounting.post(conn, { reference: number, memo: `POS order ${number}`, source_type: 'pos_order', source_id: orderId, user_id: user.id, location_id: loc, lines: jl });
 
-  return { order_id: orderId, number, change, lots };
+  // RSL Lekuka e-invoicing: the fiscal receipt is numbered and signed in this same transaction
+  const fiscal = await require('./lekuka').issue(conn, 'pos_order', orderId);
+  return { order_id: orderId, number, change, lots, fiscal };
 }
 
 /** Refund some or all lines of a paid order */
@@ -344,7 +349,11 @@ async function refundOrder(conn, user, orderId, { lines: reqLines, method_id, re
       { code: '1200', debit: cost }, { code: '5000', credit: cost }
     ]
   });
-  return { refund_id: rid, number, amount: -t.total };
+  const fiscal = await require('./lekuka').issue(conn, 'pos_refund', rid); // credit note to Lekuka
+  // refund to My Wallet: last step, so if My Wallet refuses nothing above is kept
+  const mywallet = require('./mywallet').isMyWallet(method) ? await require('./mywallet').refundForOrder(conn, orderId, rid, -t.total) : undefined;
+  if (mywallet) await conn.query('UPDATE payments SET reference = ? WHERE order_id = ? AND direction = \'out\'', [`MW refund ${mywallet.map(x => x.reference).join(', ')}`.slice(0, 120), rid]);
+  return { refund_id: rid, number, amount: -t.total, fiscal, mywallet };
 }
 
 async function sessionSummary(conn, sessionId) {

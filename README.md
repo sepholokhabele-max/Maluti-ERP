@@ -322,6 +322,39 @@ You can add accounts at any time. Every posting is balanced, and the automated t
 
 ---
 
+## 5a. Office server or server edition, and working from anywhere (v1.27)
+
+S-ERP can run as an **office server** (the desktop app on one PC that serves everyone in the office) or as the **server edition** (a background service on Windows Server, Linux or Docker with HTTPS). Staff sign in from anywhere through a VPN, a secure tunnel or your own domain. Two-step sign-in, lock-out, idle sign-out and session control are built in. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and *Settings → Access & security*.
+
+## 5b. RSL Lekuka e-invoicing and activation with My Wallet (v1.28)
+
+**Lekuka:** every sale, invoice, refund and cancelled invoice is reported to Revenue Services Lesotho's Lekuka system.
+- Each document is numbered, signed and given its QR code and verification code.
+- Documents are sent in order, and the fiscal day is closed with its Z report.
+- There are three modes: demo (practice), the RSL test environment, and live (once S-ERP is accredited).
+See [docs/LEKUKA.md](docs/LEKUKA.md) and *Lekuka e-invoicing* in the menu.
+
+**Activation:** S-ERP is activated once with the business's **My Wallet agent number and password**, during set-up or under *Settings → Activation*. There is no trial, no activation code and no expiry. The owner can also sign in with the agent number and password.
+
+## 5c. My Wallet payments at the till (v1.29)
+
+Customers pay at the till from **My Wallet** (scan the QR or approve the request on their phone with their PIN) or from **M-Pesa, EcoCash and other wallets** through the national payment switch. The money goes to the shop's My Wallet agent account (account 1150 until My Wallet pays it out).
+
+**Set up** (*Settings → My Wallet payments*):
+1. Enter the My Wallet address.
+2. Enter the agent number (till number or agent cell) and password.
+3. Press *Link and switch on*.
+
+My Wallet checks the agent and gives this installation its own signing key; this also activates S-ERP. *Demo* mode works without any server.
+
+**At the till:**
+1. Choose *My Wallet* or *Other wallet*, press *Ask customer to pay*, and optionally type the customer's number. For other wallets, choose their wallet.
+2. Wait for **paid**, then press *Validate*.
+
+Refunds as *My Wallet* go back to the customer's wallet. The shop needs enough in its My Wallet account to refund, because the merchant fee is not returned.
+
+S-ERP only uses My Wallet's public POS API (v4), signed with the shop key held on the S-ERP server – never core banking. See [docs/MYWALLET.md](docs/MYWALLET.md).
+
 ## 6. Running from source / headless server
 
 ```bash

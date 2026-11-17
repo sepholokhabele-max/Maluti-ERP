@@ -20,8 +20,8 @@ export async function firstRun(onDone) {
   const d = { step: 'welcome', types: ['retail'], currency: 'LSL', vat_registered: 'yes', vat_rate: 15, start: 'clean', ...load() };
   if (st.connected && d.step === 'storage') d.step = 'business';
   const steps = [['welcome', L('Language', 'Puo')], ...(st.connected ? [] : [['storage', L('Storage', 'Polokelo')]]), ['business', L('Your business', 'Khoebo ea hau')],
-    ['types', L('What you do', 'Seo u se etsang')], ['login', L('Your login', 'Ho kena ha hau')], ['kyc', 'KYC'], ['review', L('Check', 'Hlahloba')]];
-  let types = null, logo = null; const kycFiles = {};
+    ['types', L('What you do', 'Seo u se etsang')], ['login', L('Your login', 'Ho kena ha hau')], ['kyc', 'My Wallet'], ['review', L('Check', 'Hlahloba')]];
+  let types = null, logo = null; const kycFiles = {}; let agentPw = ''; // the My Wallet password is never kept in the browser
   const ENT = await GET('/entity-types').catch(() => []);
   const ent = () => ENT.find(e => e.key === d.entity_type) || null;
   const DOCS = [['owner_id', L('ID or passport of the owner', 'ID kapa phasepoto ea mong\'a khoebo'), 1], ['registration', L('Company registration or trader\'s licence', 'Ngoliso ea khamphani kapa laesense ea khoebo'), 1], ['address', L('Proof of business address', 'Bopaki ba aterese ea khoebo'), 1], ['tax', L('TIN / VAT certificate (if you have it)', 'Setifikeiti sa TIN / VAT (haeba u na le sona)'), 0], ['bank', L('Bank confirmation letter (if you have it)', 'Lengolo la banka (haeba u na le lona)'), 0]];
@@ -144,33 +144,36 @@ export async function firstRun(onDone) {
       };
     }
     if (d.step === 'kyc') {
-      d.kyc = d.kyc || 'later';
-      app.innerHTML = card(L('Verify your business (KYC)', 'Netefatsa khoebo ea hau (KYC)'), L('You can use everything free for 30 days. To keep selling after that, My Wallet must know who runs the business. Existing My Wallet agents and merchants only give their number.', 'U ka sebelisa tsohle mahala matsatsi a 30. Ho tsoela pele ho rekisa ka mor\'a moo, My Wallet e tlameha ho tseba hore na ke mang ea tsamaisang khoebo. Li-agent le bahoebi ba My Wallet ba fana ka nomoro ea bona feela.'),
-        `<div class="wz-choices">${[['merchant', L('I am already a My Wallet agent or merchant', 'Ke se ke le agent kapa mohoebi oa My Wallet'), L('My KYC is already done – I just give my number.', 'KYC ea ka e se e entsoe – ke fana ka nomoro ea ka feela.')],
-          ['documents', L('I am new – upload my documents now', 'Ke mocha – ke kenya litokomane tsa ka hona joale'), L('Photos or PDFs: ID, business registration or trader\'s licence, proof of address.', 'Lifoto kapa li-PDF: ID, ngoliso ea khoebo kapa laesense, bopaki ba aterese.')],
-          ['later', L('Later', 'Hamorao'), L('Start the 30-day trial now and do this under Settings → Activation & KYC.', 'Qala teko ea matsatsi a 30 hona joale ’me u etse sena hamorao.')]].map(([k, t, s2]) => `<button class="wz-choice ${d.kyc === k ? 'on' : ''}" data-k="${k}"><b>${t}</b><small>${s2}</small></button>`).join('')}</div>
-        <div id="kb" style="margin-top:12px">${d.kyc === 'merchant' ? `<div class="form-grid"><label class="field"><span>${L('Agent / merchant number', 'Nomoro ea agent / mohoebi')} *</span><input id="mn" value="${esc(d.merchant_no || '')}"></label><label class="field"><span>${L('Phone registered with My Wallet', 'Mohala o ngolisitsoeng ho My Wallet')} *</span><input id="mp" inputmode="tel" value="${esc(d.merchant_phone || d.phone || '')}"></label></div>`
-          : d.kyc === 'documents' ? `<table class="grid">${docsFor().map(([k, t, req]) => `<tr><td>${kycFiles[k] ? '✅' : req ? '⬜' : '▫️'}</td><td><b>${t}</b>${kycFiles[k] ? `<br><small class="muted">${esc(kycFiles[k].filename)}</small>` : ''}</td><td class="r"><label class="btn btn-sm ${kycFiles[k] ? '' : 'btn-primary'}">${kycFiles[k] ? L('Replace', 'Fetola') : '⬆ ' + L('Upload', 'Kenya')}<input type="file" accept="image/*,application/pdf" data-doc="${k}" hidden></label></td></tr>`).join('')}</table><small class="help-note">${L('A clear phone photo is fine. You can also add missing documents later.', 'Foto e hlakileng ea mohala e lokile. U ka eketsa litokomane hamorao.')}</small>` : ''}</div>`, { back: 1 });
-      const savek = () => { if ($('#mn')) { d.merchant_no = val('#mn'); d.merchant_phone = val('#mp'); } };
-      $$('[data-k]').forEach(b => b.onclick = () => { savek(); d.kyc = b.dataset.k; keep(d); draw(); });
-      $$('[data-doc]').forEach(i => i.onchange = () => { const f = i.files[0]; if (!f) return; if (f.size > 8 * 1024 * 1024) return fail(L('That file is bigger than 8 MB', 'Faele eo e kholo ho feta 8 MB')); const r = new FileReader(); r.onload = () => { kycFiles[i.dataset.doc] = { filename: f.name, data_url: r.result }; draw(); }; r.readAsDataURL(f); });
+      // activation: the My Wallet agent number and password – once, no trial, no codes, no expiry
+      d.act = d.act || 'agent';
+      app.innerHTML = card(L('Activate with My Wallet', 'Bula ka My Wallet'), L('Enter the agent number and password of your My Wallet agent account. S-ERP is then activated for good – no trial period and no expiry. You can also sign in with them.', 'Kenya nomoro ea agent le phasewete ea akhaonte ea hau ea My Wallet. S-ERP e tla buloa ka ho sa feleng – ha ho nako ea teko kapa ho fela. U ka kena ka tsona hape.'),
+        `<div class="wz-choices">${[['agent', L('Activate now with my My Wallet agent account', 'Bula hona joale ka akhaonte ea ka ea agent ea My Wallet'), L('Agent number and password – the same you use for My Wallet.', 'Nomoro ea agent le phasewete – tse u li sebelisang ho My Wallet.')],
+          ['demo', L('Just try it first (demo mode)', 'Leka pele (mokhoa oa demo)'), L('Starts with practice data. Activate later under Settings → Activation to work with your real business.', 'E qala ka lintlha tsa boikoetliso. Bula hamorao tlas’a Settings → Activation.')]].map(([k, t, s2]) => `<button class="wz-choice ${d.act === k ? 'on' : ''}" data-k="${k}"><b>${t}</b><small>${s2}</small></button>`).join('')}</div>
+        <div id="kb" style="margin-top:12px">${d.act === 'agent' ? `<div class="form-grid"><label class="field"><span>${L('My Wallet agent number', 'Nomoro ea agent ea My Wallet')} *</span><input id="mn" value="${esc(d.agent_no || '')}" autocapitalize="characters" autocomplete="off"></label>
+          <label class="field"><span>${L('My Wallet password', 'Phasewete ea My Wallet')} *</span><div class="row" style="gap:4px"><input id="mpw" type="password" autocomplete="off" value="${esc(agentPw)}"><button class="btn" id="eye2" type="button" title="Show">👁</button></div></label></div>
+          <small class="help-note">${L('Not a My Wallet agent yet? Choose "Just try it first" and apply under Settings → Activation.', 'Ha u e-s’o be agent ea My Wallet? Khetha "Leka pele" ’me u etse kopo tlas’a Settings → Activation.')}</small>` : ''}</div>`, { back: 1 });
+      const savek = () => { if ($('#mn')) { d.agent_no = val('#mn').toUpperCase(); agentPw = $('#mpw').value; } };
+      $$('[data-k]').forEach(b => b.onclick = () => { savek(); d.act = b.dataset.k; if (d.act === 'demo') d.start = 'demo'; keep(d); draw(); });
+      if ($('#eye2')) $('#eye2').onclick = () => { $('#mpw').type = $('#mpw').type === 'password' ? 'text' : 'password'; };
       $('#bk').onclick = () => { savek(); go(prev()); };
       $('#nx').onclick = () => { savek();
-        if (d.kyc === 'merchant' && !/^[A-Za-z0-9-]{3,40}$/.test(d.merchant_no || '')) return fail(L('Type your My Wallet agent or merchant number', 'Ngola nomoro ea hau ea agent kapa mohoebi'), $('#mn'));
-        if (d.kyc === 'merchant' && String(d.merchant_phone || '').replace(/\D/g, '').length < 8) return fail(L('Type the phone number registered with My Wallet', 'Ngola nomoro ea mohala e ngolisitsoeng'), $('#mp'));
+        if (d.act === 'agent' && !/^[A-Z0-9 -]{3,24}$/.test(d.agent_no || '')) return fail(L('Type your My Wallet agent number', 'Ngola nomoro ea hau ea agent ea My Wallet'), $('#mn'));
+        if (d.act === 'agent' && agentPw.length < 4) return fail(L('Type the password of your My Wallet agent account', 'Ngola phasewete ea akhaonte ea hau ea My Wallet'), $('#mpw'));
         go('review'); };
     }
     if (d.step === 'review') {
       if (!d.password) return go('login');
+      if (d.act === 'agent' && !agentPw) return go('kyc');
       if (!types) types = await fetch('/api/business-types').then(r => r.json()).catch(() => []);
       const row = (l, v, st) => `<tr><td class="muted">${l}</td><td><b>${esc(v || '–')}</b></td><td class="r"><a href="#" data-go="${st}">${L('change', 'fetola')}</a></td></tr>`;
       app.innerHTML = card(L('Check and create', 'Hlahloba ’me u etse'), L('Is everything right?', 'Na tsohle li nepahetse?'),
         `<table class="grid">${row(L('Business', 'Khoebo'), d.name, 'business')}${row(L('Kind of organisation', 'Mofuta'), ent() ? (lang() === 'st' ? ent().st : ent().name) + (d.reg_no ? ' · ' + d.reg_no : '') : '', 'business')}${row(L('Phone', 'Mohala'), d.phone, 'business')}${row(L('Address', 'Aterese'), d.address, 'business')}
           ${row(L('Money', 'Chelete'), d.currency === 'ZAR' ? 'Rand (R)' : 'Maloti (M)', 'business')}${row('VAT', d.vat_registered === 'yes' ? `${d.vat_rate}% ${d.tax_number || ''}` : L('not registered', 'ha e ngolisoe'), 'business')}
           ${row(L('What you do', 'Seo u se etsang'), types.filter(t => d.types.includes(t.key)).map(t => t.name).join(', '), 'types')}${row(L('Your login', 'Ho kena ha hau'), `${d.owner} (${d.username})`, 'login')}
-          ${row('KYC', d.kyc === 'merchant' ? `My Wallet ${d.merchant_no}` : d.kyc === 'documents' ? `${Object.keys(kycFiles).length} ${L('document(s)', 'litokomane')}` : L('later (30-day trial)', 'hamorao (teko ea matsatsi a 30)'), 'kyc')}</table>
+          ${row('My Wallet', d.act === 'agent' ? `${L('agent', 'agent')} ${d.agent_no}` : L('demo mode – activate later', 'mokhoa oa demo – bula hamorao'), 'kyc')}</table>
         <h4 style="margin:16px 0 8px">${L('How do you want to start?', 'U batla ho qala joang?')}</h4>
-        <div class="wz-choices two">${[['clean', L('With my real business', 'Ka khoebo ea ka ea nnete'), L('Empty – I will add my own products and customers (or import them).', 'Ha ho letho – ke tla kenya lihlahisoa le bareki ba ka.')],
+        ${d.act === 'demo' ? `<p class="muted">${L('Demo mode starts with practice data. To work with your real business, activate with your My Wallet agent number – go back one step.', 'Mokhoa oa demo o qala ka lintlha tsa boikoetliso.')}</p>` : ''}
+        <div class="wz-choices two" ${d.act === 'demo' ? 'style="display:none"' : ''}>${[['clean', L('With my real business', 'Ka khoebo ea ka ea nnete'), L('Empty – I will add my own products and customers (or import them).', 'Ha ho letho – ke tla kenya lihlahisoa le bareki ba ka.')],
           ['demo', L('With practice data', 'Ka lintlha tsa boikoetliso'), L('Sample products and customers to try things out. They stay in this company – best for a test copy only.', 'Lihlahisoa le bareki ba mohlala bakeng sa ho leka.')]].map(([k, t, s]) => `<button class="wz-choice ${d.start === k ? 'on' : ''}" data-st="${k}"><b>${t}</b><small>${s}</small></button>`).join('')}</div>`,
         { back: 1, next: '✓ ' + L('Create my business', 'Etsa khoebo ea ka'), nextId: 'mk' });
       $$('[data-go]').forEach(a => a.onclick = e => { e.preventDefault(); go(a.dataset.go); });
@@ -184,11 +187,10 @@ export async function firstRun(onDone) {
           let setup_key;
           if (stt.setup_key_required) { setup_key = await (await import('./core.js')).promptBox(L('Set-up key from the person who installed the server', 'Senotlolo sa ho qala se tsoang ho ea kentseng server'), { type: 'password' }); if (!setup_key) throw new Error(L('The set-up key is needed', 'Senotlolo sea hlokahala')); }
           const r = await POST('/setup', { setup_key, company: { entity_type: d.entity_type, reg_no: d.reg_no || '', name: d.name, phone: d.phone, address: d.address, email: d.email, tax_number: d.vat_registered === 'yes' ? d.tax_number : '', currency_code: d.currency, currency_symbol: d.currency === 'ZAR' ? 'R' : 'M', vat_rate: vat, receipt_footer: L('Thank you for your business!', 'Re leboha khoebo ea hau!') },
-            admin: { name: d.owner, username: d.username, password: d.password, pin: d.pin || undefined }, demo: d.start === 'demo', business_types: d.types,
-            kyc: d.kyc === 'merchant' ? { path: 'merchant', merchant_no: d.merchant_no, merchant_phone: d.merchant_phone } : d.kyc === 'documents' ? { path: 'documents' } : null });
+            admin: { name: d.owner, username: d.username, password: d.password, pin: d.pin || undefined }, demo: d.start === 'demo' || d.act === 'demo', business_types: d.types,
+            mywallet: d.act === 'agent' ? { agent_no: d.agent_no, password: agentPw } : undefined });
           setToken(r.token); state.user = r.user;
           if (logo) await PUT('/settings-logo', { data_url: logo }).catch(() => {});
-          for (const [doc, f] of Object.entries(kycFiles)) await POST('/activation/documents', { doc, ...f }).catch(() => {});
           state.company = await GET('/company'); await ensureLogo();
           try { localStorage.removeItem(KEY); } catch (_) {}
           done();

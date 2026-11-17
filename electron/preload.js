@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('maluti', {
   info: () => ipcRenderer.invoke('maluti:info'),
   setRemote: url => ipcRenderer.invoke('maluti:set-remote', url),
+  officeServer: on => ipcRenderer.invoke('maluti:office-server', on),
   printSilent: html => ipcRenderer.invoke('maluti:print-silent', html),
   updateSettings: s => ipcRenderer.invoke('maluti:update-settings', s),
   updateCheck: () => ipcRenderer.invoke('maluti:update-check'),

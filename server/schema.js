@@ -3267,5 +3267,127 @@ module.exports = [
         active TINYINT(1) NOT NULL DEFAULT 1
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
     ]
+  },
+  {
+    // 1.27: working from anywhere – two-step sign-in (authenticator app), sessions you can see and end, idle sign-out
+    id: 31,
+    name: 'remote_access',
+    sql: [
+      `ALTER TABLE users ADD COLUMN totp_secret VARCHAR(64) NULL, ADD COLUMN totp_enabled TINYINT(1) NOT NULL DEFAULT 0`,
+      `ALTER TABLE auth_tokens ADD COLUMN last_seen DATETIME NULL, ADD COLUMN ip VARCHAR(64) NULL, ADD COLUMN user_agent VARCHAR(160) NULL, ADD COLUMN remote TINYINT(1) NOT NULL DEFAULT 0, ADD COLUMN method VARCHAR(12) NULL`
+    ]
+  },
+  {
+    // 1.28: RSL Lekuka e-invoicing – fiscal days, the receipt queue (signed, numbered, sent in order) and offline files
+    id: 32,
+    name: 'lekuka',
+    sql: [
+      `CREATE TABLE IF NOT EXISTS lekuka_state (
+        id INT PRIMARY KEY,
+        global_no INT NOT NULL DEFAULT 0,
+        last_day_no INT NOT NULL DEFAULT 0,
+        last_receipt_date VARCHAR(19) NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `INSERT IGNORE INTO lekuka_state (id) VALUES (1)`,
+      `CREATE TABLE IF NOT EXISTS lekuka_days (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        device_id INT NOT NULL,
+        day_no INT NOT NULL,
+        opened_at VARCHAR(19) NOT NULL,
+        status ENUM('open','closing','close_failed','closed') NOT NULL DEFAULT 'open',
+        open_sent TINYINT(1) NOT NULL DEFAULT 0,
+        close_sent TINYINT(1) NOT NULL DEFAULT 0,
+        receipt_counter INT NOT NULL DEFAULT 0,
+        last_hash VARCHAR(64) NULL,
+        counters JSON NULL,
+        close_requested_at DATETIME NULL,
+        closed_at VARCHAR(19) NULL,
+        server_signature JSON NULL,
+        reconciliation VARCHAR(10) NULL,
+        error VARCHAR(255) NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY dd (device_id, day_no)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS lekuka_receipts (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        device_id INT NOT NULL,
+        day_id INT NOT NULL,
+        day_no INT NOT NULL,
+        receipt_counter INT NOT NULL,
+        global_no INT NOT NULL,
+        doc_kind VARCHAR(20) NOT NULL,
+        doc_id BIGINT NOT NULL,
+        doc_number VARCHAR(60) NULL,
+        receipt_type VARCHAR(20) NOT NULL,
+        total DECIMAL(16,2) NOT NULL,
+        receipt JSON NOT NULL,
+        hash VARCHAR(64) NOT NULL,
+        qr_url VARCHAR(255) NULL,
+        verification_code VARCHAR(20) NULL,
+        status ENUM('queued','sent','failed','in_file') NOT NULL DEFAULT 'queued',
+        receipt_id BIGINT NULL,
+        server_date VARCHAR(19) NULL,
+        server_signature JSON NULL,
+        color ENUM('Valid','Yellow','Red','Grey') NULL,
+        validation_errors JSON NULL,
+        attempts INT NOT NULL DEFAULT 0,
+        last_error VARCHAR(255) NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        sent_at DATETIME NULL,
+        UNIQUE KEY doc (doc_kind, doc_id),
+        INDEX (status), INDEX (day_id, receipt_counter)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS lekuka_files (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        device_id INT NOT NULL,
+        day_no INT NOT NULL,
+        file_sequence INT NOT NULL,
+        operation_id VARCHAR(80) NULL,
+        status VARCHAR(40) NOT NULL DEFAULT 'prepared',
+        errors JSON NULL,
+        receipts INT NOT NULL DEFAULT 0,
+        has_footer TINYINT(1) NOT NULL DEFAULT 0,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+    ]
+  },
+  {
+    // 1.29: My Wallet payments at the till through the My Wallet API v4 (Smartel adapter layer)
+    id: 33,
+    name: 'mywallet_v4',
+    sql: [
+      `CREATE TABLE IF NOT EXISTS mywallet_payments (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        mode ENUM('demo','live') NOT NULL,
+        channel ENUM('wallet','switch') NOT NULL,
+        method_id INT NOT NULL,
+        amount DECIMAL(14,2) NOT NULL,
+        merchant_fee DECIMAL(14,2) NULL,
+        refunded DECIMAL(14,2) NOT NULL DEFAULT 0,
+        payer_cell VARCHAR(20) NULL,
+        payer_member VARCHAR(12) NULL,
+        merchant_reference VARCHAR(80) NULL,
+        remote_id VARCHAR(64) NULL,
+        code VARCHAR(12) NULL,
+        mw_reference VARCHAR(60) NULL,
+        status VARCHAR(20) NOT NULL DEFAULT 'NEW',
+        instructions VARCHAR(255) NULL,
+        error VARCHAR(255) NULL,
+        session_id INT NULL, partner_id INT NULL, user_id INT NULL, order_id BIGINT NULL,
+        expires_at DATETIME NULL, paid_at DATETIME NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NULL,
+        INDEX (status, created_at), INDEX (order_id), INDEX (code)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `CREATE TABLE IF NOT EXISTS mywallet_refunds (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        payment_id BIGINT NOT NULL,
+        refund_order_id BIGINT NOT NULL,
+        amount DECIMAL(14,2) NOT NULL,
+        status VARCHAR(12) NOT NULL,
+        mw_reference VARCHAR(60) NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (payment_id), INDEX (refund_order_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+    ]
   }
 ];

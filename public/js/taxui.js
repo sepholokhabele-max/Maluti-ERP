@@ -11,7 +11,7 @@ const nm = x => lang() === 'st' ? (x.name_st || x.name) : x.name;
 
 export async function taxPage(view) {
   const tab = query().tab || 'calendar';
-  view.innerHTML = page(L('Tax centre (RSL)', 'Setsi sa lekhetho (RSL)'), '', `<div class="card act-trial" style="margin-bottom:12px">${L('Every return is worked out from your books. Check the figures, file it on RSL e-Tax (or at RSL), press <b>Filed</b>, then pay. Rates and due days follow RSL\'s published schedule – change them under Settings when the budget changes.', 'Return e ’ngoe le e ’ngoe e baloa ho tsoa libukeng tsa hau. Hlahloba, e romele RSL, tobetsa Filed, ebe u lefa.')}</div>
+  view.innerHTML = page(L('Tax centre (RSL)', 'Setsi sa lekhetho (RSL)'), `<a class="btn" href="#/lekuka">🧾 ${L('Lekuka e-invoicing', 'Lekuka e-invoicing')}</a>`, `<div class="card act-trial" style="margin-bottom:12px">${L('Every return is worked out from your books. Check the figures, file it on RSL e-Tax (or at RSL), press <b>Filed</b>, then pay. Rates and due days follow RSL\'s published schedule – change them under Settings when the budget changes.', 'Return e ’ngoe le e ’ngoe e baloa ho tsoa libukeng tsa hau. Hlahloba, e romele RSL, tobetsa Filed, ebe u lefa.')}</div>
     <div class="tabs">${TABS.map(([k, en, st]) => `<a href="#/tax?tab=${k}" class="${tab === k ? 'active' : ''}">${L(en, st)}</a>`).join('')}</div><div id="txb"></div>`);
   const b = $('#txb');
   await ({ calendar: calTab, returns: returnsTab, wht: whtTab, settings: settingsTab }[tab] || calTab)(b, () => taxPage(view));

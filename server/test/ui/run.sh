@@ -7,7 +7,7 @@
 # Needs: Node 20, `npm i -D playwright` (or a global Playwright with Chromium), and a local MySQL/MariaDB user
 # erp / erp123 that may create databases (the same user the smoke test uses). Port 8069 must be free.
 # Groups that share one database (later tests build on earlier ones): "7 8 9", "10", "11 12", "13", "14",
-# "15 16 17 18 19 20 21 22", "23", "24 25 26 27 28", "29", "30", "31", "32", "33".
+# "15 16 17 18 19 20 21 22", "23", "24 25 26 27 28", "29", "30", "31", "32", "33", "34", "35", "36".
 set -e
 cd "$(dirname "$0")/../../.."
 OUT="${OUT:-$(mktemp -d)}"

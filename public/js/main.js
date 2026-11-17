@@ -112,9 +112,11 @@ const APPS = [
   { href: '#/rfqs', label: 'Supplier price requests', ico: '📨', color: '#6d28d9', perm: 'purchasing', mod: 'purchasing' },
   { href: '#/locations', label: 'Branches & warehouses', ico: '🏬', color: '#0369a1', perm: 'inventory', mod: 'locations' },
   { href: '#/transfers', label: 'Stock transfers', ico: '🔁', color: '#0891b2', perm: 'inventory', mod: 'locations' },
-  { href: '#/activation', label: 'Activation & KYC', ico: '🪪', color: '#0e7490', perm: 'settings' },
+  { href: '#/activation', label: 'Activation', ico: '🪪', color: '#0e7490', perm: 'settings' },
   { href: '#/tax', label: 'Tax centre (VAT, PAYE, income tax – RSL)', ico: '🧾', color: '#9a3412', perm: 'accounting' },
+  { href: '#/lekuka', label: 'Lekuka e-invoicing (RSL)', ico: '🧾', color: '#065f46', perm: 'accounting' },
   { href: '#/smartel', label: 'Smartel connection (MyWallet services)', ico: '🔗', color: '#047857', perm: 'settings' },
+  { href: '#/mywallet', label: 'My Wallet payments', ico: '📲', color: '#0f766e', perm: 'settings' },
   { href: '#/translations', label: 'Translations (Sesotho)', ico: '🗣️', color: '#15803d', perm: 'settings' },
   { href: '#/import', label: 'Import data', ico: '⬆️', color: '#0f766e', perm: 'settings' },
   { href: '#/guide', label: 'Setup guide', ico: '🧭', color: '#0d9488', perm: 'settings' },
@@ -135,7 +137,7 @@ function shell(html) {
   <div class="topbar">
     <a class="brand" href="#/">${state.logo ? `<span class="brand-logo"><img src="${state.logo}" alt=""></span>` : '<span class="home-ico">▦</span>'} ${esc(state.company.name || 'S-ERP')}</a>
     <nav>${NAV.filter(n => can(n[2]) && (!n[3] || hasMod(n[3])) && (n[2] !== 'hrm' || (state.hrm && state.hrm.enabled)) && (n[0] !== '#/butchery' || (state.butchery && state.butchery.enabled))).map(n => `<a href="${n[0]}" class="${h === n[0].split('?')[0] ? 'active' : ''}">${n[1]}</a>`).join('')}</nav>
-    <div class="user"><select id="lang" class="lang-sel" title="Language of the help notes / Puo ea litaelo">${LANGS.map(([k, l]) => `<option value="${k}" ${lang() === k ? 'selected' : ''}>${k === 'both' ? 'EN + ST' : k.toUpperCase()}</option>`).join('')}</select><span>${esc(state.user.name)}</span><div class="avatar" title="${esc(state.user.role)}">${initials}</div>
+    <div class="user"><select id="lang" class="lang-sel" title="Language of the help notes / Puo ea litaelo">${LANGS.map(([k, l]) => `<option value="${k}" ${lang() === k ? 'selected' : ''}>${k === 'both' ? 'EN + ST' : k.toUpperCase()}</option>`).join('')}</select><a href="#/account" style="color:inherit;text-decoration:none" title="My account – password, two-step sign-in, where I am signed in">${esc(state.user.name)}</a><a class="avatar" href="#/account" style="text-decoration:none" title="${esc(state.user.role)} · my account">${initials}</a>
       <button class="icon-btn" style="color:#fff" id="logout" title="Log out">⏻</button></div>
   </div>
   ${actui.banner(state.activation, can('settings'))}
@@ -167,18 +169,19 @@ function home(view) {
 
 // ---------------- auth screens ----------------
 async function loginScreen() {
-  const users = await GET('/pin-users').catch(() => []);
+  const [users, where] = await Promise.all([GET('/pin-users').catch(() => []), GET('/where').catch(() => ({ office: true }))]);
   let mode = users.length ? 'pin' : 'pwd', sel = null, pin = '';
   const render = () => {
     $('#app').innerHTML = `<div class="auth"><div class="auth-card">
       ${state.logo ? `<img class="auth-logo" src="${state.logo}" alt="">` : '<div class="logo">S</div>'}<h1>${esc(state.company.name || 'S-ERP')}</h1><div class="sub">Sign in to continue</div>
-      <div class="tabs"><a data-m="pin" class="${mode === 'pin' ? 'active' : ''}">Staff PIN</a><a data-m="pwd" class="${mode === 'pwd' ? 'active' : ''}">Username & password</a></div>
+      ${where.office ? `<div class="tabs"><a data-m="pin" class="${mode === 'pin' ? 'active' : ''}">Staff PIN</a><a data-m="pwd" class="${mode === 'pwd' ? 'active' : ''}">Username & password</a></div>`
+        : '<p class="muted" style="font-size:13px;margin:4px 0 12px">🔒 You are connecting from outside the office. Sign in with your username and password; you may be asked for a code from your phone.</p>'}
       ${mode === 'pin' ? `
         ${users.length ? `<div class="pin-users">${users.map(u => `<div class="pin-user ${sel === u.id ? 'sel' : ''}" data-u="${u.id}"><b>${esc(u.name)}</b><small>${esc(u.role)}</small></div>`).join('')}</div>` : '<p class="muted">No staff have a PIN yet. Use username & password.</p>'}
         ${sel ? `<input id="pin" type="password" readonly value="${'•'.repeat(pin.length)}" style="text-align:center;font-size:22px;letter-spacing:6px;margin-bottom:10px">
         <div class="keypad">${[1, 2, 3, 4, 5, 6, 7, 8, 9, 'C', 0, '→'].map(k => `<button data-k="${k}">${k}</button>`).join('')}</div>` : ''}
       ` : `
-        <form id="lf"><label class="field"><span>Username</span><input name="username" autocomplete="username" required></label>
+        <form id="lf"><label class="field"><span>Username <small class="muted">(owner: or your My Wallet agent number)</small></span><input name="username" autocomplete="username" required></label>
         <label class="field" style="margin-top:10px"><span>Password</span><input name="password" type="password" autocomplete="current-password" required></label>
         <div class="wz-err" id="caps" style="display:none;margin-top:6px">⇪ Caps Lock is on</div>
         <button class="btn btn-primary btn-block btn-lg" style="margin-top:16px">Sign in</button>
@@ -193,7 +196,7 @@ async function loginScreen() {
     if (lf) lf.password.addEventListener('keyup', e => { const c = e.getModifierState && e.getModifierState('CapsLock'); $('#caps').style.display = c ? 'block' : 'none'; });
     if (lf) lf.onsubmit = async e => {
       e.preventDefault();
-      try { const r = await POST('/login', { username: lf.username.value, password: lf.password.value }); afterLogin(r); } catch (e2) { err(e2); }
+      try { const r = await POST('/login', { username: lf.username.value, password: lf.password.value }); if (r.two_factor) secondStep(r); else afterLogin(r); } catch (e2) { err(e2); }
     };
   };
   const keyPress = async k => {
@@ -203,6 +206,22 @@ async function loginScreen() {
   };
   document.onkeydown = e => { if (mode === 'pin' && sel && /^[0-9]$/.test(e.key)) keyPress(e.key); else if (mode === 'pin' && sel && e.key === 'Enter') keyPress('→'); else if (mode === 'pin' && sel && e.key === 'Backspace') { pin = pin.slice(0, -1); const el = $('#pin'); if (el) el.value = '•'.repeat(pin.length); } };
   render();
+}
+
+/** password was right; now the code from the authenticator app (or setting it up the first time) */
+async function secondStep(r) {
+  const card = $('.auth-card');
+  const enrol = r.two_factor === 'enrol';
+  card.innerHTML = `<div class="logo">🔐</div><h1>${enrol ? 'Set up two-step sign-in' : 'Enter your code'}</h1>
+    <div class="sub">${enrol ? `${esc(r.name)}, your role needs a code from your phone when you sign in from here. It takes a minute, once.` : `Open the authenticator app on your phone and type the 6-digit code for S-ERP.`}</div>
+    <form id="cf">${enrol ? (await import('./accountui.js')).enrolHtml(r) : '<label class="field"><span>6-digit code</span><input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" style="font-size:24px;letter-spacing:8px;text-align:center"></label>'}
+      <button class="btn btn-primary btn-block btn-lg" style="margin-top:14px">${enrol ? 'Switch on and sign in' : 'Sign in'}</button></form>
+    <button class="btn btn-block" id="back" style="margin-top:10px">Back</button>
+    <p class="muted" style="font-size:12px;margin-top:12px">Lost your phone? Ask an administrator to reset your two-step sign-in.</p>`;
+  if (enrol) card.style.maxWidth = '640px';
+  $('#code').focus();
+  $('#back').onclick = () => loginScreen();
+  $('#cf').onsubmit = async e => { e.preventDefault(); try { afterLogin(await POST('/login/code', { ticket: r.ticket, code: $('#code').value })); } catch (e2) { err(e2); $('#code').select(); } };
 }
 
 function afterLogin(r) {
@@ -286,6 +305,7 @@ const ROUTES = {
   '#/myactions': iaui.myActions,
   '#/governance': govui.governance,
   '#/myrole': govui.myRole,
+  '#/account': async v => (await import('./accountui.js')).account(v),
   '#/policies': polui.policies,
   '#/legal': legalui.legal,
   '#/asset': assetui.asset,
@@ -296,7 +316,9 @@ const ROUTES = {
   '#/import': importer.importer,
   '#/activation': actui.activationPage,
   '#/smartel': smui.smartelPage,
+  '#/mywallet': async v => (await import('./mywalletui.js')).myWalletPage(v),
   '#/tax': taxui.taxPage,
+  '#/lekuka': async v => (await import('./lekukaui.js')).lekukaPage(v),
   '#/translations': trui.translationsPage,
   '#/taxreturn': taxui.taxReturn,
   '#/farm': farmui.farm,

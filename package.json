@@ -1,7 +1,7 @@
 {
   "name": "maluti-erp",
   "productName": "Maluti ERP",
-  "version": "1.29.0",
+  "version": "1.29.1",
   "description": "S-ERP by Smartel Money: ERP and point of sale for every kind of business in Lesotho.",
   "main": "electron/main.js",
   "author": "Smartel Money",
